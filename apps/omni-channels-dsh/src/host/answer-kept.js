@@ -160,7 +160,10 @@ export function answerKept(rt, { admit, dispatch }) {
     // refused as before. Unmatched, or a check that failed: kept for the next check.
     // #1713: with the bot's reply set (answer-strangers.js), a phone no rule allows, or a sender
     // still unmatched once the window ends, gets it and leaves at once, with no warning or marker.
-    const replied = async () => { if (!await rt.answerStranger?.(row, entry.botId, { blocked })) return false; delete kept()[entry.row.id]; return true }
+    // With none set, the request is noted once, at the 30 s check (`again` after it), and the
+    // message stays as before.
+    const again = entry.checks >= RECHECK_MS.length
+    const replied = async () => { if (!await rt.answerStranger?.(row, entry.botId, { blocked, again })) return false; delete kept()[entry.row.id]; return true }
     if (why === 'denied' && await replied()) return
     if (!['unmatched', 'failed'].includes(why)) { drop(entry, `refused (${why})`); return }
     entry.checks += 1

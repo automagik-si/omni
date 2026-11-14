@@ -606,7 +606,7 @@ function staffChatOptions(chats, threads, chosen, several) {
   return chosen && !options.some(option => option.id === chosen) ? [{ id: chosen, label: 'The chosen chat' }, ...options] : options
 }
 
-// #1713: the people who wrote, were not let in and got the reply (host answer-strangers.js), newest
+// #1713: the people who wrote and were not let in (host answer-strangers.js), newest
 // first; read-only, read when staff open them.
 function StrangerRequests({ botId }) {
   const [shown, setShown] = useState(false)

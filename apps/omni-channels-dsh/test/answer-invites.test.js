@@ -211,6 +211,7 @@ test('invite admission: a lid-only sender with a valid code is let in at once, b
   // Typed by hand: lower case, and the letter O for the last zero.
   await b.deliver(lidOnly(1, 'Hi! My code is inv-7k2qx9mdo'))
   // One rule, keyed on the lid, with the invite's metadata; nothing kept, nothing sent.
+  // Reporting counts rules by metadata.source === "invite"; changing it breaks that count, tell the orchestrator first.
   assert.deepEqual(b.omniState.posts, [{
     instanceId: INSTANCE, ruleType: 'allow', action: 'allow', platformUserId: LID, reason: 'invite',
     metadata: { source: 'invite', project: 'proj-a', inviteId: 'invite-a', context: 'Invited to proj-a by its team.', capability: 'proj-a-tools' },
@@ -392,4 +393,46 @@ test('invite welcome setting: at most 1000 characters, null or empty clears it, 
   await b.call('omni-answer-settings', { ...b.settings, inviteWelcome: null })
   assert.equal(Object.hasOwn(answer(), 'inviteWelcome'), false)
   assert.equal(b.view().omniAnswers[ANSWER_MASTER].inviteWelcome, null)
+})
+
+// #1716 with #1713's stranger reply (answer-strangers.js): what falls through, and item 8c.
+const STRANGER_REPLY = 'Hello! This line answers invited people. Ask for an invite at the link on our page.'
+const requests = b => Object.values(b.team.state.omniAnswerRequests?.[ANSWER_MASTER] ?? {})
+
+test('invite admission: with the stranger reply set, a valid code gets no reply and no request row', async t => {
+  const b = await bench(t, { settings: { strangerReply: STRANGER_REPLY }, omni: { externalId: `${STRANGER}@s.whatsapp.net` } })
+  await b.deliver(stranger(1, `my code: ${CODE}`))
+  assert.deepEqual([b.omniState.posts.map(post => post.platformUserId), b.omniState.sends, requests(b)], [[STRANGER], [], []])
+  await signal(t, b)
+  await until(() => runs(b) === 1)
+})
+
+test('invite refusal: with the stranger reply set, a code that lets no one in gets the reply once; a valid code next marks the request row admitted', async t => {
+  const b = await bench(t, { settings: { strangerReply: STRANGER_REPLY }, omni: { externalId: `${STRANGER}@s.whatsapp.net` } })
+  await b.deliver(stranger(1, `my code: ${LATE}`))
+  await b.deliver(stranger(2, `this one? ${OTHER.slice(0, 12)}U`))
+  assert.deepEqual([b.omniState.posts, b.omniState.sends], [[], [{ instanceId: INSTANCE, to: `${STRANGER}@s.whatsapp.net`, text: STRANGER_REPLY }]])
+  assert.deepEqual(requests(b).map(row => [row.senders, row.count, row.admitted]), [[[STRANGER], 2, undefined]])
+  // A valid code: let in, no reply, and the chat's row marked, saved.
+  await b.deliver(stranger(3, `sorry, this one: ${CODE}`))
+  assert.deepEqual([b.omniState.posts.length, b.omniState.sends.length], [1, 1])
+  assert.deepEqual(requests(b).map(row => [row.count, row.admitted]), [[2, { at: Date.now(), by: 'invite' }]])
+  await until(() => saved(b.home).omniAnswerRequests?.[ANSWER_MASTER]?.[CHAT]?.admitted?.by === 'invite')
+  noCodeIn('a warning', JSON.stringify(b.warned))
+})
+
+test('invite admission: a request row mark that is not saved is taken back and warned once, and the person stays let in', async t => {
+  const b = await bench(t, { omni: { externalId: `${STRANGER}@s.whatsapp.net` } })
+  // No reply set: the request is noted all the same (item 8b).
+  await b.deliver(stranger(1, 'Can I join?'))
+  assert.deepEqual([b.omniState.sends, requests(b).map(row => row.count)], [[], [1]])
+  const save = b.channels.save
+  b.channels.save = () => (requests(b)[0]?.admitted ? Promise.reject(new Error('disk full')) : save())
+  await b.deliver(stranger(2, CODE))
+  b.channels.save = save
+  assert.deepEqual([b.omniState.posts.length, requests(b)[0].admitted], [1, undefined])
+  assert.equal(b.warned.filter(args => /request row was not marked let in/.test(args[0])).length, 1)
+  noCodeIn('a warning', JSON.stringify(b.warned))
+  await signal(t, b)
+  await until(() => runs(b) === 1)
 })

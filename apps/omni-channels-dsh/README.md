@@ -96,10 +96,13 @@ number's own messages get nothing. A failed send takes the day's mark back, so t
 message tries again; nothing tries on a timer, and the failure is warned once per chat until a
 send there works.
 
-Each sender who gets the reply is listed under **Requests** in the answer settings: one row per
-chat, with the ids they wrote from, their first text (500 characters), when they last wrote and
-how many messages they sent. The list keeps the newest 500 rows per bot, and the day's marks keep
-the newest 5000 chats. Both are saved, so they outlive a restart. Only staff read the list, on the
+Each such sender is listed under **Requests** in the answer settings, whether or not a reply is
+set: one row per chat, with the ids they wrote from, their first text (500 characters), when they
+last wrote and how many messages they sent. With no reply set, nothing is sent and a sender known
+only by their lid stays kept as before; their message is listed once, at the 30-second check. A
+row whose chat an invite code later lets in is marked `admitted`. A save that fails takes the
+row's change back. The list keeps the newest 500 rows per bot, and the day's marks keep the
+newest 5000 chats. Both are saved, so they outlive a restart. Only staff read the list, on the
 `omni-answer-requests` route; no tool reads it.
 
 ## When a person needs someone from the team

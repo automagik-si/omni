@@ -16,6 +16,7 @@
 //
 // Anything else, a code unknown, used or expired, a Redeem that fails or a rule Omni does not
 // take, sends nothing: the message goes on as refused (the stranger reply, the kept message).
+// A chat let in by a code has its request row, if it has one, marked admitted.
 // Omni publishes no event when a rule is written (it publishes access.allowed/denied on checks),
 // so the rules themselves are the record: allow rules whose metadata.source is 'invite'.
 //
@@ -135,6 +136,11 @@ export function install(rt) {
         return undefined
       }
       worked('a person with a valid invite code was not let in', row)
+      // The chat's request row (answer-strangers.js), when it has one, is marked let in. A mark
+      // that is not saved is warned; the person stays let in.
+      try { await rt.answerRequestAdmitted?.(row, botId) } catch (error) {
+        warn('a request row was not marked let in', row, error?.message ?? error)
+      }
       const { inviteWelcome } = answerSettingsOf(rt.botOf(botId))
       if (inviteWelcome !== null) await welcome(row, botId, inviteWelcome)
       return { admission: { person: personOfRule(rule) }, welcomed: inviteWelcome !== null }
