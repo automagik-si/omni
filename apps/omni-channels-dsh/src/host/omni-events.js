@@ -261,6 +261,9 @@ export function install(rt) {
     // again once their phone may be known; a person's admitted message first hands over the
     // ones their chat kept.
     if (refusal?.why === 'unmatched' && answerSub) await kept.keep(row, { botId: answerSub.answerBotId, minutes: refusal.minutes })
+    // #1713: a sender no rule lets in, and none blocks, gets the bot's reply, if it has one (answer-strangers.js).
+    // A valid invite code above is no refusal, so it gets none.
+    else if (refusal?.why === 'denied' && answerSub) await rt.answerStranger?.(row, answerSub.answerBotId, refusal)
     else if (admitted !== false && 'person' in admitted && row.rawPayload?.isFromMe !== true) await kept.release(row.chatUuid, admitted)
     return dispatch(row, invited?.welcomed ? false : admitted, controller)
   }

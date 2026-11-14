@@ -27,20 +27,11 @@ import { PERSON_HELD, personBindingRefusal, toolPrefixOf } from './person-bindin
 export const ANSWER_CHAT_TOOLS = Object.freeze(['thread_say', 'thread_react', 'thread_history', 'thread_picture', 'answer_chats', 'thread_needs_staff'])
 // Explicitly vetted, read-only local tools. Unknown tools never acquire authority by name.
 export const ANSWER_EXTRA_TOOLS = Object.freeze(['read', 'read_image', 'glob', 'grep'])
-// The host's global registry is the served set accepted by tools.restrict(). A scoped view can
-// already be narrowed by an earlier restriction, so it must not be used for answer admission.
-export function servedToolNamesOf(ctx) {
-  if (typeof ctx?.tools?.schemas !== 'function') throw new Error('This host cannot verify which answer tools are served.')
-  const schemas = ctx.tools.schemas()
-  if (!Array.isArray(schemas)) throw new Error('This host cannot verify which answer tools are served.')
-  return new Set(schemas.map(schema => schema?.name).filter(name => typeof name === 'string'))
-}
-// #1689: a bot's knowledge folder gives its children those of these the host serves (thread-
-// tools.js containAnswer), every call scoped to the folder (knowledgeRefusal there); staff set it
-// only through omni-answer-settings, and only while the host serves read.
+// #1689: a bot's knowledge folder gives its children those of these their Session offers
+// (thread-tools.js containAnswer), every call scoped to the folder (knowledgeRefusal there);
+// staff set it only through omni-answer-settings.
 export const KNOWLEDGE_TOOLS = Object.freeze(['read', 'glob', 'grep'])
 export const KNOWLEDGE_FOLDER_REFUSAL = 'The knowledge folder must be the absolute path of an existing folder.'
-export const KNOWLEDGE_NOT_SERVED = 'This DeepSeek Harness does not serve the read tool, so children could not read a knowledge folder. Leave the knowledge folder empty.'
 const knowledgeFolderOf = value => (typeof value === 'string' && isAbsolute(value) ? value : null)
 // RFC-0001 answer children train first: each send asks staff until staff, or an optional
 // graduation after N approved unchanged drafts in a row, switch the child to sending.
@@ -59,6 +50,9 @@ const resumeAfterOf = value => (Number.isInteger(value) && value >= RESUME_AFTER
 // #1707: the staff chat that also hears when a child needs a person; never a person's own chat.
 export const NEEDS_STAFF_CHAT_REFUSAL = 'The staff chat cannot be a chat an answer child answers. Choose a chat only staff are in.'
 const needsStaffChatOf = value => (typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value) ? value : null)
+// #1713: the one reply a person no allow rule lets in gets (answer-strangers.js); null is none.
+export const STRANGER_REPLY_MAX = 1000
+const strangerReplyOf = value => (typeof value === 'string' && value.trim() !== '' ? value.trim().slice(0, STRANGER_REPLY_MAX) : null)
 // #1716: the welcome a person gets once a valid invite code lets them in (answer-invites.js); null is none.
 export const INVITE_WELCOME_MAX = 1000
 const inviteWelcomeOf = value => (typeof value === 'string' && value.trim() !== '' ? value.trim().slice(0, INVITE_WELCOME_MAX) : null)
@@ -68,6 +62,7 @@ export const answerSettingsOf = bot => ({
   newChildMode: bot?.answer?.newChildMode === 'sending' ? 'sending' : 'training', graduateAfter: graduateOf(bot?.answer?.graduateAfter),
   resumeAfterMs: resumeAfterOf(bot?.answer?.resumeAfterMs), knowledgeFolder: knowledgeFolderOf(bot?.answer?.knowledgeFolder),
   personBinding: bot?.answer?.personBinding === true, needsStaffChatId: needsStaffChatOf(bot?.answer?.needsStaffChatId),
+  strangerReply: strangerReplyOf(bot?.answer?.strangerReply),
   inviteWelcome: inviteWelcomeOf(bot?.answer?.inviteWelcome),
 })
 export const isAnswerChild = thread => thread?.answerChild === true
@@ -401,6 +396,8 @@ export function install(rt) {
   ctx.on('approval/request', (request, next) => {
     const thread = bySession(request?.agent?.session?.id ?? request?.agent?.id)
     if (thread === undefined) return next()
+    // #1715: an answer child's draft on this card shows in the phone pane while it waits.
+    rt.answerApprovalWaiting?.(thread, request)
     thread.status = 'waiting'
     persist()
     // An answer child's training card also counts toward its streak (thread-tools.js).
@@ -408,6 +405,7 @@ export function install(rt) {
       await rt.answerApprovalOutcome?.(thread, request, outcome)
       return outcome
     }).finally(() => {
+      rt.answerApprovalWaiting?.(thread, request, false)
       const still = byId(thread.id)
       if (still?.status !== 'waiting') return
       still.status = rt.teamResume?.running?.(still.sessionId) === false ? 'idle' : 'working'
@@ -873,6 +871,8 @@ export function install(rt) {
     personBinding: z.boolean().optional(),
     // #1707: a staff chat's UUID; null clears it, left out keeps it.
     needsStaffChatId: id.nullable().optional(),
+    // #1713: null or empty clears it, left out keeps it.
+    strangerReply: z.string().max(STRANGER_REPLY_MAX).nullable().optional(),
     // #1716: null or empty clears it, left out keeps it.
     inviteWelcome: z.string().max(INVITE_WELCOME_MAX).nullable().optional(),
   }).strict()
@@ -880,7 +880,6 @@ export function install(rt) {
     if (!value) return null
     const real = isAbsolute(value) ? await realpath(value).catch(() => null) : null
     if (real === null || !(await stat(real).catch(() => null))?.isDirectory()) throw refused(KNOWLEDGE_FOLDER_REFUSAL)
-    if (!servedToolNamesOf(ctx).has('read')) throw refused(KNOWLEDGE_NOT_SERVED)
     return real
   }
   ctx.effect(() => rt.hooks.endpoint('omni-answer-settings', async body => {
@@ -889,9 +888,6 @@ export function install(rt) {
     if (rt.readOnly?.() !== undefined) throw refused(rt.readOnly())
     const bot = rt.botOf(input.botId)
     if (bot?.kind !== 'omni') throw refused('Answer mode needs a channel bot.')
-    const served = servedToolNamesOf(ctx)
-    const unserved = [...new Set(input.allowedTools)].find(name => !served.has(name))
-    if (unserved !== undefined) throw refused(`Answer tool "${unserved}" is not served by this host.`)
     // Only threads with a chat on a channel the bot owns explicitly become its children; the
     // default bot's threads on channels it holds as the catch-all stay ordinary threads. Any
     // member counts, so a multi-chat thread is refused whichever channel its first chat is on.
@@ -907,6 +903,7 @@ export function install(rt) {
     const staffChat = input.needsStaffChatId === undefined ? kept.needsStaffChatId : input.needsStaffChatId
     const staffHolder = staffChat === null ? undefined : byChat(staffChat)
     const childNow = isAnswerChild(staffHolder)
+    const strangerReply = input.strangerReply === undefined ? kept.strangerReply : strangerReplyOf(input.strangerReply)
     const inviteWelcome = input.inviteWelcome === undefined ? kept.inviteWelcome : inviteWelcomeOf(input.inviteWelcome)
     if ((childNow && staffChat !== kept.needsStaffChatId) || (staffHolder !== undefined && !childNow && input.enabled && answerable().includes(staffHolder))) throw refused(NEEDS_STAFF_CHAT_REFUSAL)
     const next = {
@@ -915,6 +912,7 @@ export function install(rt) {
       resumeAfterMs: input.resumeAfterMs ?? kept.resumeAfterMs, ...(folder ? { knowledgeFolder: folder } : {}),
       ...(input.personBinding ?? kept.personBinding ? { personBinding: true } : {}),
       ...(staffChat === null ? {} : { needsStaffChatId: staffChat }),
+      ...(strangerReply === null ? {} : { strangerReply }),
       ...(inviteWelcome === null ? {} : { inviteWelcome }),
     }
     // #1704: never bind persons where a child could read past its own chat and folder.
@@ -1072,7 +1070,10 @@ export function install(rt) {
         const reason = reasons === null ? rt.teamResume?.reason ?? NEEDS_NEWER_TEAM : reasons.get(thread.id) ?? null
         const reasonCode = reasonCodes === null ? 'needs_newer_team' : reasonCodes.get(thread.id)
         const status = live && rt.teamResume?.running?.(thread.sessionId) !== true ? 'idle' : thread.status ?? 'idle'
+        // #1715: the child's draft waiting on its card now (thread-tools.js), for the phone pane.
+        const waitingDraft = isAnswerChild(thread) && thread.status === 'waiting' ? rt.answerWaitingDraft?.(thread.id) : undefined
         return {
+          ...(waitingDraft ? { waitingDraft } : {}),
           ...(isAnswerChild(thread) ? { answerChild: true, sendingMode: sendingModeOf(thread), approvedStreak: thread.approvedStreak ?? 0, graduateAfter: answerSettingsOf(rt.botOf(thread.ownerBotId)).graduateAfter } : {}),
           ...(isAnswerChild(thread) && thread.paused === true ? { paused: true, pausedUntil: Number.isFinite(pausedUntilOf(thread, rt.botOf(thread.ownerBotId))) ? pausedUntilOf(thread, rt.botOf(thread.ownerBotId)) : null } : {}),
           // #1707: the child asked for someone from the team (needs-staff.js); staff dismiss it.

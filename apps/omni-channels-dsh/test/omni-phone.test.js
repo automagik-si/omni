@@ -5,8 +5,8 @@ import { NEEDS_NEWER_TEAM, TEAM_CONTRACT } from '../src/host/resume-hook.js'
 import { all, bundleClient, column, mount as mountWith, nodes, ofType, one, plain, react, settle, text } from './client-stand-in.js'
 import { omni } from './omni-client.js'
 
-// The phone pane (omni-phone.js, phone-frame.js): a thread's chat in a drawn phone, a tab of
-// DSH's right column opened only from the thread. Drawn with a stand-in React and a stand-in
+// The chat pane (omni-phone.js, its ids still say phone): a thread's chat across the whole pane,
+// drawn by the chat view of channels.js, a tab of DSH's right column opened only from the thread. Drawn with a stand-in React and a stand-in
 // right column; the host is a stand-in `call`, so nothing leaves the test and nothing is sent.
 
 // The stand-in React of client-stand-in.js; a host element's ref gets a stand-in node, as the
@@ -53,7 +53,8 @@ const document = { hidden: false, body: { dataset: {} } }
 
 const ui = await bundleClient([
   'export { PhonePane, PhoneTab, PhoneDock, installPhone, openPhone, requestPhone, hasPhoneIntent, takePhoneIntent, phoneSurfaceIs, threadName, phoneThreadOf, keepParams, keptParams, phoneTabDefinition, phoneTabId, PHONE_KIND, PHONE_TAB_ID, OMNI_PHONE_CSS } from \'./omni-phone.js\'',
-  'export { PhoneFrame, frameMetrics, SIDE_BUTTONS, PHONE_FRAME_CSS } from \'./phone-frame.js\'',
+  'export { CHANNELS_CSS, ChatPage, EMOJI, MessageBar, TICKS, insertAt } from \'./channels.js\'',
+  'export { omniStore } from \'./omni-store.js\'',
   'export { ThreadRow, rowPropsOf } from \'./omni-tree.js\'',
 ], { globals: { console: { ...console, warn: (...args) => logged.push(args) }, URL: BundleURL, URLSearchParams, Blob, atob, setTimeout: fakeSetTimeout, clearTimeout: fakeClearTimeout, document, localStorage }, team: { omni: { ...omni, call: fakeCall } } })
 
@@ -112,8 +113,8 @@ function installed(t) {
   return stand
 }
 
-// A pane header's words, its "Always allow send" switch left out.
-const headText = head => text({ children: (head?.children ?? []).filter(child => !all(child, 'op-send').length && child?.props?.className !== 'op-send') })
+// A pane header's words, its "Always allow send" switch and the chat's avatar left out.
+const headText = head => text({ children: (head?.children ?? []).filter(child => !all(child, 'op-send').length && child?.props?.className !== 'op-send' && !all(child, 'oc-ava').length) })
 
 const pane = (props, t) => {
   const view = mount(() => react.createElement(ui.PhonePane, props))
@@ -123,18 +124,17 @@ const pane = (props, t) => {
 
 // -------------------------------------------------------------------------
 
-test('the pane shows the thread\'s chat in the drawn frame: a picture, a voice note with Omni\'s text in its bubble, a video still, a document by name, a sticker (:203)', async (t) => {
+test('the pane shows the thread\'s chat across the whole pane, with no device frame: a picture, a voice note with Omni\'s text in its bubble, a video still, a document by name, a sticker (:203)', async (t) => {
   reset()
   const roster = hooked([THREAD(1)])
   const view = pane({ params: { threadId: 't1', chatId: CHAT_1 }, sessionId: 's-omni', useRoster: useRosterOf(roster) }, t)
   const root = await drawn(view)
   assert.deepEqual(asked('omni-messages'), [['omni-messages', { chatId: CHAT_1 }]])
-  // The frame: the device shell, its four side buttons, and the screen with the chat on it.
-  const frame = one(root, 'op-frame')
-  assert.ok(one(root, 'op-device') && frame)
-  assert.deepEqual(all(frame, 'op-button').map(button => button.props['data-side']), ['left', 'left', 'left', 'right'])
-  const screen = one(frame, 'op-screen')
-  assert.equal(screen.props['aria-label'], 'Chat 1 on the phone')
+  // No frame: the pane itself is the chat, its header, its log and its message bar.
+  assert.deepEqual(['op-device', 'op-frame', 'op-button', 'op-screen'].map(name => all(root, name).length), [0, 0, 0, 0])
+  const screen = one(root, 'op-pane')
+  assert.deepEqual([screen.props.role, screen.props['aria-label']], ['region', 'Chat with Chat 1'])
+  assert.deepEqual(screen.children.map(child => child.props.className.split(' ')[0]), ['oc-chat-head', 'oc-thread', 'oc-bar-wrap'])
   assert.equal(headText(one(screen, 'op-head')), 'Chat 1')
   const log = one(screen, 'oc-thread')
   assert.equal(log.props.role, 'log')
@@ -167,8 +167,8 @@ test('the pane shows the thread\'s chat in the drawn frame: a picture, a voice n
   const after = await drawn(view)
   assert.equal(ofType(all(after, 'oc-bubble')[2], 'video').length, 1)
   assert.equal(mediaAsked('m3'), 1)
-  // It reads; it never writes: no composer, nothing sent.
-  assert.equal(ofType(after, 'textarea').length + ofType(after, 'input').length, 0)
+  // It reads; nothing is sent until staff send from its composer (#1715): one box, empty.
+  assert.deepEqual([ofType(after, 'textarea').length, ofType(after, 'textarea')[0].props.value, ofType(after, 'input').length], [1, '', 0])
   assert.deepEqual([...new Set(calls.map(([endpoint]) => endpoint))].sort(), ['omni-media', 'omni-messages'])
 })
 
@@ -276,9 +276,9 @@ const dockOf = (sessionId, roster) => mount(() => react.createElement(ui.PhoneDo
 test('a row\'s click opens its Session and asks for the pane, which its own dock opens once the Session has a surface', async (t) => {
   reset()
   // Before DSH's right column is there, the action says so and throws nothing.
-  assert.equal(ui.openPhone(THREAD(1)), 'The phone pane needs DSH\'s right column.')
+  assert.equal(ui.openPhone(THREAD(1)), 'The chat needs DSH\'s right column.')
   const stand = installed(t)
-  assert.deepEqual(stand.types.map(type => [type.id, type.kind, type.title()]), [[ui.PHONE_TAB_ID, ui.PHONE_KIND, 'Phone pane']])
+  assert.deepEqual(stand.types.map(type => [type.id, type.kind, type.title()]), [[ui.PHONE_TAB_ID, ui.PHONE_KIND, 'Chat']])
   assert.deepEqual([ui.PHONE_KIND, ui.PHONE_TAB_ID, ui.phoneTabId('t1')], ['omni-phone', 'ds-bot/omni-phone', 'ds-bot/omni-phone:t1'])
   assert.deepEqual(stand.bodies.map(body => [body.name, body.key, body.component === ui.PhoneTab]), [['sidebar.right.pane.tab', ui.PHONE_TAB_ID, true]])
   assert.deepEqual(stand.opened, [], 'installing opens nothing')
@@ -354,7 +354,7 @@ test('on a stand-in team without the hook, or with no conversation on screen, a 
   stand.put(undefined)
   const row = mount(() => react.createElement(ui.ThreadRow, { thread, actions, rowProps: {} }))
   one(row.draw(), 'bt-thread').props.onClick()
-  assert.equal(text(one(row.draw(), 'ot-thread-problem')), 'Open a conversation first; the phone pane opens beside it.')
+  assert.equal(text(one(row.draw(), 'ot-thread-problem')), 'Open a conversation first; the chat opens beside it.')
   assert.equal(stand.opened.length, 0)
   // A team without the hook opens the pane beside the Session on screen, as before.
   stand.put('s-omni')
@@ -416,7 +416,7 @@ test('first probe 4 (not run live): the tab\'s params round-trip, a reload that 
   storage.clear()
   assert.equal(await threadShown(tabIn('s1', undefined)), 't1')
   // Outside a thread's Session with nothing to go on, it says where to open it from.
-  assert.equal(await threadShown(tabIn('s-omni', undefined, 'tab-9')), 'Open the phone pane from a chat in the sidebar.')
+  assert.equal(await threadShown(tabIn('s-omni', undefined, 'tab-9')), 'Open a chat from the sidebar to see it here.')
   // Params of a thread removed since name no listed thread: nothing is read for it.
   calls.length = 0
   assert.equal(await threadShown(tabIn('s-omni', { threadId: 't9', chatId: '99999999-9999-4999-8999-999999999999' })), 'This chat is no longer in the sidebar.')
@@ -429,37 +429,20 @@ test('first probe 4 (not run live): the tab\'s params round-trip, a reload that 
   assert.equal(ui.phoneThreadOf({}, undefined, 's1'), null)
 })
 
-test('the frame is dsh-ios\'s device frame: its shell, edge and buttons, and corners concentric at every width', () => {
-  assert.deepEqual(plain(ui.frameMetrics(300)), { screen: 266, screenRadius: 37.5, shellRadius: 53.5 })
-  assert.deepEqual(plain(ui.frameMetrics(240)), { screen: 206, screenRadius: 29.1, shellRadius: 45.1 })
-  for (const width of [180, 240, 300]) {
-    const { screenRadius, shellRadius } = ui.frameMetrics(width)
-    assert.equal(Math.round((shellRadius - screenRadius) * 10) / 10, 16)
-  }
-  assert.deepEqual(plain(ui.SIDE_BUTTONS).map(button => [button.id, button.side, button.top, button.height]), [
-    ['mute', 'left', '21%', 16], ['volume-up', 'left', '34%', 36], ['volume-down', 'left', '47%', 36], ['power', 'right', '36%', 52],
-  ])
-  const css = ui.PHONE_FRAME_CSS
-  for (const value of ['linear-gradient(145deg,#2b2e35 0%,#101116 45%,#1c1e25 100%)', 'border:1px solid rgba(0,0,0,.6)', 'inset 0 0 0 1px rgba(255,255,255,.12),0 18px 50px rgba(0,0,0,.55)', 'padding:16px', 'background:#3a3d44', 'aspect-ratio:390/844', 'max-width:300px']) assert.ok(css.includes(value), value)
-  // The shell's radius is the screen's plus the shell, from the same width.
-  assert.match(css, /\.op-frame\{[^}]*border-radius:calc\(\(100cqi - 34px\) \* 55 \/ 390 \+ 16px\)/)
-  assert.match(css, /\.op-screen\{[^}]*border-radius:calc\(\(100cqi - 34px\) \* 55 \/ 390\)/)
-  assert.ok(ui.OMNI_PHONE_CSS.startsWith(css))
+test('the pane draws no device frame: it fills the pane\'s width and height, with no width cap (owner, 2026-11-14)', () => {
+  const css = ui.OMNI_PHONE_CSS
+  assert.match(css, /\.op-pane\{[^}]*height:100%[^}]*display:flex;flex-direction:column/)
+  for (const gone of ['.op-device', '.op-frame', '.op-screen', '.op-button', 'max-width:300px', 'aspect-ratio:390/844', '100cqi']) assert.equal(css.includes(gone), false, gone)
+  // The chat view's rules are the chat page's: one look for both.
+  for (const rule of ['.oc-chat-head{', '.oc-bubble{', '.oc-bar-wrap{', '.oc-emoji{', '.oc-tick{']) assert.ok(ui.CHANNELS_CSS.includes(rule), rule)
 })
 
-test('NOTICE carries the dsh-ios MIT notice, with the copyright line of its LICENSE at that commit (:203)', () => {
+test('the frame\'s file and the notice for its copied look are gone, and NOTICE still says no other third-party code is copied', () => {
   const notice = readFileSync(new URL('../NOTICE', import.meta.url), 'utf8')
-  // The line as that LICENSE has it, an em dash included.
-  const line = 'Copyright (c) 2026 ZSeven—W'
-  assert.ok(notice.includes('dsh-ios (https://github.com/automagik-genie/dsh-ios'))
-  assert.ok(notice.includes(`MIT License, ${line}`))
-  assert.ok(notice.includes(`  ${line}\n`))
-  assert.ok(notice.includes('d9a9731ccd73b38858fcfbf2f35d7120a861654c'))
-  assert.ok(notice.includes('src/client/phone-frame.js copies the look'))
-  const block = notice.slice(notice.indexOf('dsh-ios ('), notice.indexOf('No other third-party code'))
-  for (const words of ['Permission is hereby granted, free of charge', 'The above copyright notice and this permission notice shall be included in all', 'THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND']) assert.ok(block.includes(words), words)
-  const source = readFileSync(new URL('../src/client/phone-frame.js', import.meta.url), 'utf8')
-  assert.match(source, /automagik-genie\/dsh-ios.*MIT; see\s*\n?\/\/ NOTICE/s)
+  assert.equal(notice.includes('dsh-ios'), false)
+  assert.equal(notice.includes('phone-frame.js'), false)
+  assert.ok(notice.includes('No other third-party code is copied into this repository.'))
+  assert.throws(() => readFileSync(new URL('../src/client/phone-frame.js', import.meta.url), 'utf8'), { code: 'ENOENT' })
 })
 
 test('the pane\'s header names a thread by its chat, never a raw id: "Chat" or "Group" when it has no name', async (t) => {
@@ -509,7 +492,7 @@ test('a mounted Session without an adopted store gives a friendly row message an
   stand.right.openTab = () => { opened += 1; throw new Error('sidebarRight: no session surface is mounted') }
   const row = mount(() => react.createElement(ui.ThreadRow, { thread: THREAD(1), actions: {}, rowProps: {} }))
   one(row.draw(), 'bt-thread').props.onClick()
-  assert.equal(text(one(row.draw(), 'ot-thread-problem')), 'Open a conversation first; the phone pane opens beside it.')
+  assert.equal(text(one(row.draw(), 'ot-thread-problem')), 'Open a conversation first; the chat opens beside it.')
   assert.equal(opened, 0)
 })
 
@@ -520,7 +503,7 @@ test('an unexpected openTab failure shows only a friendly translated row message
   stand.right.openTab = () => { throw new Error(raw) }
   const row = mount(() => react.createElement(ui.ThreadRow, { thread: THREAD(1), actions: {}, rowProps: {} }))
   one(row.draw(), 'bt-thread').props.onClick()
-  assert.equal(text(one(row.draw(), 'ot-thread-problem')), 'Open a conversation first; the phone pane opens beside it.')
+  assert.equal(text(one(row.draw(), 'ot-thread-problem')), 'Open a conversation first; the chat opens beside it.')
   assert.equal(text(row.draw()).includes(raw), false)
   assert.equal(logged.length, 1)
   assert.equal(logged[0][1].message, raw)
@@ -570,7 +553,7 @@ test('a store that never adopts times out with a friendly dock message and no op
   t.after(() => dock.unmount())
   dock.draw()
   for (let retry = 0; retry < 10; retry += 1) await nextPhoneWait()
-  assert.equal(text(one(dock.draw(), 'op-dock-problem')), 'Open a conversation first; the phone pane opens beside it.')
+  assert.equal(text(one(dock.draw(), 'op-dock-problem')), 'Open a conversation first; the chat opens beside it.')
   assert.equal(ui.hasPhoneIntent('t1'), false)
   assert.equal(attempts, 0)
   assert.equal(timers.some(timer => timer.on && timer.ms === 50), false)
@@ -623,7 +606,7 @@ test('the dock catch hides raw runtime text and logs the diagnostic while adopti
   const failure = new Error('PRIVATE-DOCK-ADOPTION-ERROR')
   stand.right.actionsFor = () => { throw failure }
   await nextPhoneWait()
-  assert.equal(text(one(dock.draw(), 'op-dock-problem')), 'Open a conversation first; the phone pane opens beside it.')
+  assert.equal(text(one(dock.draw(), 'op-dock-problem')), 'Open a conversation first; the chat opens beside it.')
   assert.equal(text(dock.draw()).includes(failure.message), false)
   assert.deepEqual(logged, [['Could not open the phone pane:', failure]])
   assert.equal(ui.hasPhoneIntent('t1'), false)
@@ -689,7 +672,7 @@ test('the pane\'s "Always allow send" switch sets only this thread\'s sends: on 
   const toggle = () => one(root, 'op-switch')
   assert.equal(toggle().props.role, 'switch')
   assert.equal(toggle().props['aria-checked'], false)
-  assert.equal(text(one(root, 'op-send')), 'Always allow send')
+  assert.equal(toggle().props['aria-label'], 'Always allow send')
   // On: this thread's sends allow; the switch shows it until the host's view does.
   toggle().props.onClick()
   root = await drawn(view)
@@ -731,4 +714,291 @@ test('an answer child\'s "Always allow send" switch is its sending mode: on asks
   root = await drawn(view)
   assert.deepEqual(asked('set_child_sending').at(-1), ['set_child_sending', { threadId: 't1', mode: 'training' }])
   assert.equal(toggle().props['aria-checked'], false)
+})
+
+// -------------------------------------------------------------------------
+// #1715: staff's own composer at the pane's foot (PhoneComposer), on the host's omni-phone-send.
+
+const composerOf = root => one(root, 'op-compose')
+const boxOf = root => ofType(composerOf(root), 'textarea')[0]
+const sendOf = root => one(composerOf(root), 'oc-send')
+const typed = (root, value) => boxOf(root).props.onChange({ target: { value } })
+const key = (root, init = {}) => {
+  const event = { key: 'Enter', shiftKey: false, nativeEvent: { isComposing: false }, prevented: false, preventDefault() { event.prevented = true }, ...init }
+  boxOf(root).props.onKeyDown(event)
+  return event
+}
+// The host holds omni-phone-send until the test lets it answer (or fail).
+function heldSend() {
+  const held = []
+  answer = endpoint => (endpoint === 'omni-phone-send' ? new Promise((resolve) => { held.push(resolve) }) : host()(endpoint))
+  return held
+}
+
+test('the pane\'s composer: Enter sends the trimmed text to omni-phone-send, Shift+Enter adds a line, and the box waits while it is being sent', async (t) => {
+  reset()
+  const view = pane({ params: { threadId: 't1', chatId: CHAT_1 }, sessionId: 's1', useRoster: useRosterOf(hooked([THREAD(1)])) }, t)
+  let root = await drawn(view)
+  assert.equal(boxOf(root).props.placeholder, 'Write your own message')
+  assert.equal(boxOf(root).props.maxLength, 4096)
+  assert.equal(sendOf(root).props.disabled, true, 'nothing to send yet')
+  typed(root, '  Hello,\nit ships today. ')
+  root = await drawn(view)
+  assert.equal(sendOf(root).props.disabled, false)
+  // Shift+Enter is a new line, and Enter while an input method composes is not a send.
+  assert.equal(key(root, { shiftKey: true }).prevented, false)
+  key(root, { nativeEvent: { isComposing: true } })
+  assert.deepEqual(asked('omni-phone-send'), [])
+  const held = heldSend()
+  // Two Enters before the box draws again send once.
+  assert.equal(key(root).prevented, true)
+  key(root)
+  root = await drawn(view)
+  assert.deepEqual(asked('omni-phone-send'), [['omni-phone-send', { threadId: 't1', text: 'Hello,\nit ships today.' }]])
+  assert.deepEqual([boxOf(root).props.disabled, sendOf(root).props.disabled], [true, true])
+  held[0]({ sent: true, messageId: 'x', paused: false, draft: null })
+  root = await drawn(view)
+  assert.deepEqual([boxOf(root).props.value, boxOf(root).props.disabled], ['', false])
+  assert.equal(all(root, 'op-compose-fail').length, 0)
+})
+
+test('a failed send says why in the pane, keeps the text, and sends nothing again until staff send it', async (t) => {
+  reset()
+  const view = pane({ params: { threadId: 't1', chatId: CHAT_1 }, sessionId: 's1', useRoster: useRosterOf(hooked([THREAD(1)])) }, t)
+  let root = await drawn(view)
+  const failure = new Error('Omni answered 503: instance not connected. Nothing was sent.')
+  answer = endpoint => (endpoint === 'omni-phone-send' ? failure : host()(endpoint))
+  typed(root, 'On my way')
+  root = await drawn(view)
+  sendOf(root).props.onClick()
+  root = await drawn(view)
+  const problem = one(root, 'op-compose-fail')
+  assert.equal(problem.props.role, 'alert')
+  assert.equal(text(problem), 'Not sent: Omni answered 503: instance not connected. Nothing was sent.')
+  assert.deepEqual([boxOf(root).props.value, boxOf(root).props.disabled], ['On my way', false])
+  assert.deepEqual(logged.at(-1), ['Could not send the message:', failure])
+  await nextPoll()
+  root = await drawn(view)
+  assert.equal(asked('omni-phone-send').length, 1, 'never sent again by itself')
+  // Staff send it again: it goes, and the problem clears.
+  answer = host()
+  key(root)
+  root = await drawn(view)
+  assert.equal(asked('omni-phone-send').length, 2)
+  assert.equal(all(root, 'op-compose-fail').length, 0)
+  assert.equal(boxOf(root).props.value, '')
+})
+
+test('an answer child\'s draft waiting on its card shows with Edit; edited in the composer it goes out as typed with the draft\'s id, and the pane then asks staff to reject the card', async (t) => {
+  reset()
+  const DRAFT = 'Your order left today and arrives in 3 to 5 business days.'
+  const EDITED = 'Your order left today.\nIt arrives on Friday.'
+  const child = extra => THREAD(1, CHAT_1, { answerChild: true, sendingMode: 'training', status: 'waiting', permissions: { sends: 'ask', reactions: 'list' }, ...extra })
+  let roster = hooked([child({ waitingDraft: { id: 'd1', text: DRAFT } })])
+  const view = pane({ params: { threadId: 't1', chatId: CHAT_1 }, sessionId: 's1', useRoster: select => select(roster) }, t)
+  let root = await drawn(view)
+  const draft = one(composerOf(root), 'op-draft')
+  assert.equal(text(one(draft, 'op-draft-text')), DRAFT)
+  assert.equal(text(one(draft, 'op-draft-head')), 'The bot\'s draft, waiting on its card' + 'Edit')
+  assert.equal(boxOf(root).props.value, '')
+  // Edit puts the draft in the box; emptied again, the draft waits on its card as before.
+  one(draft, 'op-draft-edit').props.onClick()
+  root = await drawn(view)
+  assert.equal(boxOf(root).props.value, DRAFT)
+  assert.equal(all(root, 'op-draft').length, 0)
+  typed(root, '')
+  root = await drawn(view)
+  assert.equal(all(root, 'op-draft').length, 1)
+  one(root, 'op-draft-edit').props.onClick()
+  root = await drawn(view)
+  typed(root, EDITED)
+  root = await drawn(view)
+  sendOf(root).props.onClick()
+  root = await drawn(view)
+  assert.deepEqual(asked('omni-phone-send'), [['omni-phone-send', { threadId: 't1', text: EDITED, draftId: 'd1' }]])
+  // The host's view says staff replaced it: no Edit, one line asking staff to reject its card.
+  roster = hooked([child({ waitingDraft: { id: 'd1', text: DRAFT, replaced: true }, paused: true })])
+  root = await drawn(view)
+  assert.equal(all(root, 'op-draft').length, 0)
+  assert.equal(text(one(root, 'op-compose-note')), 'Reject the bot\'s draft on its card')
+  // The card answered, the line goes; the next message carries no draft.
+  roster = hooked([child({ status: 'idle', paused: true })])
+  root = await drawn(view)
+  assert.equal(all(root, 'op-compose-note').length, 0)
+  typed(root, 'One more thing.')
+  root = await drawn(view)
+  key(root)
+  root = await drawn(view)
+  assert.deepEqual(asked('omni-phone-send').at(-1), ['omni-phone-send', { threadId: 't1', text: 'One more thing.' }])
+})
+
+// -------------------------------------------------------------------------
+// The chat view (owner, 2026-11-14): the pane and the chat page draw one header, one log and one
+// message bar (channels.js), each on its own send path.
+
+// The overview as the sidebar reads it (omni-overview), set for one test and put back after.
+function withOverview(t, patch) {
+  const before = ui.omniStore.getSnapshot()
+  ui.omniStore.set({ ...before, ...patch })
+  t.after(() => ui.omniStore.set(before))
+}
+const SUPPORT = { id: 'wa', type: 'telegram', name: 'Support line', status: 'connected', answeredBy: 'Omni' }
+
+test('the header: the chat\'s photo from the overview, else its initials; its name; the channel\'s name, or why the thread cannot reach it; never presence', async (t) => {
+  reset()
+  withOverview(t, { channels: [SUPPORT], chats: [{ id: CHAT_1, channelId: 'wa', name: 'Ana Lima', initials: 'AL', at: 1, unread: 0, avatarUrl: 'https://example.com/a.png' }] })
+  let roster = hooked([THREAD(1, CHAT_1, { title: 'Ana Lima' })])
+  const view = pane({ params: { threadId: 't1', chatId: CHAT_1 }, sessionId: 's1', useRoster: select => select(roster) }, t)
+  let root = await drawn(view)
+  const head = () => one(root, 'op-head')
+  assert.equal(text(one(head(), 'oc-chat-name')), 'Ana Lima')
+  assert.equal(text(one(head(), 'oc-chat-status')), 'Support line')
+  assert.equal(one(head(), 'oc-chat-status').props['data-off'], undefined)
+  assert.deepEqual(ofType(one(head(), 'oc-ava'), 'img').map(img => img.props.src), ['https://example.com/a.png'])
+  // The thread cut from its channel: its reason, in the sidebar's words (threadReason), takes the status line.
+  roster = hooked([THREAD(1, CHAT_1, { title: 'Ana Lima', connected: false, reason: 'instance offline' })])
+  root = await drawn(view)
+  assert.deepEqual([text(one(head(), 'oc-chat-status')), one(head(), 'oc-chat-status').props['data-off']], ['Not connected. Try reconnecting this chat.', true])
+  // A chat the overview does not list: its initials, and no status line.
+  roster = hooked([THREAD(2, CHAT_2, { title: 'Bruno Reis', channelId: 'gone' })])
+  const other = await drawn(pane({ params: { threadId: 't2', chatId: CHAT_2 }, sessionId: 's2', useRoster: select => select(roster) }, t))
+  assert.equal(text(one(one(other, 'op-head'), 'oc-ava-face')), 'BR')
+  assert.deepEqual([all(other, 'oc-chat-status').length, ofType(one(other, 'oc-ava'), 'img').length], [0, 0])
+  for (const word of ['online', 'typing']) assert.equal(text(root).toLowerCase().includes(word), false, word)
+  // The header asks for nothing: the pane reads the chat's messages and its files, as before.
+  assert.deepEqual([...new Set(calls.map(([endpoint]) => endpoint))].sort(), ['omni-media', 'omni-messages'])
+})
+
+test('delivery marks: each status draws its mark on what staff and Omni sent, and nothing on the person\'s messages or an unknown status', async (t) => {
+  reset()
+  const out = (id, from, status) => ({ id, from, fromMe: true, text: id, caption: null, type: 'text', hasMedia: false, mime: null, mediaText: null, fileName: null, at: AT, status })
+  answer = host([
+    out('pending', 'you', 'pending'), out('sent', 'you', 'sent'), out('delivered', 'omni', 'delivered'), out('read', 'omni', 'read'), out('failed', 'you', 'failed'),
+    out('unknown', 'you', 'seen'), out('none', 'you', undefined),
+    { ...out('theirs', 'them', 'read'), fromMe: false },
+  ])
+  const root = await drawn(pane({ params: { threadId: 't1', chatId: CHAT_1 }, sessionId: 's1', useRoster: useRosterOf(hooked([THREAD(1)])) }, t))
+  const bubbles = all(root, 'oc-bubble')
+  const tickOf = bubble => one(bubble, 'oc-tick')
+  assert.deepEqual(bubbles.map(bubble => tickOf(bubble)?.props['data-status'] ?? null), ['pending', 'sent', 'delivered', 'read', 'failed', null, null, null])
+  assert.deepEqual(bubbles.slice(0, 5).map(bubble => [tickOf(bubble).props.role, tickOf(bubble).props['aria-label'], tickOf(bubble).children.length]), [
+    ['img', 'Waiting to send', 1], ['img', 'Sent', 1], ['img', 'Delivered', 2], ['img', 'Seen', 2], ['img', 'Not delivered', 1],
+  ])
+  // The marks are the team's icons: a clock, one tick, two ticks, two ticks (accent), its info mark turned over (danger).
+  const { CheckIcon, ClockIcon, InfoIcon } = omni.ui.icons
+  assert.deepEqual(Object.entries(ui.TICKS).map(([status, tick]) => [status, plain(tick.marks.map(mark => [ClockIcon, CheckIcon, InfoIcon].indexOf(mark)))]), [
+    ['pending', [0]], ['sent', [1]], ['delivered', [1, 1]], ['read', [1, 1]], ['failed', [2]],
+  ])
+  for (const rule of ['.oc-tick[data-status=read]{color:color-mix(in srgb,var(--bt-accent)', '.oc-tick[data-status=failed]{color:var(--bt-danger)}']) assert.ok(ui.CHANNELS_CSS.includes(rule), rule)
+  // Each bubble keeps its time inside it, with the mark after the time.
+  assert.deepEqual(one(bubbles[3], 'oc-meta').children.map(child => child.type), ['time', 'span'])
+  assert.equal(text(bubbles[3]).startsWith('read'), true)
+})
+
+const barOf = (props, t) => {
+  const view = mount(() => react.createElement(ui.MessageBar, props))
+  t.after(() => view.unmount())
+  return view
+}
+const keyOn = (root, init = {}) => {
+  const event = { key: 'Enter', shiftKey: false, nativeEvent: { isComposing: false }, prevented: false, preventDefault() { event.prevented = true }, ...init }
+  ofType(root, 'textarea')[0].props.onKeyDown(event)
+  return event
+}
+
+test('the message bar: Enter sends, Shift+Enter adds a line; an empty, disabled or sending bar sends nothing and its Send button waits', (t) => {
+  const sends = []
+  const bar = (props = {}) => barOf({ value: 'On my way', onChange: () => {}, onSend: () => sends.push(props.value ?? 'On my way'), label: 'Your message', ...props }, t).draw()
+  let root = bar()
+  assert.equal(one(root, 'oc-send').props.disabled, false)
+  assert.equal(keyOn(root, { shiftKey: true }).prevented, false)
+  assert.equal(keyOn(root, { nativeEvent: { isComposing: true } }).prevented, false)
+  assert.deepEqual(sends, [])
+  assert.equal(keyOn(root).prevented, true)
+  assert.deepEqual(sends, ['On my way'])
+  for (const props of [{ value: '  \n ' }, { disabled: true }, { sending: true }]) {
+    root = bar(props)
+    assert.equal(one(root, 'oc-send').props.disabled, true, JSON.stringify(props))
+    assert.equal(keyOn(root).prevented, true, 'Enter never adds a line to a bar that cannot send')
+    one(root, 'oc-send').props.onClick()
+  }
+  assert.deepEqual(sends, ['On my way'])
+  // The field is the owner's text: a change goes to onChange as text.
+  const changes = []
+  root = barOf({ value: '', onChange: next => changes.push(next), onSend: () => {}, label: 'Reply' }, t).draw()
+  ofType(root, 'textarea')[0].props.onChange({ target: { value: 'Hi' } })
+  assert.deepEqual(changes, ['Hi'])
+  assert.ok(ui.CHANNELS_CSS.includes('max-height:138px') && ui.CHANNELS_CSS.includes('field-sizing:content'), 'the field grows to about six lines, then scrolls')
+})
+
+test('the emoji button opens about forty emoji; a pick goes in at the caret, or in place of the selection, and Escape closes the picker', async (t) => {
+  reset()
+  assert.equal(ui.EMOJI.length, 40)
+  assert.equal(new Set(ui.EMOJI).size, 40)
+  assert.deepEqual(plain(ui.insertAt('Hello world', '😀', 5)), { text: 'Hello😀 world', caret: 7 })
+  assert.deepEqual(plain(ui.insertAt('Hello world', '👍', 0, 5)), { text: '👍 world', caret: 2 })
+  assert.deepEqual(plain(ui.insertAt('Hi', '✨')), { text: 'Hi✨', caret: 3 })
+  assert.deepEqual(plain(ui.insertAt('Hi', '✨', 9, -3)), { text: '✨', caret: 1 })
+  const view = pane({ params: { threadId: 't1', chatId: CHAT_1 }, sessionId: 's1', useRoster: useRosterOf(hooked([THREAD(1)])) }, t)
+  let root = await drawn(view)
+  const opener = () => one(composerOf(root), 'oc-bar-emoji')
+  assert.deepEqual([opener().props['aria-label'], opener().props['aria-expanded'], all(root, 'oc-emoji').length], ['Emoji', false, 0])
+  typed(root, 'Hello world')
+  root = await drawn(view)
+  opener().props.onClick()
+  root = await drawn(view)
+  const picker = one(composerOf(root), 'oc-emoji')
+  assert.deepEqual([picker.props.role, picker.props['aria-label'], opener().props['aria-expanded']], ['group', 'Pick an emoji', true])
+  assert.deepEqual(all(picker, 'oc-emoji-pick').map(button => text(button)), [...ui.EMOJI])
+  // The caret after "Hello": the pick goes there, and the picker stays open for another.
+  const field = boxOf(root).props.ref.current
+  Object.assign(field, { selectionStart: 5, selectionEnd: 5 })
+  all(picker, 'oc-emoji-pick')[0].props.onClick()
+  root = await drawn(view)
+  assert.equal(boxOf(root).props.value, 'Hello😀 world')
+  // A selection is replaced by the pick.
+  Object.assign(field, { selectionStart: 0, selectionEnd: 5 })
+  all(one(root, 'oc-emoji'), 'oc-emoji-pick').find(button => text(button) === '👍').props.onClick()
+  root = await drawn(view)
+  assert.equal(boxOf(root).props.value, '👍😀 world')
+  // Escape closes it; Enter sends the text with its emoji, on the pane's own path.
+  one(root, 'oc-emoji').props.onKeyDown({ key: 'Escape', preventDefault() {} })
+  root = await drawn(view)
+  assert.deepEqual([all(root, 'oc-emoji').length, opener().props['aria-expanded']], [0, false])
+  key(root)
+  root = await drawn(view)
+  assert.deepEqual(asked('omni-phone-send'), [['omni-phone-send', { threadId: 't1', text: '👍😀 world' }]])
+})
+
+test('the bar draws no attach "+" and no microphone: its only controls are the emoji button, the field and Send', async (t) => {
+  reset()
+  const view = pane({ params: { threadId: 't1', chatId: CHAT_1 }, sessionId: 's1', useRoster: useRosterOf(hooked([THREAD(1)])) }, t)
+  const root = await drawn(view)
+  const bar = one(composerOf(root), 'oc-bar')
+  assert.deepEqual(nodes(bar).filter(node => ['button', 'textarea', 'input'].includes(node.type)).map(node => [node.type, node.props['aria-label']]), [['button', 'Emoji'], ['textarea', 'Your message'], ['button', 'Send']])
+  assert.deepEqual([view.keys('PlusIcon'), view.keys('MicIcon'), view.keys('VoiceIcon'), view.keys('PaperclipIcon')], [[], [], [], []])
+  assert.equal(nodes(root).some(node => /attach|microphone|record|voice/i.test(String(node.props?.['aria-label'] ?? '') + String(node.props?.title ?? ''))), false)
+})
+
+test('the chat page draws the same header, log and bar; its bar sends on the page\'s own path (omni-send), Enter and Shift+Enter as in the pane', async (t) => {
+  reset()
+  const chat = { id: 'c-ana', channelId: 'wa', name: 'Ana Lima', initials: 'AL', at: AT, unread: 0, avatarUrl: null }
+  withOverview(t, { preview: false, source: { kind: 'live', origin: 'omni.example.com' }, abilities: { send: true }, channels: [SUPPORT], chats: [chat], chatId: chat.id, messages: { [chat.id]: [{ ...MESSAGES[5], id: 'x1', status: 'delivered' }] } })
+  const view = mount(() => react.createElement(ui.ChatPage, { actions: { selectPanel() {} } }))
+  t.after(() => view.unmount())
+  let root = await drawn(view)
+  assert.deepEqual(one(root, 'oc-chat').children.map(child => child.props.className.split(' ')[0]), ['oc-chat-head', 'oc-thread', 'oc-bar-wrap'])
+  assert.deepEqual([text(one(root, 'oc-chat-name')), text(one(root, 'oc-chat-status'))], ['Ana Lima', 'Telegram · Support line'])
+  assert.equal(one(root, 'oc-tick').props['data-status'], 'delivered')
+  const field = () => ofType(one(root, 'oc-bar'), 'textarea')[0]
+  assert.deepEqual([field().props.placeholder, field().props['aria-label']], ['Reply on Telegram', 'Reply'])
+  field().props.onChange({ target: { value: 'See you at 10.' } })
+  root = await drawn(view)
+  assert.equal(keyOn(root, { shiftKey: true }).prevented, false)
+  assert.deepEqual(asked('omni-send'), [])
+  assert.equal(keyOn(root).prevented, true)
+  root = await drawn(view)
+  assert.deepEqual(asked('omni-send'), [['omni-send', { chatId: 'c-ana', text: 'See you at 10.' }]])
+  assert.equal(field().props.value, '')
+  assert.deepEqual([view.keys('PlusIcon'), view.keys('MicIcon')], [[], []])
 })
