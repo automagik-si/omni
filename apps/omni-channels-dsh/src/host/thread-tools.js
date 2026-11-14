@@ -35,9 +35,21 @@ import { NEEDS_NEWER_TEAM } from './resume-hook.js'
 import { NOT_LINKED } from './thread-keys.js'
 import { automationAsk } from './standing-runs.js'
 import { setReadOnly } from './subscriptions.js'
-import { ANSWER_CHAT_TOOLS, answerSettingsOf, isAnswerChild, KNOWLEDGE_TOOLS, permissionsOf, servedToolNamesOf, SHARED_NOTES_MAX, THREAD_DEFAULTS, threadDefaultsOf, THREAD_TOOLS } from './threads.js'
+import { ANSWER_CHAT_TOOLS, answerSettingsOf, isAnswerChild, KNOWLEDGE_TOOLS, permissionsOf, SHARED_NOTES_MAX, THREAD_DEFAULTS, threadDefaultsOf, THREAD_TOOLS } from './threads.js'
 
 export { permissionsOf }
+
+// The tools an answer Session can be restricted to: the set DSH's tools.restrict() checks
+// (dsh-tools ToolsService.view(agent).restrictableNames, the Agent being its scope's key). It
+// holds the global registry and what the Session's agent preset registers, which is where a
+// web host serves read, read_image, glob and grep, and no restriction narrows it, this
+// plugin's own included, so a remount can still add a tool the preset has. The Session's own
+// registrations are not in it (#1704's person tools, admitted by prefix below).
+export function restrictableToolNamesOf(agent) {
+  const names = typeof agent?.ctx?.tools?.view === 'function' ? agent.ctx.tools.view(agent)?.restrictableNames : undefined
+  if (typeof names?.has !== 'function') throw new Error('This host cannot verify which answer tools are served.')
+  return names
+}
 
 // DSH's Auto review preset (dsh-experimental-auto-review): each call is reviewed by the
 // thread's own model before it runs with full access, and a denied one asks the user.
@@ -304,13 +316,13 @@ export function install(rt) {
     if (typeof agent?.ctx?.tools?.restrict !== 'function') throw new Error('This Session has no scoped tool registry.')
     const presets = ctx.get?.('permissionPresets')
     if (typeof presets?.current !== 'function') throw new Error('This host cannot verify read-only permissions.')
-    const served = servedToolNamesOf(ctx)
+    const served = restrictableToolNamesOf(agent)
     const missingChat = ANSWER_CHAT_TOOLS.find(name => !served.has(name))
     if (missingChat !== undefined) throw new Error(`The host does not serve answer chat tool "${missingChat}".`)
     const bot = rt.botOf(thread.ownerBotId)
     const answer = answerSettingsOf(bot)
     const configuredExtras = answer.allowedTools
-    // #1689: a knowledge folder adds those of its read tools the host serves, with no warning
+    // #1689: a knowledge folder adds those of its read tools the Session offers, with no warning
     // (staff did not pick them); the guard scopes each of their calls to the folder.
     const knowledge = answer.knowledgeFolder ? KNOWLEDGE_TOOLS.filter(name => served.has(name) && !configuredExtras.includes(name)) : []
     const allow = [...ANSWER_CHAT_TOOLS, ...configuredExtras.filter(name => {

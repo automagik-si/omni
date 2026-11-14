@@ -27,20 +27,11 @@ import { PERSON_HELD, personBindingRefusal, toolPrefixOf } from './person-bindin
 export const ANSWER_CHAT_TOOLS = Object.freeze(['thread_say', 'thread_react', 'thread_history', 'thread_picture', 'answer_chats', 'thread_needs_staff'])
 // Explicitly vetted, read-only local tools. Unknown tools never acquire authority by name.
 export const ANSWER_EXTRA_TOOLS = Object.freeze(['read', 'read_image', 'glob', 'grep'])
-// The host's global registry is the served set accepted by tools.restrict(). A scoped view can
-// already be narrowed by an earlier restriction, so it must not be used for answer admission.
-export function servedToolNamesOf(ctx) {
-  if (typeof ctx?.tools?.schemas !== 'function') throw new Error('This host cannot verify which answer tools are served.')
-  const schemas = ctx.tools.schemas()
-  if (!Array.isArray(schemas)) throw new Error('This host cannot verify which answer tools are served.')
-  return new Set(schemas.map(schema => schema?.name).filter(name => typeof name === 'string'))
-}
-// #1689: a bot's knowledge folder gives its children those of these the host serves (thread-
-// tools.js containAnswer), every call scoped to the folder (knowledgeRefusal there); staff set it
-// only through omni-answer-settings, and only while the host serves read.
+// #1689: a bot's knowledge folder gives its children those of these their Session offers
+// (thread-tools.js containAnswer), every call scoped to the folder (knowledgeRefusal there);
+// staff set it only through omni-answer-settings.
 export const KNOWLEDGE_TOOLS = Object.freeze(['read', 'glob', 'grep'])
 export const KNOWLEDGE_FOLDER_REFUSAL = 'The knowledge folder must be the absolute path of an existing folder.'
-export const KNOWLEDGE_NOT_SERVED = 'This DeepSeek Harness does not serve the read tool, so children could not read a knowledge folder. Leave the knowledge folder empty.'
 const knowledgeFolderOf = value => (typeof value === 'string' && isAbsolute(value) ? value : null)
 // RFC-0001 answer children train first: each send asks staff until staff, or an optional
 // graduation after N approved unchanged drafts in a row, switch the child to sending.
@@ -877,7 +868,6 @@ export function install(rt) {
     if (!value) return null
     const real = isAbsolute(value) ? await realpath(value).catch(() => null) : null
     if (real === null || !(await stat(real).catch(() => null))?.isDirectory()) throw refused(KNOWLEDGE_FOLDER_REFUSAL)
-    if (!servedToolNamesOf(ctx).has('read')) throw refused(KNOWLEDGE_NOT_SERVED)
     return real
   }
   ctx.effect(() => rt.hooks.endpoint('omni-answer-settings', async body => {
@@ -886,9 +876,6 @@ export function install(rt) {
     if (rt.readOnly?.() !== undefined) throw refused(rt.readOnly())
     const bot = rt.botOf(input.botId)
     if (bot?.kind !== 'omni') throw refused('Answer mode needs a channel bot.')
-    const served = servedToolNamesOf(ctx)
-    const unserved = [...new Set(input.allowedTools)].find(name => !served.has(name))
-    if (unserved !== undefined) throw refused(`Answer tool "${unserved}" is not served by this host.`)
     // Only threads with a chat on a channel the bot owns explicitly become its children; the
     // default bot's threads on channels it holds as the catch-all stay ordinary threads. Any
     // member counts, so a multi-chat thread is refused whichever channel its first chat is on.

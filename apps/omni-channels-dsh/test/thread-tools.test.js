@@ -26,9 +26,10 @@ import { MEDIA_FILE_BYTES } from '../src/host/omni.js'
 import { NEEDS_NEWER_TEAM } from '../src/host/resume-hook.js'
 import { NOT_LINKED } from '../src/host/thread-keys.js'
 import { RUNS_KEPT, isAskRun } from '../src/host/subscriptions.js'
-import { AUTO_PRESET, FREE_REACTIONS_DEFAULT, isFreeReaction, knowledgeRefusalOf, NOT_A_THREAD, permissionsOf, withoutThreadTools } from '../src/host/thread-tools.js'
-import { ANSWER_CHAT_TOOLS, ANSWER_EXTRA_TOOLS, KNOWLEDGE_FOLDER_REFUSAL, KNOWLEDGE_NOT_SERVED, THREAD_DEFAULTS, threadDefaultsOf, threadInstructions, THREAD_TOOLS } from '../src/host/threads.js'
+import { AUTO_PRESET, FREE_REACTIONS_DEFAULT, isFreeReaction, knowledgeRefusalOf, NOT_A_THREAD, permissionsOf, restrictableToolNamesOf, withoutThreadTools } from '../src/host/thread-tools.js'
+import { ANSWER_CHAT_TOOLS, ANSWER_EXTRA_TOOLS, KNOWLEDGE_FOLDER_REFUSAL, THREAD_DEFAULTS, threadDefaultsOf, threadInstructions, THREAD_TOOLS } from '../src/host/threads.js'
 import { matches } from '../src/host/omni-events.js'
+import { PRESET_TOOLS } from './team.js'
 import { answerBench, ANSWER_MASTER, askedOf, boot, CHAT, defaultAnswerState, ELSEWHERE, CHATS, dsh, flush, GROUP, guarded, homeFor, INSTANCE, keysOf, MESSAGE_IDS, OTHER_INSTANCE, PNG, preExecute, record, resetFetch, saved, signal, teamState, fakeOmni, until, use, watchedOmni } from './thread-fixture.js'
 
 afterEach(resetFetch)
@@ -1097,10 +1098,9 @@ test('SC4 answer children refuse forged tools, raw API and wrong-chat writes whi
   assert.match(await use(b, 'set_answer_shared_notes', id, { botId: ANSWER_MASTER, notes: 'escalate' }), /Only the owning/)
 })
 
-test('an answer child omits an extra the global host no longer serves and warns once per bot and tool', async t => {
+test('an answer child omits an extra neither its Session nor the global registry offers and warns once per bot and tool', async t => {
   const b = await answerBench(t, { allowedTools: ['read'] })
-  const globallyServed = b.ctx.tools.schemas()
-  b.ctx.tools.schemas = () => globallyServed.filter(schema => schema.name !== 'read')
+  b.fake.preset = PRESET_TOOLS.filter(name => name !== 'read')
   const warned = []
   b.channels.warn = (...args) => { warned.push(args) }
   const child = await b.child()
@@ -1112,6 +1112,18 @@ test('an answer child omits an extra the global host no longer serves and warns 
   assert.notEqual((await preExecute(b, 'thread_say', child.sessionId, { text: 'hello' })).kind, 'deny')
 })
 
+test('an answer child gets the allowed file tools its Session preset offers though the global registry has none of them, with no warning', async t => {
+  const b = await answerBench(t, { allowedTools: ['read', 'read_image', 'glob', 'grep'] })
+  const global = new Set(b.ctx.tools.schemas().map(schema => schema.name))
+  assert.deepEqual(PRESET_TOOLS.filter(name => global.has(name)), [])
+  const warned = []
+  b.channels.warn = (...args) => { warned.push(args) }
+  const child = await b.child()
+  assert.deepEqual(b.restricts.at(-1).filter.allow, [...ANSWER_CHAT_TOOLS, 'read', 'read_image', 'glob', 'grep'])
+  assert.deepEqual(warned, [])
+  assert.equal((await preExecute(b, 'read', child.sessionId, { file_path: '/srv/answers/faq.md' })).kind, 'allow')
+})
+
 test('an answer child fails closed when a chat tool is not globally served', async t => {
   const b = await answerBench(t)
   const globallyServed = b.ctx.tools.schemas()
@@ -1120,22 +1132,53 @@ test('an answer child fails closed when a chat tool is not globally served', asy
   assert.equal(b.channels.threads.list().length, 0)
 })
 
-test('answer save refuses an extra that is not globally served', async t => {
+test('answer save takes vetted file tools and a knowledge folder on a host whose global registry has none of them, and still refuses an unknown tool and a bad path', async t => {
   const b = await answerBench(t)
-  const globallyServed = b.ctx.tools.schemas()
-  b.ctx.tools.schemas = () => globallyServed.filter(schema => schema.name !== 'read')
-  await assert.rejects(b.call('omni-answer-settings', { ...b.settings, allowedTools: ['read'] }), /Answer tool "read" is not served/)
-  assert.deepEqual(b.view().omniAnswers[ANSWER_MASTER].allowedTools, [])
+  const global = new Set(b.ctx.tools.schemas().map(schema => schema.name))
+  assert.deepEqual(PRESET_TOOLS.filter(name => global.has(name)), [])
+  const { kb } = knowledgeFiles(t)
+  assert.equal((await b.call('omni-answer-settings', { ...b.settings, allowedTools: ['read', 'grep'], knowledgeFolder: kb })).knowledgeFolder, kb)
+  assert.deepEqual(b.view().omniAnswers[ANSWER_MASTER].allowedTools, ['read', 'grep'])
+  for (const name of ['write', 'bash', 'unknown_tool']) await assert.rejects(b.call('omni-answer-settings', { ...b.settings, allowedTools: [name] }), undefined, name)
+  await assert.rejects(b.call('omni-answer-settings', { ...b.settings, knowledgeFolder: 'answers/kb' }), { message: KNOWLEDGE_FOLDER_REFUSAL })
+  assert.deepEqual([saved(b.home).bots[ANSWER_MASTER].answer.allowedTools, saved(b.home).bots[ANSWER_MASTER].answer.knowledgeFolder], [['read', 'grep'], kb])
 })
 
-test('answer admission uses the global served set when an agent scope is already narrowed', async t => {
+test('an answer Session its earlier restriction narrowed gets grep once settings add it', async t => {
   const b = await answerBench(t, { allowedTools: ['read'] })
   const child = await b.child()
-  const globallyServed = b.ctx.tools.schemas()
-  const fresh = b.freshAgent(child.sessionId)
-  fresh.ctx.tools.schemas = () => globallyServed.filter(schema => schema.name !== 'read')
-  await Promise.all((b.ctx.listeners.get('agent/created') ?? []).map(listener => listener({ agent: fresh })))
-  assert.deepEqual(b.restricts.filter(entry => entry.agent === fresh).at(-1).filter.allow, [...ANSWER_CHAT_TOOLS, 'read'])
+  const agent = b.agentOf(child.sessionId)
+  assert.deepEqual(b.restricts.at(-1).filter.allow, [...ANSWER_CHAT_TOOLS, 'read'])
+  // What the Session sees now lacks grep; what it can be restricted to does not.
+  assert.equal(agent.ctx.tools.schemas().some(schema => schema.name === 'grep'), false)
+  await b.call('omni-answer-settings', { ...b.settings, allowedTools: ['read', 'grep'] })
+  assert.equal((await preExecute(b, 'grep', child.sessionId, { pattern: 'returns' })).kind, 'allow')
+  assert.deepEqual(b.restricts.filter(entry => entry.agent === agent).at(-1).filter.allow, [...ANSWER_CHAT_TOOLS, 'read', 'grep'])
+})
+
+// DSH's real registry (dsh-tools, dsh-scope) as a web host composes it: the file tools are
+// registered by the Session's agent preset, a scope its Agent is parented to, never globally.
+test('on DSH\'s real tool registry an answer child is restricted to the file tools its agent preset registers, and a remount adds grep after that restriction', async t => {
+  const b = await answerBench(t, { allowedTools: ['read'] })
+  const real = await realTools('native')
+  for (const name of ANSWER_CHAT_TOOLS) real.ctx.tools.register(b.ctx.registeredTools.get(name))
+  const presetKey = {}
+  const preset = createScope(real.ctx, presetKey)
+  for (const name of PRESET_TOOLS) preset.ctx.tools.register(real.stub(name))
+  const child = await b.child()
+  const agent = { id: child.sessionId, session: { id: child.sessionId } }
+  agent.ctx = createScope(real.ctx, agent, { parent: presetKey }).ctx
+  const warned = []
+  b.channels.warn = (...args) => { warned.push(args) }
+  assert.deepEqual(PRESET_TOOLS.filter(name => real.ctx.tools.get(name) !== undefined), [])
+  assert.deepEqual([...restrictableToolNamesOf(agent)].sort(), [...ANSWER_CHAT_TOOLS, ...PRESET_TOOLS].sort())
+  const visible = () => [...real.ctx.tools.view(agent).visible.keys()].sort()
+  await Promise.all((b.ctx.listeners.get('agent/created') ?? []).map(listener => listener({ agent })))
+  assert.deepEqual(visible(), [...ANSWER_CHAT_TOOLS, 'read'].sort())
+  await b.call('omni-answer-settings', { ...b.settings, allowedTools: ['read', 'grep'] })
+  assert.equal((await preExecute({ ...b, agentOf: () => agent }, 'grep', child.sessionId, { pattern: 'returns' })).kind, 'allow')
+  assert.deepEqual(visible(), [...ANSWER_CHAT_TOOLS, 'read', 'grep'].sort())
+  assert.deepEqual(warned, [])
 })
 
 test('SC5 isolated and collective visibility never widen send keys and narrow live children immediately', async t => {
@@ -1183,12 +1226,9 @@ function knowledgeFiles(t) {
   symlinkSync(join(files.outside, 'not-yet.txt'), join(files.kb, 'dangling.txt'))
   return files
 }
-// The host's global list (ctx.tools.schemas): every tool the plugin registered, chat tools
-// included, and of DSH's read tools only `names`.
-const served = (b, names = ANSWER_EXTRA_TOOLS) => {
-  const others = [...b.ctx.registeredTools.keys()].filter(name => !ANSWER_EXTRA_TOOLS.includes(name))
-  b.ctx.tools.schemas = () => [...others, ...names].map(name => ({ name }))
-}
+// Of DSH's read tools, the child's Session offers only `names`, from its agent preset; the
+// global registry has none of them (team.js).
+const served = (b, names = ANSWER_EXTRA_TOOLS) => { b.fake.preset = names }
 async function knowledgeBench(t, { allowedTools = [] } = {}) {
   const b = await answerBench(t, { allowedTools })
   served(b)
@@ -1315,7 +1355,7 @@ test('#1689 with read and read_image switched on by staff, a folder scopes them 
   assert.equal('knowledgeFolder' in saved(b.home).bots[ANSWER_MASTER].answer, false)
 })
 
-test('#1689 the knowledge folder is set only by staff settings, as the real path of an existing folder on a host that serves read, and persists', async t => {
+test('#1689 the knowledge folder is set only by staff settings, as the real path of an existing folder, and persists', async t => {
   const b = await answerBench(t)
   served(b)
   const { base, kb } = knowledgeFiles(t)
@@ -1334,9 +1374,10 @@ test('#1689 the knowledge folder is set only by staff settings, as the real path
   // The model-callable shared-notes tool takes no folder.
   assert.match(await use(b, 'set_answer_shared_notes', ANSWER_MASTER, { botId: ANSWER_MASTER, notes: 'SHARED', knowledgeFolder: '/' }), /Give valid ids/)
   assert.equal(saved(b.home).bots[ANSWER_MASTER].answer.knowledgeFolder, kb)
-  // A host that does not serve read refuses a folder, and still lets staff clear it.
+  // The save judges no Session's tools: one whose Sessions lack read still takes the folder
+  // (each child gets what its own Session offers), and still lets staff clear it.
   served(b, ['glob', 'grep'])
-  await assert.rejects(b.call('omni-answer-settings', { ...b.settings, knowledgeFolder: kb }), { message: KNOWLEDGE_NOT_SERVED })
+  assert.equal((await b.call('omni-answer-settings', { ...b.settings, knowledgeFolder: kb })).knowledgeFolder, kb)
   assert.equal(saved(b.home).bots[ANSWER_MASTER].answer.knowledgeFolder, kb)
   served(b)
   await b.channels.save()

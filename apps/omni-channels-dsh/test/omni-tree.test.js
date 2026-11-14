@@ -8,7 +8,7 @@ import { build } from 'esbuild'
 import { isOmniBot } from '../src/client/omni-store.js'
 import { STRINGS } from '../src/client/strings.js'
 import { NEEDS_NEWER_TEAM, TEAM_CONTRACT } from '../src/host/resume-hook.js'
-import { KNOWLEDGE_FOLDER_REFUSAL, KNOWLEDGE_NOT_SERVED, SHARED_NOTES_MAX } from '../src/host/threads.js'
+import { KNOWLEDGE_FOLDER_REFUSAL, SHARED_NOTES_MAX } from '../src/host/threads.js'
 import { BEING_CUT, NOT_LINKED, OTHER_OMNI, WAITING } from '../src/host/thread-keys.js'
 import { WORKER_MOVED } from '../src/host/subscriptions.js'
 import { all, bundleClient, byLabel, classOf, mount, nodes, one, plain, react, settle, text } from './client-stand-in.js'
@@ -1354,7 +1354,7 @@ test('#1689 answer settings name a knowledge folder in a text field with its not
   const cleared = (await save())[1]
   assert.deepEqual([cleared.knowledgeFolder, cleared.allowedTools], [null, ['read_image']])
   // The host's refusal reaches staff as it words it, and the settings stay open.
-  for (const refusal of [KNOWLEDGE_FOLDER_REFUSAL, KNOWLEDGE_NOT_SERVED]) {
+  for (const refusal of [KNOWLEDGE_FOLDER_REFUSAL]) {
     answer = () => { throw new Error(refusal) }
     nodes(view.draw()).find(node => node.type === 'button' && text(node) === 'Answer mode').props.onClick()
     await settle()
