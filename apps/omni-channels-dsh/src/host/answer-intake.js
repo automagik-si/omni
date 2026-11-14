@@ -31,7 +31,7 @@ function tooOld(raw, minutes) {
   return at !== undefined && Date.now() - at > minutes * 60_000
 }
 // #1706: a sender Omni knows only by their lid, with no phone beside it yet.
-const lidAddressed = (row, raw, primary) => primary.endsWith('@lid') || raw.addressingMode === 'lid' || raw.senderIsLid === true
+export const lidAddressed = (row, raw, primary) => primary.endsWith('@lid') || raw.addressingMode === 'lid' || raw.senderIsLid === true
   || [row.chatId, raw.key?.remoteJid].some(jid => typeof jid === 'string' && jid.endsWith('@lid'))
 
 export function answerIntake(rt) {

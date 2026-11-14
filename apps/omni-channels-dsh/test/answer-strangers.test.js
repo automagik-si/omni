@@ -101,7 +101,8 @@ async function recheck(t, b, ms) {
 test('stranger reply: with no reply set, a sender no rule lets in is refused in silence and a lid-only one is kept as before', async t => {
   const b = await bench(t, { text: null })
   await b.deliver(stranger(1))
-  assert.deepEqual([b.omniState.sends, requests(b), b.team.state.omniStrangerReplies ?? {}], [[], [], {}])
+  // #1716 item 8b: noted as a request even so.
+  assert.deepEqual([b.omniState.sends, requests(b).map(row => [row.senders, row.count]), b.team.state.omniStrangerReplies ?? {}], [[], [[[STRANGER], 1]], {}])
   b.omniState.externalId = `${LID}@lid`
   await b.deliver(lidOnly(2))
   await recheck(t, b, 2_000)
@@ -359,10 +360,69 @@ test('stranger reply: the day\'s marks keep the newest 5000, the requests the ne
   rt.save = async () => {}
   assert.equal(await rt.answerStranger({ ...row, chatUuid: 'retried' }, 'bot'), true)
   assert.deepEqual([sends.length, 'i:retried' in state.omniStrangerReplies], [2, true])
-  // A bot with no reply set, or with answer mode off: nothing is noted or sent.
+  // A bot with answer mode off: nothing is noted or sent. #1716 item 8b: one with no reply set
+  // notes the request and sends nothing; the message is not taken.
   rt.botOf = id => (id === 'bot' ? { kind: 'omni', answer: { enabled: false, strangerReply: REPLY } } : undefined)
   assert.equal(await rt.answerStranger({ ...row, chatUuid: 'other' }, 'bot'), false)
+  assert.deepEqual([sends.length, 'other' in state.omniAnswerRequests.bot], [2, false])
   rt.botOf = id => (id === 'bot' ? { kind: 'omni', answer: { enabled: true } } : undefined)
   assert.equal(await rt.answerStranger({ ...row, chatUuid: 'other' }, 'bot'), false)
-  assert.deepEqual([sends.length, 'other' in state.omniAnswerRequests.bot], [2, false])
+  assert.deepEqual([sends.length, 'other' in state.omniAnswerRequests.bot], [2, true])
+})
+
+// #1716 item 8a: the request rows, as a save that fails must leave them.
+test('stranger reply: a save that fails takes the request back, the row the bound pushed out too, so the rows and counts stay as they were', async () => {
+  const warned = []
+  const state = { omniStrangerReplies: {}, omniAnswerRequests: { bot: {} } }
+  const at = Date.now()
+  for (let index = 0; index < REQUESTS_MAX; index += 1) state.omniAnswerRequests.bot[`old-${index}`] = { instanceId: 'i', chatUuid: `old-${index}`, senders: ['x'], text: 'x', firstAt: at - 1_000 + index, lastAt: at - 1_000 + index, count: 1 }
+  let text = REPLY
+  const rt = {
+    state, ctx: { effect: fn => fn() }, hooks: { endpoint: () => {} },
+    load: async () => {}, save: async () => { throw new Error('disk full') }, warn: (...args) => { warned.push(args) },
+    botOf: id => (id === 'bot' ? { kind: 'omni', answer: { enabled: true, ...(text ? { strangerReply: text } : {}) } } : undefined),
+    omniRequest: async (method) => (method === 'POST' ? { ok: true } : reply({ instanceId: 'i', chatUuid: 'x', chatType: 'dm', externalId: `${STRANGER}@s.whatsapp.net` })),
+  }
+  installStrangers(rt)
+  const before = structuredClone(state.omniAnswerRequests.bot)
+  const row = { instanceId: 'i', chatUuid: 'new', metadata: { from: STRANGER }, textContent: 'Can I join?' }
+  const known = { ...row, chatUuid: `old-${REQUESTS_MAX - 1}`, metadata: { from: PHONE } }
+  // With a reply set: a new chat (which pushes the oldest row out) and a known one; both throw.
+  await assert.rejects(rt.answerStranger(row, 'bot'), /disk full/)
+  await assert.rejects(rt.answerStranger(known, 'bot'), /disk full/)
+  assert.deepEqual(state.omniAnswerRequests.bot, before)
+  // With none set: the same, warned instead of thrown.
+  text = null
+  assert.equal(await rt.answerStranger(row, 'bot'), false)
+  assert.equal(await rt.answerStranger(known, 'bot'), false)
+  assert.deepEqual(state.omniAnswerRequests.bot, before)
+  assert.equal(warned.filter(args => /saving a request row failed/.test(args[0])).length, 2)
+  // Saved, each message counts once.
+  rt.save = async () => {}
+  assert.equal(await rt.answerStranger(row, 'bot'), false)
+  assert.equal(await rt.answerStranger(known, 'bot'), false)
+  assert.equal(Object.keys(state.omniAnswerRequests.bot).length, REQUESTS_MAX)
+  assert.equal('old-0' in state.omniAnswerRequests.bot, false)
+  assert.deepEqual([state.omniAnswerRequests.bot.new.count, state.omniAnswerRequests.bot[known.chatUuid].count, state.omniAnswerRequests.bot[known.chatUuid].senders], [1, 2, ['x', PHONE]])
+})
+
+// #1716 item 8b.
+test('stranger reply: with no reply set, a kept lid-only sender is noted once, at the 30 s check; nothing is sent and the keep is as before', async t => {
+  const b = await bench(t, { text: null, externalId: `${LID}@lid` })
+  await b.deliver(lidOnly(1))
+  await recheck(t, b, 2_000)
+  await recheck(t, b, 8_000)
+  assert.deepEqual(requests(b), [])
+  await recheck(t, b, 20_000)
+  assert.deepEqual(requests(b).map(row => [row.senders, row.text, row.count]), [[[LID], 'Can I join? (1)', 1]])
+  await until(() => Object.keys(saved(b.home).omniAnswerRequests?.[ANSWER_MASTER] ?? {}).length === 1)
+  // The checks each minute after note nothing more.
+  await recheck(t, b, 60_000)
+  await recheck(t, b, 60_000)
+  assert.deepEqual(requests(b).map(row => row.count), [1])
+  // #1706 unchanged: still kept, marked for staff and warned once; nothing sent, no child.
+  assert.deepEqual(kept(b).map(entry => [entry.row.id, entry.waiting]), [['lid-1', true]])
+  assert.equal(staffWarnings(b).length, 1)
+  assert.deepEqual(b.omniState.sends, [])
+  assert.equal(b.channels.threads.byChat(CHAT), undefined)
 })
