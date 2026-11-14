@@ -10,13 +10,14 @@ import { apply as applyTeam, createRuntime as createTeam } from '@automagik/bots
 import { fakeContext as coreFakeContext } from '@automagik/bots-dsh/test/fake-ctx.js'
 import { apply, createRuntime } from '../index.js'
 
-// The real host's global registry serves the plugin's tools alongside the vetted
-// read-only tools. Keep the fake registry aligned, while individual tests may
-// replace `ctx.tools.schemas` to model a narrower host or an earlier restriction.
+// The host as a DSH web host runs: its global registry (`ctx.tools.schemas`) holds what
+// plugins register globally, this plugin's tools among them, and not the file tools; each
+// Session gets those from its agent preset (PRESET_TOOLS; thread-fixture.js's Sessions model
+// it). Tests may replace `ctx.tools.schemas` to model a narrower host.
+export const PRESET_TOOLS = Object.freeze(['read', 'read_image', 'glob', 'grep'])
 export function fakeContext(options) {
   const ctx = coreFakeContext(options)
-  const served = ['read', 'read_image', 'glob', 'grep']
-  ctx.tools.schemas = () => [...new Set([...ctx.registeredTools.keys(), ...served])].map(name => ({ name }))
+  ctx.tools.schemas = () => [...ctx.registeredTools.keys()].map(name => ({ name }))
   return ctx
 }
 
