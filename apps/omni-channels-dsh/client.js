@@ -17320,7 +17320,9 @@ function StrangerRequests({ botId }) {
       { key: request.chatUuid, className: "ot-request" },
       (0, import_react16.createElement)("span", { className: "ot-request-who", title: (request.senders ?? []).join(", ") }, (request.senders ?? []).join(" · ")),
       (0, import_react16.createElement)("span", { className: "ot-request-text", title: request.text }, request.text),
-      (0, import_react16.createElement)("span", { className: "ot-picker-at" }, `${relativeShort(request.lastAt)} · ${messages(request.count)}`)
+      (0, import_react16.createElement)("span", { className: "ot-picker-at" }, `${relativeShort(request.lastAt)} · ${messages(request.count)}`),
+      // #1716: a chat an invite code let in, so staff do not let them in again by hand.
+      request.admitted ? (0, import_react16.createElement)("span", { className: "ot-picker-tag" }, t("Let in by code")) : null
     )))
   );
 }
@@ -18719,7 +18721,8 @@ var STRINGS = {
   "The message before this one is still being sent.": "上一条消息仍在发送中。",
   "Could not reach Omni. Nothing was sent.": "无法连接 Omni。没有发送任何内容。",
   "Omni did not answer, so this message may have gone out. Check the chat before sending it again.": "Omni 没有回应，这条消息可能已经发出。再次发送前请先查看聊天。",
-  "The Verify token is not your Graph API access token. Connection alone does not verify the webhook; Meta must be able to reach this HTTPS URL.": "验证令牌不是 Graph API 访问令牌。连接成功不代表 Webhook 已验证；Meta 必须能够访问此 HTTPS URL。"
+  "The Verify token is not your Graph API access token. Connection alone does not verify the webhook; Meta must be able to reach this HTTPS URL.": "验证令牌不是 Graph API 访问令牌。连接成功不代表 Webhook 已验证；Meta 必须能够访问此 HTTPS URL。",
+  "Let in by code": "已凭邀请码加入"
 };
 
 // src/client/index.js

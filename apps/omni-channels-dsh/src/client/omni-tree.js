@@ -634,7 +634,9 @@ function StrangerRequests({ botId }) {
       : h('ul', { className: 'ot-requests' }, requests.map(request => h('li', { key: request.chatUuid, className: 'ot-request' },
         h('span', { className: 'ot-request-who', title: (request.senders ?? []).join(', ') }, (request.senders ?? []).join(' · ')),
         h('span', { className: 'ot-request-text', title: request.text }, request.text),
-        h('span', { className: 'ot-picker-at' }, `${relativeShort(request.lastAt)} · ${messages(request.count)}`)))))
+        h('span', { className: 'ot-picker-at' }, `${relativeShort(request.lastAt)} · ${messages(request.count)}`),
+        // #1716: a chat an invite code let in, so staff do not let them in again by hand.
+        request.admitted ? h('span', { className: 'ot-picker-tag' }, t('Let in by code')) : null))))
 }
 
 // Owner-only endpoint; no model tool can enable answer mode or widen its tools.

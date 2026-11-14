@@ -1499,3 +1499,25 @@ test('answer settings take the reply to people who are not let in, send it only 
   assert.deepEqual(rows.map(row => [text(one(row, 'ot-request-who')), text(one(row, 'ot-request-text')), /2 messages|1 message/.exec(text(row))?.[0]]),
     [['5500000000042', 'Can I join?', '2 messages'], ['100000000000042 · 5500000000043', 'Hello', '1 message']])
 })
+
+// #1716: a request whose chat an invite code let in says so, so staff do not let them in again.
+test('a request row an invite code let in reads "Let in by code"; the others do not', async t => {
+  calls.length = 0
+  const requests = [
+    { instanceId: CHANNEL_A.id, chatUuid: 'c7', senders: ['5500000000042'], text: 'Can I join?', firstAt: 2_000, lastAt: 3_000, count: 2, admitted: { at: 4_000, by: 'invite' } },
+    { instanceId: CHANNEL_A.id, chatUuid: 'c8', senders: ['5500000000043'], text: 'Hello', firstAt: 1_000, lastAt: 1_000, count: 1 },
+  ]
+  answer = endpoint => (endpoint === 'omni-answer-requests' ? { count: requests.length, requests } : {})
+  const view = mount(() => react.createElement(ui.AnswerSettings, { bot: { id: 'dedicated' }, value: {} }))
+  t.after(() => { view.unmount(); answer = () => ({}) })
+  nodes(view.draw()).find(node => node.type === 'button' && text(node) === 'Answer mode').props.onClick()
+  view.draw()
+  await settle()
+  const group = () => nodes(view.draw()).find(node => node.props?.['aria-label'] === 'Requests')
+  nodes(group()).find(node => node.type === 'button' && text(node) === 'Show').props.onClick()
+  view.draw()
+  await settle()
+  const rows = nodes(group()).filter(node => node.type === 'li')
+  assert.deepEqual(rows.map(row => nodes(row).filter(node => node.props?.className === 'ot-picker-tag').map(text)), [['Let in by code'], []])
+  assert.ok(Object.hasOwn(STRINGS, 'Let in by code'))
+})

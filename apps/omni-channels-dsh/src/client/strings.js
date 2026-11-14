@@ -774,4 +774,5 @@ export const STRINGS = {
   'Could not reach Omni. Nothing was sent.': '无法连接 Omni。没有发送任何内容。',
   'Omni did not answer, so this message may have gone out. Check the chat before sending it again.': 'Omni 没有回应，这条消息可能已经发出。再次发送前请先查看聊天。',
   'The Verify token is not your Graph API access token. Connection alone does not verify the webhook; Meta must be able to reach this HTTPS URL.': '验证令牌不是 Graph API 访问令牌。连接成功不代表 Webhook 已验证；Meta 必须能够访问此 HTTPS URL。',
+  'Let in by code': '已凭邀请码加入',
 }
