@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { canSend, canWrite, loadMessages, omniActions, omniStore, refreshLive } from '../src/client/omni-store.js'
+import { canSend, canWrite, loadMessages, omniActions, omniStore, refreshLive, sentAnswered, sentMessage, withSent } from '../src/client/omni-store.js'
 import { chatBench, theirRow } from './omni-chat-bench.js'
 import { until } from './until.js'
 
@@ -380,4 +380,41 @@ test('a send whose answer names no message id is matched to Omni\'s row by its t
   await loadMessages(call, chatId)
   assert.deepEqual(texts(), ['Thanks', 'Thanks'])
   assert.deepEqual(omniStore.getSnapshot().messages[chatId].map(message => message.id), bench.stored.map(row => row.id))
+})
+
+test('one stored row stands for one send: the same words sent twice stay two until each row comes, across reads (#1773)', async () => {
+  const chatId = '66666666-6666-4666-8666-666666666666'
+  const { bench, call, read, texts } = benchPage(chatId)
+  const omni = omniActions(() => {}, call)
+  // Both sends answer, with ids A and B, before Omni stores either row.
+  omni.sendText(chatId, 'Thanks')
+  await until(() => read.count === 1)
+  omni.sendText(chatId, 'Thanks')
+  await until(() => read.count === 2)
+  await settle()
+  assert.deepEqual(texts(), ['Thanks', 'Thanks'])
+  // Only row A comes: it stands for send A, and send B stays through every read until row B.
+  bench.persist(1)
+  for (let poll = 0; poll < 3; poll += 1) {
+    await loadMessages(call, chatId)
+    assert.deepEqual(texts(), ['Thanks', 'Thanks'], `read ${poll + 1} after row A`)
+  }
+  bench.persist()
+  await loadMessages(call, chatId)
+  assert.deepEqual(omniStore.getSnapshot().messages[chatId].map(message => message.id), bench.stored.map(row => row.id))
+})
+
+test('a send still waiting on its answer is never retired by the row of an earlier send with the same words (#1773)', () => {
+  const row = { id: 'row-a', from: 'you', fromMe: true, externalId: 'A', text: 'Thanks', at: 10 }
+  const sendA = sentAnswered(sentMessage('Thanks', [], 5), 'A')
+  const sendB = sentMessage('Thanks', [], 20)
+  const first = withSent([row], [sendA, sendB])
+  assert.deepEqual(first.left.map(message => message.id), [sendB.id])
+  // Later reads still hold only row A: it stood for send A, so it never stands for send B.
+  const second = withSent([row], first.left)
+  assert.deepEqual(second.left.map(message => message.id), [sendB.id])
+  assert.deepEqual(second.messages.map(message => message.id), ['row-a', sendB.id])
+  // A send that named its id is matched by that id alone.
+  const named = sentAnswered(sentMessage('Thanks', [], 3), 'C')
+  assert.deepEqual(withSent([{ ...row, id: 'row-x', externalId: 'X' }], [named]).left.map(message => message.id), [named.id])
 })

@@ -298,8 +298,10 @@ const markSeen = (seen, chats) => chats.map(chat => ((seen[chat.id] ?? -1) >= ch
 // stays on screen from the send until Omni's own row for it arrives. Omni stores a sent
 // message after its send answers (its message.sent consumer), so the reads right after a send
 // do not hold it yet. The row carries the send's message id as its externalId; a send whose
-// answer named no id matches a from-me row with its text that the chat did not show when it
-// was sent. Each row stands for one sent message. One never matched stays while the view does.
+// answer named no id (or has no answer yet) matches a from-me row with its text instead. A
+// row stands for one sent message only: `before` lists the rows that cannot stand for it, the
+// ones the chat showed when it was sent and each one that already stood for another, kept
+// across reads. One never matched stays while the view does.
 let sentCount = 0
 export function sentMessage(text, shown = [], at = Date.now()) {
   sentCount += 1
@@ -311,15 +313,17 @@ export const sentAnswered = (message, messageId) => ({ ...message, sending: fals
   local: { ...message.local, messageId: typeof messageId === 'string' && messageId !== '' ? messageId : null } })
 /** Omni's rows, with the sent messages (`local`) no row stands for yet: `left`. */
 export function withSent(rows, sent) {
-  const taken = new Set()
-  const take = (matches) => {
-    const row = rows.find(row => !taken.has(row) && row.from !== 'them' && matches(row))
-    if (row !== undefined) taken.add(row)
+  const taken = []
+  const take = (message, matches) => {
+    const row = rows.find(row => !taken.includes(row.id) && row.from !== 'them' && !message.local.before.includes(row.id) && matches(row))
+    if (row !== undefined) taken.push(row.id)
     return row !== undefined
   }
-  const left = sent
-    .filter(message => !(message.local.messageId !== null && take(row => row.externalId === message.local.messageId)))
-    .filter(message => !take(row => row.text === message.text && !message.local.before.includes(row.id)))
+  const kept = sent
+    .filter(message => !(message.local.messageId !== null && take(message, row => row.externalId === message.local.messageId)))
+    .filter(message => !(message.local.messageId === null && take(message, row => row.text === message.text)))
+  // The rows that stood for a send now never stand for another one.
+  const left = taken.length === 0 ? kept : kept.map(message => ({ ...message, local: { ...message.local, before: [...message.local.before, ...taken] } }))
   return { messages: left.length === 0 ? rows : [...rows, ...left].sort((a, b) => a.at - b.at), left }
 }
 

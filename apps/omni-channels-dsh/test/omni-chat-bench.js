@@ -46,9 +46,9 @@ export function chatBench({ chatId, instanceId = '33333333-3333-4333-8333-333333
     return [404, { error: { code: 'NOT_FOUND', message: `no route ${method} ${path}` } }]
   }
 
-  // Omni's message.sent consumer: each accepted send becomes its row.
-  const persist = () => {
-    for (const sent of queued.splice(0)) {
+  // Omni's message.sent consumer: each accepted send becomes its row (the first `count` of them).
+  const persist = (count = queued.length) => {
+    for (const sent of queued.splice(0, count)) {
       stored.push({
         id: randomUUID(), chatId, externalId: sent.externalId, source: 'realtime', isFromMe: true, senderDisplayName: null,
         messageType: 'text', textContent: sent.text, hasMedia: false, platformTimestamp: sent.at, createdAt: sent.at, deliveryStatus: 'sent',

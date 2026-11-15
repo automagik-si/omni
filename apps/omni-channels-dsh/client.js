@@ -11331,13 +11331,14 @@ var sentAnswered = (message, messageId) => ({
   local: { ...message.local, messageId: typeof messageId === "string" && messageId !== "" ? messageId : null }
 });
 function withSent(rows, sent) {
-  const taken = /* @__PURE__ */ new Set();
-  const take = (matches) => {
-    const row = rows.find((row2) => !taken.has(row2) && row2.from !== "them" && matches(row2));
-    if (row !== void 0) taken.add(row);
+  const taken = [];
+  const take = (message, matches) => {
+    const row = rows.find((row2) => !taken.includes(row2.id) && row2.from !== "them" && !message.local.before.includes(row2.id) && matches(row2));
+    if (row !== void 0) taken.push(row.id);
     return row !== void 0;
   };
-  const left = sent.filter((message) => !(message.local.messageId !== null && take((row) => row.externalId === message.local.messageId))).filter((message) => !take((row) => row.text === message.text && !message.local.before.includes(row.id)));
+  const kept = sent.filter((message) => !(message.local.messageId !== null && take(message, (row) => row.externalId === message.local.messageId))).filter((message) => !(message.local.messageId === null && take(message, (row) => row.text === message.text)));
+  const left = taken.length === 0 ? kept : kept.map((message) => ({ ...message, local: { ...message.local, before: [...message.local.before, ...taken] } }));
   return { messages: left.length === 0 ? rows : [...rows, ...left].sort((a, b2) => a.at - b2.at), left };
 }
 async function loadMessages(call2, chatId) {
