@@ -95,6 +95,11 @@ export type {
   UpdateChatBody,
   AddParticipantBody,
   ListChatMessagesParams,
+  ChatMessage,
+  ChatMessagesPage,
+  ChatMessagesPageParams,
+  ChatCoverage,
+  ChatCoverageParams,
   // Automation types
   Automation,
   ListAutomationsParams,
