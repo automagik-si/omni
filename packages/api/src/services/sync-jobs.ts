@@ -266,7 +266,14 @@ export class SyncJobService {
             .select()
             .from(syncJobs)
             .where(and(eq(syncJobs.instanceId, job.instanceId), eq(syncJobs.status, 'running')));
-          if (active.some((other) => other.id !== id && other.config.backfill)) return [];
+          // Legacy history jobs and chat backfills share the line's history callback slot.
+          if (
+            active.some(
+              (other) =>
+                other.id !== id && (other.config.backfill || other.type === 'messages' || other.type === 'all'),
+            )
+          )
+            return [];
         }
         return tx
           .update(syncJobs)

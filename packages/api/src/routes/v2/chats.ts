@@ -11,7 +11,7 @@ import type { ChannelType } from '@omni/core/types';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { checkInstanceAccess, resolveChatIdParam } from '../../lib/resolve-chat-id';
+import { checkInstanceAccess, resolveChatIdInKeyInstances, resolveChatIdParam } from '../../lib/resolve-chat-id';
 import { readBackfillCoverage } from '../../plugins/chat-backfill';
 import { clearAgentSession } from '../../plugins/session-cleaner';
 import { optionalDateParam } from '../../schemas/date-query';
@@ -692,7 +692,7 @@ export const listMessagesQuerySchema = z.object({
  */
 chatsRoutes.get('/:id/messages', zValidator('query', listMessagesQuerySchema), async (c) => {
   const raw = c.req.param('id');
-  const chatId = await resolveChatIdParam(c, raw);
+  const chatId = await resolveChatIdInKeyInstances(c, raw);
   if (chatId === null) return chatNotFoundResponse(c, raw);
   const { limit, before, after, mediaOnly, includeDeleted, cursor } = c.req.valid('query');
   const services = c.get('services');
@@ -720,7 +720,7 @@ export const chatCoverageQuerySchema = z.object({
  */
 chatsRoutes.get('/:id/coverage', zValidator('query', chatCoverageQuerySchema), async (c) => {
   const raw = c.req.param('id');
-  const chatId = await resolveChatIdParam(c, raw);
+  const chatId = await resolveChatIdInKeyInstances(c, raw);
   if (chatId === null) return chatNotFoundResponse(c, raw);
   const { from, to, includeDeleted } = c.req.valid('query');
 
@@ -744,7 +744,7 @@ export const chatBackfillParams = z.object({ id: z.string().min(1), jobId: z.str
 /** POST /chats/:id/backfill - Queue one chat history backfill for the chosen range */
 chatsRoutes.post('/:id/backfill', zValidator('json', chatBackfillSchema), async (c) => {
   const raw = c.req.param('id');
-  const chatId = await resolveChatIdParam(c, raw);
+  const chatId = await resolveChatIdInKeyInstances(c, raw);
   if (chatId === null) return chatNotFoundResponse(c, raw);
   const services = c.get('services');
   const chat = await chatForRoute(c, raw, chatId);
@@ -764,7 +764,7 @@ chatsRoutes.post('/:id/backfill', zValidator('json', chatBackfillSchema), async 
 /** GET /chats/:id/backfill/:jobId - Read chat backfill progress and coverage */
 chatsRoutes.get('/:id/backfill/:jobId', zValidator('param', chatBackfillParams), async (c) => {
   const { id: raw, jobId } = c.req.valid('param');
-  const chatId = await resolveChatIdParam(c, raw);
+  const chatId = await resolveChatIdInKeyInstances(c, raw);
   if (chatId === null) return chatNotFoundResponse(c, raw);
   const services = c.get('services');
   const chat = await chatForRoute(c, raw, chatId);
@@ -782,7 +782,7 @@ chatsRoutes.get('/:id/backfill/:jobId', zValidator('param', chatBackfillParams),
 /** POST /chats/:id/backfill/:jobId/cancel - Cancel a queued or fetching chat backfill */
 chatsRoutes.post('/:id/backfill/:jobId/cancel', zValidator('param', chatBackfillParams), async (c) => {
   const { id: raw, jobId } = c.req.valid('param');
-  const chatId = await resolveChatIdParam(c, raw);
+  const chatId = await resolveChatIdInKeyInstances(c, raw);
   if (chatId === null) return chatNotFoundResponse(c, raw);
   const services = c.get('services');
   const chat = await chatForRoute(c, raw, chatId);
