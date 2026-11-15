@@ -4579,7 +4579,11 @@ export class WhatsAppPlugin extends BaseChannelPlugin {
    * has no job: there the instance's `downloadMediaOnSync` (passed in the
    * connect options) decides, defaulting to off like the column (#1280).
    */
-  private shouldDownloadHistoryMedia(instanceId: string, syncState: { downloadMedia?: boolean } | undefined): boolean {
+  private shouldDownloadHistoryMedia(
+    instanceId: string,
+    syncState: { downloadMedia?: boolean; chatJid?: string } | undefined,
+  ): boolean {
+    if (syncState?.chatJid) return true;
     if (syncState?.downloadMedia !== undefined) return syncState.downloadMedia;
     return this.instances.get(instanceId)?.config.options?.downloadMediaOnSync === true;
   }

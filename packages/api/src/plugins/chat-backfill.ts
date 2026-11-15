@@ -38,6 +38,52 @@ export async function waitForBackfillTurn(options: {
 
 const mediaTypes = new Set(['image', 'audio', 'video', 'document', 'sticker']);
 
+async function storeBackfillMessage(
+  services: Services,
+  chatId: string,
+  message: HistorySyncMessage,
+  progress: SyncJobProgress,
+): Promise<void> {
+  const existing = await services.messages.getByExternalId(chatId, message.externalId);
+  const type = message.content.type;
+  if (mediaTypes.has(type)) {
+    if (message.content.localPath) progress.mediaDownloaded++;
+    else if (!existing?.mediaLocalPath) progress.mediaMissing = (progress.mediaMissing ?? 0) + 1;
+  }
+  if (existing) {
+    progress.duplicates++;
+    if (message.content.localPath && !existing.mediaLocalPath) {
+      await services.messages.update(existing.id, {
+        hasMedia: true,
+        mediaLocalPath: message.content.localPath,
+        mediaUrl: message.content.mediaUrl,
+        mediaMimeType: message.content.mimeType,
+      });
+    }
+    return;
+  }
+  await services.messages.create({
+    chatId: chatId,
+    externalId: message.externalId,
+    source: 'sync',
+    messageType: ['text', 'image', 'audio', 'video', 'document', 'sticker', 'contact', 'location', 'poll'].includes(
+      type,
+    )
+      ? (type as 'text' | 'image' | 'audio' | 'video' | 'document' | 'sticker' | 'contact' | 'location' | 'poll')
+      : 'text',
+    textContent: message.content.text ?? message.content.caption,
+    platformTimestamp: message.timestamp,
+    hasMedia: mediaTypes.has(type),
+    mediaMimeType: message.content.mimeType,
+    mediaUrl: message.content.mediaUrl,
+    mediaLocalPath: message.content.localPath,
+    senderPlatformUserId: message.from,
+    isFromMe: message.isFromMe,
+    rawPayload: message.rawPayload as Record<string, unknown>,
+  });
+  progress.stored++;
+}
+
 export async function processChatBackfill(options: {
   jobId: string;
   tenantId: string | null;
@@ -75,46 +121,17 @@ export async function processChatBackfill(options: {
         limit: 1,
       }),
     );
+    const seen = new Set<string>();
     const onMessage = async (message: HistorySyncMessage) => {
       if (message.chatId !== config.chatJid || (await cancelled())) return;
       if (message.timestamp < new Date(config.from) || message.timestamp > new Date(config.to)) return;
       progress.fetched++;
-      await scope(async () => {
-        const existing = await services.messages.getByExternalId(config.chatId, message.externalId);
-        if (existing) {
-          progress.duplicates++;
-          return;
-        }
-        const type = message.content.type;
-        await services.messages.create({
-          chatId: config.chatId,
-          externalId: message.externalId,
-          source: 'sync',
-          messageType: [
-            'text',
-            'image',
-            'audio',
-            'video',
-            'document',
-            'sticker',
-            'contact',
-            'location',
-            'poll',
-          ].includes(type)
-            ? (type as 'text' | 'image' | 'audio' | 'video' | 'document' | 'sticker' | 'contact' | 'location' | 'poll')
-            : 'text',
-          textContent: message.content.text ?? message.content.caption,
-          platformTimestamp: message.timestamp,
-          hasMedia: mediaTypes.has(type),
-          mediaMimeType: message.content.mimeType,
-          mediaUrl: message.content.mediaUrl,
-          mediaLocalPath: message.content.localPath,
-          senderPlatformUserId: message.from,
-          isFromMe: message.isFromMe,
-          rawPayload: message.rawPayload as Record<string, unknown>,
-        });
-        progress.stored++;
-      });
+      if (seen.has(message.externalId)) {
+        progress.duplicates++;
+        return;
+      }
+      seen.add(message.externalId);
+      await scope(() => storeBackfillMessage(services, config.chatId, message, progress));
     };
     // Structural extension avoids an API dependency on the channel implementation.
     const fetchOptions = {
@@ -122,7 +139,7 @@ export async function processChatBackfill(options: {
       until: new Date(config.to),
       count: 50,
       channelId: config.chatJid,
-      downloadMedia: false,
+      downloadMedia: true,
       anchors: [
         {
           chatJid: config.chatJid,

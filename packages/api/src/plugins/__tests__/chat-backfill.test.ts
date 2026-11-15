@@ -115,6 +115,55 @@ describe('chat backfill worker', () => {
     expect(f.job.status).toBe('cancelled');
     expect(f.stored).toHaveLength(0);
   });
+  test('always downloads media and counts available and missing files once each', async () => {
+    const f = fixture(async (_id, options) => {
+      expect((options as FetchHistoryOptions & { downloadMedia: boolean }).downloadMedia).toBe(true);
+      const image = {
+        externalId: 'image',
+        chatId: 'chat@jid',
+        from: 'person',
+        timestamp: new Date('2026-01-15'),
+        content: { type: 'image', localPath: 'line/image.png' },
+        isFromMe: false,
+        rawPayload: {},
+      };
+      await options.onMessage?.(image);
+      await options.onMessage?.(image);
+      await options.onMessage?.({ ...image, externalId: 'expired', content: { type: 'image' } });
+      await options.onRound?.({ round: 1, received: 3, oldestReached: image.timestamp.toISOString() });
+    });
+    await processChatBackfill(f.options);
+    expect(f.job.progress.mediaDownloaded).toBe(1);
+    expect(f.job.progress.mediaMissing).toBe(1);
+    expect(f.stored).toHaveLength(2);
+    expect(f.stored[1]).toMatchObject({ hasMedia: true, mediaLocalPath: undefined });
+  });
+  test('recovers missing media on an already stored message', async () => {
+    const f = fixture(async (_id, options) => {
+      await options.onMessage?.({
+        externalId: 'image',
+        chatId: 'chat@jid',
+        from: 'person',
+        timestamp: new Date('2026-01-15'),
+        content: { type: 'image', localPath: 'recovered.png' },
+        isFromMe: false,
+        rawPayload: {},
+      });
+    });
+    const updates: unknown[] = [];
+    f.options.services.messages.getByExternalId = async () => ({ id: 'existing', mediaLocalPath: null }) as never;
+    f.options.services.messages.update = async (_id, update) => {
+      updates.push(update);
+      return {} as never;
+    };
+    await processChatBackfill(f.options);
+    expect(f.stored).toEqual([]);
+    expect(updates).toEqual([
+      { hasMedia: true, mediaLocalPath: 'recovered.png', mediaUrl: undefined, mediaMimeType: undefined },
+    ]);
+    expect(f.job.progress.mediaDownloaded).toBe(1);
+    expect(f.job.progress.mediaMissing ?? 0).toBe(0);
+  });
   test('a channel without history ends immediately with a plain outcome', async () => {
     const f = fixture(async () => {
       throw new Error('must not fetch');

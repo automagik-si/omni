@@ -36,6 +36,7 @@ function createPlugin() {
     db: {} as never,
   });
   return plugin as unknown as {
+    shouldDownloadHistoryMedia: (instanceId: string, state: unknown) => boolean;
     processHistoryMessage: (instanceId: string, msg: WAMessage, syncState: unknown) => Promise<void>;
   };
 }
@@ -52,6 +53,44 @@ describe('history sync media (#1127)', () => {
     expect(received).toHaveLength(1);
     expect(received[0]?.content).toMatchObject({ type: 'image', mimeType: 'image/png' });
     expect(received[0]?.content.localPath).toBeUndefined();
+  });
+
+  it('chat backfills cannot disable media downloads', () => {
+    expect(createPlugin().shouldDownloadHistoryMedia('inst-1', { chatJid: 'chat', downloadMedia: false })).toBe(true);
+  });
+
+  it('a failed file stays a media row and publishes no message event', async () => {
+    const plugin = new WhatsAppPlugin();
+    const published: string[] = [];
+    const noop = () => {};
+    const logger = { debug: noop, info: noop, warn: noop, error: noop };
+    await plugin.initialize({
+      eventBus: {
+        publish: async (type: string) => {
+          published.push(type);
+        },
+      },
+      logger: { ...logger, child: () => logger },
+      storage: {},
+      config: {},
+      db: {},
+    } as never);
+    const received: unknown[] = [];
+    // Fail the declared size guard before disk I/O. No phone, service, or shared storage is used.
+    const message = imageMessage('expired-backfill', 1_600_000_000);
+    message.message!.imageMessage!.fileLength = 2 ** 40;
+    await (
+      plugin as unknown as { processHistoryMessage: (id: string, msg: WAMessage, state: unknown) => Promise<void> }
+    ).processHistoryMessage('inst-1', message, {
+      chatJid: message.key.remoteJid,
+      totalFetched: 0,
+      onMessage: (msg: unknown) => {
+        received.push(msg);
+      },
+    });
+    expect(received).toHaveLength(1);
+    expect(received[0]).toMatchObject({ content: { type: 'image' } });
+    expect(published).toEqual([]);
   });
 
   it('files downloaded media under the message month, not the current month', async () => {
