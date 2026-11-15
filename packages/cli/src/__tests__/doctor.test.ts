@@ -1742,7 +1742,7 @@ describe('two-responder doctor check', () => {
     [
       '403',
       new OmniApiError('Forbidden', 'FORBIDDEN', undefined, 403),
-      'Two-responder check unavailable; authenticated system:read access is required.',
+      'Two-responder check unavailable; it needs system:read and a server with GET /system/two-responders.',
     ],
     [
       'an older server',

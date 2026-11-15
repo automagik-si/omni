@@ -1434,7 +1434,8 @@ function describeResponder(consumer: TwoResponderConsumer): string {
 
 function twoRespondersError(error: unknown): string {
   if (error instanceof OmniApiError && (error.status === 401 || error.status === 403)) {
-    return 'Two-responder check unavailable; authenticated system:read access is required.';
+    // A server older than this check also answers 403: its scope map has no entry for the route.
+    return 'Two-responder check unavailable; it needs system:read and a server with GET /system/two-responders.';
   }
   if (error instanceof OmniApiError && error.status === 404) {
     return 'Two-responder check unavailable: this server has no GET /system/two-responders yet.';
