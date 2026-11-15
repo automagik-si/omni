@@ -309,6 +309,7 @@ test('apply registers its listeners, tools and effects after the team\'s, in a f
     'effect omni-channels: omni-answer-requests',
     'effect omni-channels: omni-code-lists',
     'effect omni-channels: omni-code-lists-add',
+    'effect omni-channels: omni-outside-check',
     'effect ds-bot: omni events view',
     'effect ds-bot: omni events',
     'effect omni-channels: omni-channel-abilities',

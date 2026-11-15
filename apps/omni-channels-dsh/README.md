@@ -165,6 +165,44 @@ check that fails, sends nothing: the message goes on as refused. Omni publishes 
 rule is written, so the rules themselves are the count: allow rules whose `metadata.source` is
 `invite` (`GET /access/rules?type=allow`).
 
+## Check a code with an outside service
+
+Under **Outside code check** in the answer settings, staff name an HTTPS service of their own
+that checks codes for one bot, on the `omni-outside-check` route (`{ botId, url?, secret?,
+pattern?, label?, tier?, refusalTexts? }`; null or empty clears a field, a field left out is
+kept):
+
+- the service's **URL** (https only) and a **secret**, written only: the route and the settings
+  answer everything but the secret (`secretSet` says whether one is set), and the secret is never
+  shown, logged or warned;
+- a **code pattern**, the same shape as a code list's. There is no default: until the URL, the
+  secret and the pattern are all set, nothing changes. With no prefix, nearly any word of the
+  pattern's length is a candidate, so most refused messages would be sent to the service; give the
+  pattern a prefix unless that is what you want;
+- optional steps, each skipped when empty: the **label** staff see on a request row the service
+  confirmed, a **tier** name written on that row, and **texts on refusal**, one per 4xx status,
+  that the person gets when the service answers with that status.
+
+When a sender that the allowlist refuses by default, or one Omni knows only by their lid, sends a
+message with a code of the pattern, and no code list let them in first, the plugin posts Omni's
+own event for that message to the service: `{ id, type: 'message.received', timestamp, metadata,
+payload: { externalId, chatId, from, senderName?, content: { text } } }`, with the raw text, a
+10-second timeout, no redirects, `Authorization: Bearer <secret>`, `X-Omni-Event-Id` (the same on
+every try) and a new `X-Omni-Delivery-Id` each try. The service matches the code itself; the
+pattern only decides whether to call, and one message is one call. Only an HTTP 200 with a `reply`
+(at most 1000 characters) is an answer: the reply goes word for word to the person's chat, once
+per message id (the newest 5000 ids are saved), and the chat's row under **Requests** is marked
+`confirmed` (with the tier, when one is set). The person stays not let in; no rule is written. A
+4xx with a refusal text set sends that text the same way, once; anything else sends nothing.
+
+The event waits only for the first try. A timeout, a network error or a 503 is tried again twice
+in the background, after about 2 and 10 seconds; after 3 such failures in a row the service is not
+called for 5 minutes. Whatever the answer, a message with such a code never gets the stranger
+reply; it is listed under **Requests**, and a sender known only by their lid is kept as before.
+The plugin makes at most 30 calls a minute, and a chat's calls share the code lists' 5 an hour. A
+blocked or admitted sender is never checked. A failure is warned once per bot, with its status
+only.
+
 ## Existing channel settings
 
 Open an existing channel to read its configuration groups, derived provider and assigned

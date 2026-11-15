@@ -813,4 +813,18 @@ export const STRINGS = {
   'The length is a whole number from {min} to {max}.': '长度是 {min} 到 {max} 之间的整数。',
   'This list\'s pattern is set; new codes must fit it.': '此列表的格式已确定；新代码必须符合它。',
   'Case never matters. A code stands alone in the message, not inside a longer word or number.': '不区分大小写。代码在消息中单独出现，不在更长的单词或数字之中。',
+  // #1742: the outside code check.
+  'Outside code check': '外部代码核对',
+  'A code of this pattern in the message of someone not let in is sent to this HTTPS address, and its reply goes to them. On only when the address, the secret and the pattern are all set.': '未获准加入的人在消息中附带的符合此格式的代码会发送到这个 HTTPS 地址，其回复会发给对方。只有地址、密钥和格式都设置后才会启用。',
+  'Check URL': '核对地址',
+  'Secret': '密钥',
+  'Type to replace': '输入以替换',
+  'Secret cleared.': '密钥已清除。',
+  'Label on a confirmed row': '已确认行的标签',
+  'Staff see it on a request row the service confirmed. Empty: no label.': '员工会在服务已确认的请求行上看到它。留空：不显示标签。',
+  'Tier name': '级别名称',
+  'Written on a request row the service confirmed. Empty: none.': '写入服务已确认的请求行。留空：不写入。',
+  'Texts on refusal': '拒绝时的文本',
+  'One "status = text" a line, for the service\'s 4xx answers; the person gets that text. Empty: nothing is sent.': '每行一个 "status = text"，对应服务的 4xx 回应；对方会收到该文本。留空：不发送任何内容。',
+  'Refusal texts line {n}: write a 4xx status = text.': '拒绝文本第 {n} 行：请写成 4xx 状态码 = 文本。',
 }

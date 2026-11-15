@@ -6,6 +6,7 @@ import { isOmniBot, omniActions, startLive, typeOf, unreadOf } from './omni-stor
 import { openPhone, requestPhone, threadName } from './omni-phone.js'
 import { call, hostText, icons, relativeShort, t } from './core.js'
 import { CODE_LISTS_CSS, CodeLists } from './code-lists.js'
+import { OUTSIDE_CHECK_CSS, OutsideCheck } from './outside-check.js'
 const { ChevronRightIcon, CloseIcon, DotsIcon, PlusIcon, SparkIcon } = icons
 
 // Under the Omni Bot's sidebar row: one collapsible item per channel of the linked Omni, each
@@ -608,7 +609,7 @@ function staffChatOptions(chats, threads, chosen, several) {
 
 // #1713: the people who wrote and were not let in (host answer-strangers.js), newest first;
 // read-only, read when staff open them.
-function StrangerRequests({ botId }) {
+function StrangerRequests({ botId, confirmedLabel }) {
   const [shown, setShown] = useState(false)
   const [requests, setRequests] = useState(null)
   const [problem, setProblem] = useState(null)
@@ -636,7 +637,9 @@ function StrangerRequests({ botId }) {
         h('span', { className: 'ot-request-text', title: request.text }, request.text),
         h('span', { className: 'ot-picker-at' }, `${relativeShort(request.lastAt)} · ${messages(request.count)}`),
         // #1732: a chat a code from a staff list let in, so staff do not let them in again by hand.
-        request.admitted ? h('span', { className: 'ot-picker-tag' }, t('Admitted by code')) : null))))
+        request.admitted ? h('span', { className: 'ot-picker-tag' }, t('Admitted by code')) : null,
+        // #1742: a chat whose code the bot's outside check confirmed, with the label staff set for it.
+        request.confirmed && confirmedLabel ? h('span', { className: 'ot-picker-tag' }, confirmedLabel) : null))))
 }
 
 // Owner-only endpoint; no model tool can enable answer mode or widen its tools.
@@ -727,7 +730,7 @@ export function AnswerSettings({ bot, value = {}, channels = [], threads = [] })
           staffOptions.map(option => h('option', { key: option.id, value: option.id }, option.label)))),
       h(Field, { label: 'Reply to people who are not let in', note: 'Sent once a day to each person no rule lets in. Empty: no reply.' },
         h('textarea', { className: 'bt-input bt-input-area ot-answer-stranger', maxLength: STRANGER_REPLY_MAX, value: strangerReply, onChange: event => setStrangerReply(event.target.value) })),
-      h(StrangerRequests, { botId: bot.id }),
+      h(StrangerRequests, { botId: bot.id, confirmedLabel: value.outsideCheck?.label ?? null }),
       h('div', { className: 'ot-answer-tools', role: 'group', 'aria-label': 'Children may also' },
         h('span', { className: 'bt-field-label', 'aria-hidden': true }, 'Children may also'),
         ANSWER_TOOLS.map(([name, label]) => h(SwitchRow, { key: name, label, title: name, on: allowedTools.includes(name), onChange: on => tool(name, on) }))),
@@ -740,6 +743,8 @@ export function AnswerSettings({ bot, value = {}, channels = [], threads = [] })
       h(Field, { label: t('Message when a code admits someone'), note: t('Sent to the person once a code from a list admits them; their child answers from their next message. Empty: no message, and the child answers the one with the code.') },
         h('textarea', { className: 'bt-input bt-input-area ot-answer-welcome', maxLength: CODE_WELCOME_MAX, value: codeWelcome, onChange: event => setCodeWelcome(event.target.value) })),
       h(CodeLists),
+      // #1742: a code from a person not let in is checked with this outside service (host answer-outside-check.js).
+      h(OutsideCheck, { botId: bot.id, value: value.outsideCheck }),
       h(Field, { label: 'Shared notes for collective children' },
         h('textarea', { className: 'bt-input bt-input-area', maxLength: SHARED_NOTES_MAX, value: sharedNotes, onChange: event => setSharedNotes(event.target.value) })),
       problem ? h('p', { className: 'ot-picker-problem', role: 'alert' }, hostText(problem)) : null,
@@ -997,4 +1002,4 @@ ${stackedRow('.ot-thread[data-answer]:has(.ot-thread-reason)')}
 @keyframes ot-in{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion:reduce){.ot-chats{transition:none}.ot-chats .ot-thread{animation:none}.ot-chevron{transition:none}.ot-thread-acts{transition:none}}
 body[data-omni-thread] .bt-voice,body[data-omni-thread] .bt-plus,body[data-omni-thread] .bt-composer-model,body[data-omni-thread] .bt-mw-dock,body[data-omni-thread] .bt-btw-dock{display:none!important}
-${CODE_LISTS_CSS}`
+${CODE_LISTS_CSS}${OUTSIDE_CHECK_CSS}`
