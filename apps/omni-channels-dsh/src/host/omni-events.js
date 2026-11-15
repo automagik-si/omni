@@ -2,7 +2,8 @@
 // starts a run for each match (subscriptions.js). Each kind of event has a durable consumer
 // on omni, named after this host; the host streams it (SSE), handles each event, then acks
 // its journal position. Delivery is at least once: a restart can replay an unacked row.
-// A consumer is streamed only while an active subscription needs its kind.
+// A consumer is streamed only while an active subscription needs its kind; the sync.* one, only
+// while a chat backfill is unfinished (backfill.js), whose rows it feeds and never the answers.
 import { hostname } from 'node:os'
 import { z } from 'zod'
 import { answerIntake } from './answer-intake.js'
@@ -46,6 +47,7 @@ function backoff(ms, signal) {
 export const STREAMS = [
   { suffix: 'own-reactions', eventType: 'reaction.received', kinds: ['reaction'], filters: [{ field: 'rawPayload.isFromMe', operator: 'eq', value: true }] },
   { suffix: 'messages', eventType: 'message.received', kinds: ['message', 'mention', 'keyword', 'voice', 'media'] },
+  { suffix: 'backfills', eventType: 'sync.*', kinds: [], backfills: true },
 ]
 
 // Emoji arrive with or without the variation selector (❤ vs ❤️); compare without it.
@@ -373,6 +375,9 @@ export function install(rt) {
       try {
         await ensureConsumer(stream)
         if (cancelled(controller)) return
+        // What a job did while this stream was down: its own route says where it stands.
+        if (stream.backfills) await rt.backfillRefresh?.()
+        if (cancelled(controller)) return
         const after = cursors()[stream.suffix]
         const response = await rt.omniRequest('GET', `/events/consumers/${encodeURIComponent(consumerName(stream.suffix))}/stream`, {
           signal: controller.signal, headers: { accept: 'text/event-stream', ...(after ? { 'last-event-id': after } : {}) },
@@ -389,7 +394,7 @@ export function install(rt) {
           const row = parsed.data
           const cursor = row.journalSeq ?? Number(frame.id)
           if (!Number.isSafeInteger(cursor) || cursor < 0) continue
-          const handled = await handle(row, controller)
+          const handled = stream.backfills ? await rt.backfillEvent?.(row) ?? 'ignored' : await handle(row, controller)
           if (handled === 'cancelled' || (handled === 'unmatched' && cancelled(controller))) break
           await ack(stream, cursor)
           if (mediaLookupFailure?.id === row.id) mediaLookupFailure = undefined
@@ -417,7 +422,7 @@ export function install(rt) {
     rt.syncAnswerSubscriptions?.()
     const active = Object.values(state.subscriptions ?? {}).filter(sub => sub.on)
     for (const stream of STREAMS) {
-      const wanted = configured && active.some(sub => stream.kinds.includes(sub.trigger.kind))
+      const wanted = configured && (stream.backfills ? rt.backfillsUnfinished?.() === true : active.some(sub => stream.kinds.includes(sub.trigger.kind)))
       let current = loops.get(stream.suffix)
       if (!wanted && current) current.controller.abort()
       if (wanted && current?.controller.signal.aborted) {

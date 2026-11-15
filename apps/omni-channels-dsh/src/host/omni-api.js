@@ -35,14 +35,29 @@ const COMPUTER_REFUSAL = 'Omni has no computer: it works only through its own to
 const KEY_ROUTE = /^\/keys\/children(\/|$)/
 export const KEY_ROUTE_REFUSAL = 'Chat keys are not an operation for a Bot: this app mints and revokes them itself, and their answers carry key text.'
 
-/** Whether a path, as fetch and omni would route it (percent-decoded, slashes collapsed, dot segments resolved), is a chat-key route. */
-export function isKeyRoute(path) {
+// A chat backfill starts only from the user's Start on its card (backfill.js), never from a
+// model's call, even one the user confirms on a card.
+const BACKFILL_START = /^\/chats\/[^/]+\/backfill\/?$/
+export const BACKFILL_START_REFUSAL = 'A chat backfill starts only from the user\'s Start on its card: put one before them with propose_backfill.'
+
+// A path as fetch and omni would route it: percent-decoded, slashes collapsed, dot segments resolved.
+function routedForms(path) {
   let decoded = String(path ?? '')
   try { decoded = decodeURIComponent(decoded) } catch { /* malformed: test it as written */ }
   const collapsed = decoded.replace(/\/{2,}/g, '/')
   let resolved = collapsed
   try { resolved = new URL(collapsed, 'http://omni.invalid').pathname } catch { /* test it as collapsed */ }
-  return KEY_ROUTE.test(collapsed) || KEY_ROUTE.test(resolved)
+  return [collapsed, resolved]
+}
+
+/** Whether a path, as fetch and omni would route it (percent-decoded, slashes collapsed, dot segments resolved), is a chat-key route. */
+export function isKeyRoute(path) {
+  return routedForms(path).some(form => KEY_ROUTE.test(form))
+}
+
+/** Whether a call starts a chat backfill, its path read as isKeyRoute reads one. */
+export function startsBackfill(method, path) {
+  return String(method ?? '').toUpperCase() === 'POST' && routedForms(path).some(form => BACKFILL_START.test(form))
 }
 
 // "/instances/{id}/qr" → /^\/instances\/[^/]+\/qr$/
@@ -360,6 +375,7 @@ export function install(rt) {
         const path = String(args.path ?? '').trim().replace(/^\/api\/v2(?=\/)/, '')
         if (!/^\/[A-Za-z0-9/_\-.~%:@]*$/.test(path)) throw invalid('path must be an API path such as /instances/<id>, without the host or a query string')
         if (isKeyRoute(path)) throw invalid(KEY_ROUTE_REFUSAL)
+        if (startsBackfill(method, path)) throw invalid(BACKFILL_START_REFUSAL)
         const op = findOperation(await operations(), method, path)
         if (!op) throw invalid(`${method} ${path} is not an omni API operation. Find it with omni_endpoints.`)
         const query = parse(args.query, 'query')
@@ -398,6 +414,7 @@ export function install(rt) {
     if (ownership) return fitted({ status: 403, error: ownership })
     // A confirmed card runs here too: it never reaches a chat-key route either.
     if (isKeyRoute(path)) return fitted({ status: 0, error: KEY_ROUTE_REFUSAL })
+    if (startsBackfill(method, path)) return fitted({ status: 0, error: BACKFILL_START_REFUSAL })
     const qs = query && typeof query === 'object' ? new URLSearchParams(Object.entries(query).filter(([, value]) => value !== undefined && value !== null).map(([key, value]) => [key, typeof value === 'object' ? JSON.stringify(value) : String(value)])).toString() : ''
     const result = await call(method, `${path}${qs ? `?${qs}` : ''}`, body, bot)
     return fitted({ status: result.status, operation: op?.summary ?? `${method} ${path}`, data: result.data })
