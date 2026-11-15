@@ -79,6 +79,24 @@ test('a token channel is created with its token; a missing token is refused befo
   await assert.rejects(run('omni-channel-create', { type: 'slack', name: 'Slack', token: 'xoxb-1234567890' }), { code: 'bot/invalid' })
 })
 
+test('create redacts every occurrence of the submitted token from API errors before returning to the page', async () => {
+  const token = `824600000:${'a'.repeat(35)}`
+  const { run } = host({ 'POST /instances': () => [500, { error: { message: `Refused ${token}; retry ${token}` } }] })
+  await assert.rejects(run('omni-channel-create', { type: 'telegram', name: 'Helper', token: ` ${token} ` }), error => {
+    assert.equal(error.code, 'bot/refused')
+    assert.equal(error.message, 'Refused [REDACTED]; retry [REDACTED]')
+    assert.equal(String(error.stack).includes(token), false)
+    assert.equal(error.cause, undefined)
+    return true
+  })
+})
+
+test('create never echoes the token even when Omni puts it in receipt text', async () => {
+  const token = `824600000:${'b'.repeat(35)}`
+  const { run } = host({ 'POST /instances': () => [201, { data: { id: CHANNEL, channel: 'telegram', name: token, token } }] })
+  assert.deepEqual(await run('omni-channel-create', { type: 'telegram', name: 'Helper', token }), { id: CHANNEL, type: 'telegram', name: '[REDACTED]' })
+})
+
 test('cancelling deletes only a channel this flow created and that has not connected', async () => {
   const { run, calls } = host({ 'POST /instances': created, [`DELETE /instances/${CHANNEL}`]: () => [200, { success: true }] })
   const other = '99999999-2222-4333-8444-555555555555'

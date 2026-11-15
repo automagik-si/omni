@@ -97,6 +97,13 @@ export interface ConnectorParsedDelivery {
   readonly occurredAt?: string;
   /** The provider payload that is spread into the published event. */
   readonly data: Record<string, unknown>;
+  /**
+   * True for a verified delivery that is answered 2xx and never published,
+   * such as a provider's ping or an event the manifest does not publish.
+   * Ingress records it as unmatched and stops: no journal row, no event, and
+   * no subscription (glob or exact) can select it.
+   */
+  readonly acknowledgeOnly?: boolean;
 }
 
 /** How a provider signs an inbound delivery. */

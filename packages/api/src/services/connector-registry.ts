@@ -9,9 +9,10 @@
  */
 
 import { clickupManifest } from '@omni/connector-clickup';
+import { githubManifest } from '@omni/connector-github';
 import { ConnectorRegistry } from '@omni/connector-sdk';
 
-export const connectorRegistry = new ConnectorRegistry([clickupManifest]);
+export const connectorRegistry = new ConnectorRegistry([clickupManifest, githubManifest]);
 
 // Fails loudly if a manifest is malformed. Redundant with the constructor only
 // in the sense that this is the explicit boot assertion the design requires.

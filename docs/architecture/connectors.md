@@ -68,3 +68,8 @@ provider redelivery is not a replay.
 ## ClickUp
 
 See [`docs/runbooks/connectors-clickup.md`](../runbooks/connectors-clickup.md).
+
+## GitHub
+
+Events only, on the per-connector hook route; no actions and no GitHub credential.
+See [`docs/runbooks/connectors-github.md`](../runbooks/connectors-github.md).

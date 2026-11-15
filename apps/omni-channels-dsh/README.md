@@ -31,6 +31,40 @@ and needs it; the canvas plugin (`@automagik/omni-canvas-dsh`) sits on this one.
   plugin's welcome (−300) and Connect AI (−200). A skip is kept by `@automagik/welcome-dsh`
   when it is installed, else in this browser.
 
+## Attach a Telegram bot from a wizard host
+
+The host-only `omniChannels.omniTelegramAttach({ token, name, source?, answerBot? })`
+accepts the wizard's hand-off. Call it **only after the person confirms and the old
+Telegram listener's off receipt has arrived**, in that order. It does not check or stop
+the old tool. Creating the Omni instance starts its connection immediately.
+
+Pass the token directly from that hand-off; there is no attach page, HTTP route, model
+tool, file, environment variable or setting that supplies it. The existing manual add
+and clipboard flows are separate and are never fallbacks for this function. The host
+uses its existing linked Omni key, sends the token through `POST /instances`'s write-only
+`token` field, and reads `/instances/:id/status`. It creates no Omni agent or route.
+The token must have Telegram's bot-token shape. Returned text, errors and the optional
+`source` host log label redact the submitted token as `[REDACTED]`; the label is not saved
+or returned.
+
+The receipt is `{ channelId, channelName, connected, detail, botId? }`. `connected` uses
+the same connection-state check as channel pairing; `detail` is `profileName` or `null`.
+`botId` is the Telegram bot ID, included only when Omni's status reports it. There is no
+`chatId`. A false `connected` value is a status snapshot, not proof that connection
+will eventually succeed. Instance names are unique: retrying the same `name` receives
+Omni's conflict instead of creating or reconnecting a second instance. If a later step
+fails after creation, inspect the existing channel before retrying.
+
+Optionally pass `answerBot`, the ID of the existing DSH channel bot the person picked.
+The host reuses the owner-confirmation actions to give that bot the new channel. If
+the bot already answers, or explicitly owns no other channel, answering is enabled with
+its existing settings and defaults unchanged, including the new child's sending mode.
+The receipt also includes `{ answerBot, answering: true }`. If answering is currently
+off and the bot explicitly owns other channels, it stays off: the receipt includes
+`{ answerBot, answering: false, reason: 'other-channels' }`, and the wizard should direct
+the person to answer settings. This avoids silently enabling answers on other channels.
+Without `answerBot`, the attach changes no DSH ownership or answer settings.
+
 ## Bind each answer child to its person
 
 An answer bot's settings have **Bind each child to its person** (`personBinding`, off by
@@ -96,10 +130,13 @@ number's own messages get nothing. A failed send takes the day's mark back, so t
 message tries again; nothing tries on a timer, and the failure is warned once per chat until a
 send there works.
 
-Each sender who gets the reply is listed under **Requests** in the answer settings: one row per
-chat, with the ids they wrote from, their first text (500 characters), when they last wrote and
-how many messages they sent. The list keeps the newest 500 rows per bot, and the day's marks keep
-the newest 5000 chats. Both are saved, so they outlive a restart. Only staff read the list, on the
+Each such sender is listed under **Requests** in the answer settings, whether or not a reply is
+set: one row per chat, with the ids they wrote from, their first text (500 characters), when they
+last wrote and how many messages they sent. With no reply set, nothing is sent and a sender known
+only by their lid stays kept as before; their message is listed once, at the 30-second check. A
+row whose chat a code from a list later lets in is marked `admitted`. A save that fails takes the
+row's change back. The list keeps the newest 500 rows per bot, and the day's marks keep the
+newest 5000 chats. Both are saved, so they outlive a restart. Only staff read the list, on the
 `omni-answer-requests` route; no tool reads it.
 
 ## When a person needs someone from the team
@@ -118,6 +155,84 @@ The staff chat can never be a chat an answer child answers. The mark is saved, s
 restart; calls while it is set tell no one again. It clears when staff answer in that chat from
 their own phone, or when they press **Dismiss**. DeepSeek Harness has no app notification a plugin
 can raise, so the sidebar row is the app's own sign.
+
+## Let a person in by a code from a list
+
+Staff can let people in with single-use codes they hand out, for example in a link that opens the
+chat with a message typed. Under **Code lists** in the answer settings, staff fill a list:
+
+- a **name**;
+- its **code pattern**: an optional prefix, the letters and digits a code may have after it, and
+  how many (4 to 64). Case never matters. With **Read look-alike characters as one** on, a
+  character the set lacks is read as its twin in the set (O and 0; I, L and 1), after the prefix
+  only. A code stands alone in the text: the character before it and the one after are not
+  letters, digits or `_`. The plugin scans for codes itself and never turns staff text into a
+  regular expression;
+- its **rule details**: a key/value map (`key = value` lines, or a JSON object) copied into the
+  allow rule of each person a code from the list lets in;
+- its codes, one a line, `code, expires YYYY-MM-DD`, or a JSON array of
+  `{ code, expiresAt, inviteId? }`.
+
+A list's pattern is set when it is first filled; codes added later must fit it. The rule details
+of a later upload replace the list's, and an upload that leaves them out keeps them. The lists
+are the install's and saved: at most 50 lists and the newest 5000 codes over all of them; a list
+whose codes all go is removed. Each code is used once, before its expiry: the same code again from
+the same sender (any id they share) admits them again, and from anyone else it is used. The used
+mark is saved before the person is let in. With no list there is no pattern, and nothing in a
+message is read as a code. Only staff read or add codes, on the `omni-code-lists` and
+`omni-code-lists-add` routes; no tool reaches them, and no code appears in a warning.
+
+When a sender that the allowlist refuses by default, or one Omni knows only by their lid, sends a
+message with an open code, the plugin writes one allow rule for the sender's primary id (their lid
+when Omni knows only that) and admits the message in the same pass, as if that rule had matched.
+The rule has `reason: invite` and `metadata: { ...rule details, source: 'invite', inviteId }`; the
+rule details cannot set `source` or `inviteId`. Person binding reads `context` and `capability`
+from the rule details like any other rule. A sender that a rule of its own refuses, and an admitted
+sender, are never checked. At most 2 codes are read from a message, over all lists (a code a list
+holds first), and a chat gets at most 5 code checks an hour. With no prefix, any word of the
+pattern's length is read as a code, so each such word counts as a check.
+
+With **Message when a code admits someone** set (`codeWelcome`, at most 1000 characters), the
+person gets it in their chat once the code lets them in, and the child answers from their next
+message. Unset, the child answers the code message. A code that is unknown, used or expired, or a
+check that fails, sends nothing: the message goes on as refused. Omni publishes no event when a
+rule is written, so the rules themselves are the count: allow rules whose `metadata.source` is
+`invite` (`GET /access/rules?type=allow`).
+
+## Check a code with an outside service
+
+Under **Outside code check** in the answer settings, staff name an HTTPS service of their own
+that checks codes for one bot, on the `omni-outside-check` route (`{ botId, url?, secret?,
+pattern?, label?, tier? }`; null or empty clears a field, a field left out is kept):
+
+- the service's **URL** (https only) and a **secret**, written only: the route and the settings
+  answer everything but the secret (`secretSet` says whether one is set), and the secret is never
+  shown, logged or warned;
+- a **code pattern**, the same shape as a code list's, except that the prefix is required here,
+  so ordinary words never go out to the service. There is no default: until the URL, the secret
+  and the pattern are all set, nothing changes;
+- optional steps, each skipped when empty: the **label** staff see on a request row the service
+  confirmed, and a **tier** name written on that row.
+
+When a sender that the allowlist refuses by default, or one Omni knows only by their lid, sends a
+message with a code of the pattern, and no code list let them in first, the plugin posts Omni's
+own event for that message to the service: `{ id, type: 'message.received', timestamp, metadata,
+payload: { externalId, chatId, from, senderName?, content: { text } } }`, with the raw text, a
+10-second timeout, no redirects, `Authorization: Bearer <secret>`, `X-Omni-Event-Id` (the same on
+every try) and a new `X-Omni-Delivery-Id` each try. The service matches the code itself; the
+pattern only decides whether to call, and one message is one call. Only an HTTP 200 with a `reply`
+(at most 1000 characters) is an answer: the reply goes word for word to the person's chat, once
+per message id (the newest 5000 ids are saved), and the chat's row under **Requests** is marked
+`confirmed` (with the tier, when one is set). The person stays not let in; no rule is written.
+Any other answer sends the person nothing.
+
+The event waits only for the first try. A timeout, a network error or a 503 is tried again twice
+in the background, after about 2 and 10 seconds; after 3 such failures in a row the service is not
+called for 5 minutes. Whatever the answer, a message with such a code never gets the stranger
+reply; it is listed under **Requests**, and a sender known only by their lid is kept as before.
+The plugin makes at most 30 calls a minute, and a chat's calls share the code lists' 5 an hour. A
+blocked or admitted sender is never checked. A failure is warned once per bot, with its status
+only.
 
 ## Existing channel settings
 

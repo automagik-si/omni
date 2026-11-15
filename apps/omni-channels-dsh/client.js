@@ -488,21 +488,21 @@ function sl(s15, t2, e, i, r, n) {
   for (let l = 0; l < s15.length - 1; l++) {
     let a = l, u = s15.get(++a);
     if (!u.isWrapped) continue;
-    let h19 = [s15.get(l)];
-    for (; a < s15.length && u.isWrapped; ) h19.push(u), u = s15.get(++a);
+    let h22 = [s15.get(l)];
+    for (; a < s15.length && u.isWrapped; ) h22.push(u), u = s15.get(++a);
     if (!n && i >= l && i < a) {
-      l += h19.length - 1;
+      l += h22.length - 1;
       continue;
     }
-    let c = 0, d = ri(h19, c, t2), _ = 1, p = 0;
-    for (; _ < h19.length; ) {
-      let f = ri(h19, _, t2), A = f - p, R = e - d, O = Math.min(A, R);
-      h19[c].copyCellsFrom(h19[_], p, d, O, false), d += O, d === e && (c++, d = 0), p += O, p === f && (_++, p = 0), d === 0 && c !== 0 && h19[c - 1].getWidth(e - 1) === 2 && (h19[c].copyCellsFrom(h19[c - 1], e - 1, d++, 1, false), h19[c - 1].setCell(e - 1, r));
+    let c = 0, d = ri(h22, c, t2), _ = 1, p = 0;
+    for (; _ < h22.length; ) {
+      let f = ri(h22, _, t2), A = f - p, R = e - d, O = Math.min(A, R);
+      h22[c].copyCellsFrom(h22[_], p, d, O, false), d += O, d === e && (c++, d = 0), p += O, p === f && (_++, p = 0), d === 0 && c !== 0 && h22[c - 1].getWidth(e - 1) === 2 && (h22[c].copyCellsFrom(h22[c - 1], e - 1, d++, 1, false), h22[c - 1].setCell(e - 1, r));
     }
-    h19[c].replaceCells(d, e, r);
+    h22[c].replaceCells(d, e, r);
     let m = 0;
-    for (let f = h19.length - 1; f > 0 && (f > c || h19[f].getTrimmedLength() === 0); f--) m++;
-    m > 0 && (o.push(l + h19.length - m), o.push(m)), l += h19.length - 1;
+    for (let f = h22.length - 1; f > 0 && (f > c || h22[f].getTrimmedLength() === 0); f--) m++;
+    m > 0 && (o.push(l + h22.length - m), o.push(m)), l += h22.length - 1;
   }
   return o;
 }
@@ -532,8 +532,8 @@ function al(s15, t2, e) {
     n > a && (n -= a, o++);
     let u = s15[o].getWidth(n - 1) === 2;
     u && n--;
-    let h19 = u ? e - 1 : e;
-    i.push(h19), l += h19;
+    let h22 = u ? e - 1 : e;
+    i.push(h22), l += h22;
   }
   return i;
 }
@@ -822,23 +822,23 @@ var init_xterm = __esm({
       decode(t2, e) {
         let i = t2.length;
         if (!i) return 0;
-        let r = 0, n, o, l, a, u = 0, h19 = 0;
+        let r = 0, n, o, l, a, u = 0, h22 = 0;
         if (this.interim[0]) {
           let _ = false, p = this.interim[0];
           p &= (p & 224) === 192 ? 31 : (p & 240) === 224 ? 15 : 7;
           let m = 0, f;
           for (; (f = this.interim[++m] & 63) && m < 4; ) p <<= 6, p |= f;
           let A = (this.interim[0] & 224) === 192 ? 2 : (this.interim[0] & 240) === 224 ? 3 : 4, R = A - m;
-          for (; h19 < R; ) {
-            if (h19 >= i) return 0;
-            if (f = t2[h19++], (f & 192) !== 128) {
-              h19--, _ = true;
+          for (; h22 < R; ) {
+            if (h22 >= i) return 0;
+            if (f = t2[h22++], (f & 192) !== 128) {
+              h22--, _ = true;
               break;
             } else this.interim[m++] = f, p <<= 6, p |= f & 63;
           }
-          _ || (A === 2 ? p < 128 ? h19-- : e[r++] = p : A === 3 ? p < 2048 || p >= 55296 && p <= 57343 || p === 65279 || (e[r++] = p) : p < 65536 || p > 1114111 || (e[r++] = p)), this.interim.fill(0);
+          _ || (A === 2 ? p < 128 ? h22-- : e[r++] = p : A === 3 ? p < 2048 || p >= 55296 && p <= 57343 || p === 65279 || (e[r++] = p) : p < 65536 || p > 1114111 || (e[r++] = p)), this.interim.fill(0);
         }
-        let c = i - 4, d = h19;
+        let c = i - 4, d = h22;
         for (; d < i; ) {
           for (; d < c && !((n = t2[d]) & 128) && !((o = t2[d + 1]) & 128) && !((l = t2[d + 2]) & 128) && !((a = t2[d + 3]) & 128); ) e[r++] = n, e[r++] = o, e[r++] = l, e[r++] = a, d += 4;
           if (n = t2[d++], n < 128) e[r++] = n;
@@ -1123,17 +1123,17 @@ var init_xterm = __esm({
           e(void 0);
           return;
         }
-        let r = [], n = this._optionsService.rawOptions.linkHandler, o = new q(), l = i.getTrimmedLength(), a = -1, u = -1, h19 = false;
+        let r = [], n = this._optionsService.rawOptions.linkHandler, o = new q(), l = i.getTrimmedLength(), a = -1, u = -1, h22 = false;
         for (let c = 0; c < l; c++) if (!(u === -1 && !i.hasContent(c))) {
           if (i.loadCell(c, o), o.hasExtendedAttrs() && o.extended.urlId) if (u === -1) {
             u = c, a = o.extended.urlId;
             continue;
-          } else h19 = o.extended.urlId !== a;
-          else u !== -1 && (h19 = true);
-          if (h19 || u !== -1 && c === l - 1) {
+          } else h22 = o.extended.urlId !== a;
+          else u !== -1 && (h22 = true);
+          if (h22 || u !== -1 && c === l - 1) {
             let d = this._oscLinkService.getLinkData(a)?.uri;
             if (d) {
-              let _ = { start: { x: u + 1, y: t2 }, end: { x: c + (!h19 && c === l - 1 ? 1 : 0), y: t2 } }, p = false;
+              let _ = { start: { x: u + 1, y: t2 }, end: { x: c + (!h22 && c === l - 1 ? 1 : 0), y: t2 } }, p = false;
               if (!n?.allowNonHttpProtocols) try {
                 let m = new URL(d);
                 ["http:", "https:"].includes(m.protocol) || (p = true);
@@ -1142,7 +1142,7 @@ var init_xterm = __esm({
               }
               p || r.push({ text: d, range: _, activate: (m, f) => n ? n.activate(m, f, _) : Ol(m, f), hover: (m, f) => n?.hover?.(m, f, _), leave: (m, f) => n?.leave?.(m, f, _) });
             }
-            h19 = false, o.hasExtendedAttrs() && o.extended.urlId ? (u = c, a = o.extended.urlId) : (u = -1, a = -1);
+            h22 = false, o.hasExtendedAttrs() && o.extended.urlId ? (u = c, a = o.extended.urlId) : (u = -1, a = -1);
           }
         }
         e(r);
@@ -1385,10 +1385,10 @@ var init_xterm = __esm({
         return false;
       }
       O.some = u;
-      function h19(I, k) {
+      function h22(I, k) {
         for (let P of I) if (k(P)) return P;
       }
-      O.find = h19;
+      O.find = h22;
       function* c(I, k) {
         for (let P of I) k(P) && (yield P);
       }
@@ -1476,29 +1476,29 @@ var init_xterm = __esm({
         else {
           let a = /* @__PURE__ */ new Map(), u = [...this.livingDisposables.values()].filter((c) => c.source !== null && !this.getRootParent(c, a).isSingleton);
           if (u.length === 0) return;
-          let h19 = new Set(u.map((c) => c.value));
-          if (i = u.filter((c) => !(c.parent && h19.has(c.parent))), i.length === 0) throw new Error("There are cyclic diposable chains!");
+          let h22 = new Set(u.map((c) => c.value));
+          if (i = u.filter((c) => !(c.parent && h22.has(c.parent))), i.length === 0) throw new Error("There are cyclic diposable chains!");
         }
         if (!i) return;
         function r(a) {
           function u(c, d) {
             for (; c.length > 0 && d.some((_) => typeof _ == "string" ? _ === c[0] : c[0].match(_)); ) c.shift();
           }
-          let h19 = a.source.split(`
+          let h22 = a.source.split(`
 `).map((c) => c.trim().replace("at ", "")).filter((c) => c !== "");
-          return u(h19, ["Error", /^trackDisposable \(.*\)$/, /^DisposableTracker.trackDisposable \(.*\)$/]), h19.reverse();
+          return u(h22, ["Error", /^trackDisposable \(.*\)$/, /^DisposableTracker.trackDisposable \(.*\)$/]), h22.reverse();
         }
         let n = new ur();
         for (let a of i) {
           let u = r(a);
-          for (let h19 = 0; h19 <= u.length; h19++) n.add(u.slice(0, h19).join(`
+          for (let h22 = 0; h22 <= u.length; h22++) n.add(u.slice(0, h22).join(`
 `), a);
         }
         i.sort(no((a) => a.idx, so));
         let o = "", l = 0;
         for (let a of i.slice(0, t2)) {
           l++;
-          let u = r(a), h19 = [];
+          let u = r(a), h22 = [];
           for (let c = 0; c < u.length; c++) {
             let d = u[c];
             d = `(shared with ${n.get(u.slice(0, c + 1).join(`
@@ -1506,14 +1506,14 @@ var init_xterm = __esm({
             let p = n.get(u.slice(0, c).join(`
 `)), m = co([...p].map((f) => r(f)[c]), (f) => f);
             delete m[u[c]];
-            for (let [f, A] of Object.entries(m)) h19.unshift(`    - stacktraces of ${A.length} other leaks continue with ${f}`);
-            h19.unshift(d);
+            for (let [f, A] of Object.entries(m)) h22.unshift(`    - stacktraces of ${A.length} other leaks continue with ${f}`);
+            h22.unshift(d);
           }
           o += `
 
 
 ==================== Leaking disposable ${l}/${i.length}: ${a.value.constructor.name} ====================
-${h19.join(`
+${h22.join(`
 `)}
 ============================================================
 
@@ -1742,17 +1742,17 @@ ${h19.join(`
       }
       Qe.once = i;
       function r(y, T, g) {
-        return h19((w, E = null, x) => y((N) => w.call(E, T(N)), null, x), g);
+        return h22((w, E = null, x) => y((N) => w.call(E, T(N)), null, x), g);
       }
       Qe.map = r;
       function n(y, T, g) {
-        return h19((w, E = null, x) => y((N) => {
+        return h22((w, E = null, x) => y((N) => {
           T(N), w.call(E, N);
         }, null, x), g);
       }
       Qe.forEach = n;
       function o(y, T, g) {
-        return h19((w, E = null, x) => y((N) => T(N) && w.call(E, N), null, x), g);
+        return h22((w, E = null, x) => y((N) => T(N) && w.call(E, N), null, x), g);
       }
       Qe.filter = o;
       function l(y) {
@@ -1771,7 +1771,7 @@ ${h19.join(`
         return r(y, (x) => (E = T(E, x), E), w);
       }
       Qe.reduce = u;
-      function h19(y, T) {
+      function h22(y, T) {
         let g, w = { onWillAddFirstListener() {
           g = y(E.fire, E);
         }, onDidRemoveLastListener() {
@@ -2076,8 +2076,8 @@ ${h19.join(`
           if (this._leakageMon && this._size > this._leakageMon.threshold ** 2) {
             let a = `[${this._leakageMon.name}] REFUSES to accept new listeners because it exceeded its threshold by far (${this._size} vs ${this._leakageMon.threshold})`;
             console.warn(a);
-            let u = this._leakageMon.getMostFrequentStack() ?? ["UNKNOWN stack", -1], h19 = new Yn(`${a}. HINT: Stack shows most frequent listener (${u[1]}-times)`, u[0]);
-            return (this._options?.onListenerError || Lt)(h19), D.None;
+            let u = this._leakageMon.getMostFrequentStack() ?? ["UNKNOWN stack", -1], h22 = new Yn(`${a}. HINT: Stack shows most frequent listener (${u[1]}-times)`, u[0]);
+            return (this._options?.onListenerError || Lt)(h22), D.None;
           }
           if (this._disposed) return D.None;
           e && (t2 = t2.bind(e));
@@ -2697,8 +2697,8 @@ ${h19.join(`
         let t2 = Cr2._bigBlock32, e = this._buffDV;
         for (let c = 0; c < 64; c += 4) t2.setUint32(c, e.getUint32(c, false), false);
         for (let c = 64; c < 320; c += 4) t2.setUint32(c, rs(t2.getUint32(c - 12, false) ^ t2.getUint32(c - 32, false) ^ t2.getUint32(c - 56, false) ^ t2.getUint32(c - 64, false), 1), false);
-        let i = this._h0, r = this._h1, n = this._h2, o = this._h3, l = this._h4, a, u, h19;
-        for (let c = 0; c < 80; c++) c < 20 ? (a = r & n | ~r & o, u = 1518500249) : c < 40 ? (a = r ^ n ^ o, u = 1859775393) : c < 60 ? (a = r & n | r & o | n & o, u = 2400959708) : (a = r ^ n ^ o, u = 3395469782), h19 = rs(i, 5) + a + l + u + t2.getUint32(c * 4, false) & 4294967295, l = o, o = n, n = rs(r, 30), r = i, i = h19;
+        let i = this._h0, r = this._h1, n = this._h2, o = this._h3, l = this._h4, a, u, h22;
+        for (let c = 0; c < 80; c++) c < 20 ? (a = r & n | ~r & o, u = 1518500249) : c < 40 ? (a = r ^ n ^ o, u = 1859775393) : c < 60 ? (a = r & n | r & o | n & o, u = 2400959708) : (a = r ^ n ^ o, u = 3395469782), h22 = rs(i, 5) + a + l + u + t2.getUint32(c * 4, false) & 4294967295, l = o, o = n, n = rs(r, 30), r = i, i = h22;
         this._h0 = this._h0 + i & 4294967295, this._h1 = this._h1 + r & 4294967295, this._h2 = this._h2 + n & 4294967295, this._h3 = this._h3 + o & 4294967295, this._h4 = this._h4 + l & 4294967295;
       }
     };
@@ -2783,13 +2783,13 @@ ${h19.join(`
         i.set(n, false);
       };
       mt = (n, o, l = 0) => {
-        let a = Oo(n), u = new Di(o, l), h19 = s15.get(a);
-        return h19 || (h19 = [], s15.set(a, h19)), h19.push(u), e.get(a) || (e.set(a, true), n.requestAnimationFrame(() => r(a))), u;
+        let a = Oo(n), u = new Di(o, l), h22 = s15.get(a);
+        return h22 || (h22 = [], s15.set(a, h22)), h22.push(u), e.get(a) || (e.set(a, true), n.requestAnimationFrame(() => r(a))), u;
       }, wa = (n, o, l) => {
         let a = Oo(n);
         if (i.get(a)) {
-          let u = new Di(o, l), h19 = t2.get(a);
-          return h19 || (h19 = [], t2.set(a, h19)), h19.push(u), u;
+          let u = new Di(o, l), h22 = t2.get(a);
+          return h22 || (h22 = [], t2.set(a, h22)), h22.push(u), u;
         } else return mt(n, o, l);
       };
     })();
@@ -3076,11 +3076,11 @@ ${h19.join(`
             console.warn("move of an UNKNOWN touch", a);
             continue;
           }
-          let u = this.activeTouches[a.identifier], h19 = Date.now() - u.initialTimeStamp;
-          if (h19 < Q2.HOLD_DELAY && Math.abs(u.initialPageX - Se(u.rollingPageX)) < 30 && Math.abs(u.initialPageY - Se(u.rollingPageY)) < 30) {
+          let u = this.activeTouches[a.identifier], h22 = Date.now() - u.initialTimeStamp;
+          if (h22 < Q2.HOLD_DELAY && Math.abs(u.initialPageX - Se(u.rollingPageX)) < 30 && Math.abs(u.initialPageY - Se(u.rollingPageY)) < 30) {
             let c = this.newGestureEvent(He.Tap, u.initialTarget);
             c.pageX = Se(u.rollingPageX), c.pageY = Se(u.rollingPageY), this.dispatchEvent(c);
-          } else if (h19 >= Q2.HOLD_DELAY && Math.abs(u.initialPageX - Se(u.rollingPageX)) < 30 && Math.abs(u.initialPageY - Se(u.rollingPageY)) < 30) {
+          } else if (h22 >= Q2.HOLD_DELAY && Math.abs(u.initialPageX - Se(u.rollingPageX)) < 30 && Math.abs(u.initialPageY - Se(u.rollingPageY)) < 30) {
             let c = this.newGestureEvent(He.Contextmenu, u.initialTarget);
             c.pageX = Se(u.rollingPageX), c.pageY = Se(u.rollingPageY), this.dispatchEvent(c);
           } else if (n === 1) {
@@ -3112,12 +3112,12 @@ ${h19.join(`
           for (let [r, n] of i) n.dispatchEvent(e), this.dispatched = true;
         }
       }
-      inertia(e, i, r, n, o, l, a, u, h19) {
+      inertia(e, i, r, n, o, l, a, u, h22) {
         this.handle = mt(e, () => {
           let c = Date.now(), d = c - r, _ = 0, p = 0, m = true;
           n += Q2.SCROLL_FRICTION * d, a += Q2.SCROLL_FRICTION * d, n > 0 && (m = false, _ = o * n * d), a > 0 && (m = false, p = u * a * d);
           let f = this.newGestureEvent(He.Change);
-          f.translationX = _, f.translationY = p, i.forEach((A) => A.dispatchEvent(f)), m || this.inertia(e, i, c, n, o, l + _, a, u, h19 + p);
+          f.translationX = _, f.translationY = p, i.forEach((A) => A.dispatchEvent(f)), m || this.inertia(e, i, c, n, o, l + _, a, u, h22 + p);
         });
       }
       onTouchMove(e) {
@@ -3463,8 +3463,8 @@ ${h19.join(`
       static _computeValues(t2, e, i, r, n) {
         let o = Math.max(0, i - t2), l = Math.max(0, o - 2 * e), a = r > 0 && r > i;
         if (!a) return { computedAvailableSize: Math.round(o), computedIsNeeded: a, computedSliderSize: Math.round(l), computedSliderRatio: 0, computedSliderPosition: 0 };
-        let u = Math.round(Math.max(20, Math.floor(i * l / r))), h19 = (l - u) / (r - i), c = n * h19;
-        return { computedAvailableSize: Math.round(o), computedIsNeeded: a, computedSliderSize: Math.round(u), computedSliderRatio: h19, computedSliderPosition: Math.round(c) };
+        let u = Math.round(Math.max(20, Math.floor(i * l / r))), h22 = (l - u) / (r - i), c = n * h22;
+        return { computedAvailableSize: Math.round(o), computedIsNeeded: a, computedSliderSize: Math.round(u), computedSliderRatio: h22, computedSliderPosition: Math.round(c) };
       }
       _refreshComputedValues() {
         let t2 = s11._computeValues(this._oppositeScrollbarSize, this._arrowSize, this._visibleSize, this._scrollSize, this._scrollPosition);
@@ -3607,8 +3607,8 @@ ${h19.join(`
         if (Math.abs(t2.deltaX) > 0 && Math.abs(t2.deltaY) > 0) return 1;
         let i = 0.5;
         if ((!this._isAlmostInt(t2.deltaX) || !this._isAlmostInt(t2.deltaY)) && (i += 0.25), e) {
-          let r = Math.abs(t2.deltaX), n = Math.abs(t2.deltaY), o = Math.abs(e.deltaX), l = Math.abs(e.deltaY), a = Math.max(Math.min(r, o), 1), u = Math.max(Math.min(n, l), 1), h19 = Math.max(r, o), c = Math.max(n, l);
-          h19 % a === 0 && c % u === 0 && (i -= 0.5);
+          let r = Math.abs(t2.deltaX), n = Math.abs(t2.deltaY), o = Math.abs(e.deltaX), l = Math.abs(e.deltaY), a = Math.max(Math.min(r, o), 1), u = Math.max(Math.min(n, l), 1), h22 = Math.max(r, o), c = Math.max(n, l);
+          h22 % a === 0 && c % u === 0 && (i -= 0.5);
         }
         return Math.min(Math.max(i, 0), 1);
       }
@@ -3681,16 +3681,16 @@ ${h19.join(`
           this._options.scrollPredominantAxis && (this._options.scrollYToX && l + o === 0 ? l = o = 0 : Math.abs(o) >= Math.abs(l) ? l = 0 : o = 0), this._options.flipAxes && ([o, l] = [l, o]);
           let a = !Te && e.browserEvent && e.browserEvent.shiftKey;
           (this._options.scrollYToX || a) && !l && (l = o, o = 0), e.browserEvent && e.browserEvent.altKey && (l = l * this._options.fastScrollSensitivity, o = o * this._options.fastScrollSensitivity);
-          let u = this._scrollable.getFutureScrollPosition(), h19 = {};
+          let u = this._scrollable.getFutureScrollPosition(), h22 = {};
           if (o) {
             let c = Ko * o, d = u.scrollTop - (c < 0 ? Math.floor(c) : Math.ceil(c));
-            this._verticalScrollbar.writeScrollPosition(h19, d);
+            this._verticalScrollbar.writeScrollPosition(h22, d);
           }
           if (l) {
             let c = Ko * l, d = u.scrollLeft - (c < 0 ? Math.floor(c) : Math.ceil(c));
-            this._horizontalScrollbar.writeScrollPosition(h19, d);
+            this._horizontalScrollbar.writeScrollPosition(h22, d);
           }
-          h19 = this._scrollable.validateScrollPosition(h19), (u.scrollLeft !== h19.scrollLeft || u.scrollTop !== h19.scrollTop) && (zo && this._options.mouseWheelSmoothScroll && i.isPhysicalMouseWheel() ? this._scrollable.setScrollPositionSmooth(h19) : this._scrollable.setScrollPositionNow(h19), r = true);
+          h22 = this._scrollable.validateScrollPosition(h22), (u.scrollLeft !== h22.scrollLeft || u.scrollTop !== h22.scrollTop) && (zo && this._options.mouseWheelSmoothScroll && i.isPhysicalMouseWheel() ? this._scrollable.setScrollPositionSmooth(h22) : this._scrollable.setScrollPositionNow(h22), r = true);
         }
         let n = r;
         !n && this._options.alwaysConsumeMouseWheel && (n = true), !n && this._options.consumeMouseWheelIfScrollbarIsNeeded && (this._verticalScrollbar.isNeeded() || this._horizontalScrollbar.isNeeded()) && (n = true), n && (e.preventDefault(), e.stopPropagation());
@@ -3752,10 +3752,10 @@ ${h19.join(`
         this._isSyncing = false;
         this._isHandlingScroll = false;
         this._suppressOnScrollHandler = false;
-        let h19 = this._register(new Ri({ forceIntegerValues: false, smoothScrollDuration: this._optionsService.rawOptions.smoothScrollDuration, scheduleAtNextAnimationFrame: (c) => mt(n.window, c) }));
+        let h22 = this._register(new Ri({ forceIntegerValues: false, smoothScrollDuration: this._optionsService.rawOptions.smoothScrollDuration, scheduleAtNextAnimationFrame: (c) => mt(n.window, c) }));
         this._register(this._optionsService.onSpecificOptionChange("smoothScrollDuration", () => {
-          h19.setSmoothScrollDuration(this._optionsService.rawOptions.smoothScrollDuration);
-        })), this._scrollableElement = this._register(new Kr(i, { vertical: 1, horizontal: 2, useShadows: false, mouseWheelSmoothScroll: true, ...this._getChangeOptions() }, h19)), this._register(this._optionsService.onMultipleOptionChange(["scrollSensitivity", "fastScrollSensitivity", "overviewRuler"], () => this._scrollableElement.updateOptions(this._getChangeOptions()))), this._register(o.onProtocolChange((c) => {
+          h22.setSmoothScrollDuration(this._optionsService.rawOptions.smoothScrollDuration);
+        })), this._scrollableElement = this._register(new Kr(i, { vertical: 1, horizontal: 2, useShadows: false, mouseWheelSmoothScroll: true, ...this._getChangeOptions() }, h22)), this._register(this._optionsService.onMultipleOptionChange(["scrollSensitivity", "fastScrollSensitivity", "overviewRuler"], () => this._scrollableElement.updateOptions(this._getChangeOptions()))), this._register(o.onProtocolChange((c) => {
           this._scrollableElement.updateOptions({ handleMouseWheel: !(c & 16) });
         })), this._scrollableElement.setScrollDimensions({ height: 0, scrollHeight: 0 }), this._register($.runAndSubscribe(l.onChangeColors, () => {
           this._scrollableElement.getDomNode().style.backgroundColor = l.colors.background.css;
@@ -3907,8 +3907,8 @@ ${h19.join(`
         this._shouldUpdateAnchor = true;
         this._lastKnownBufferLength = 0;
         this._canvas = this._coreBrowserService.mainDocument.createElement("canvas"), this._canvas.classList.add("xterm-decoration-overview-ruler"), this._refreshCanvasDimensions(), this._viewportElement.parentElement?.insertBefore(this._canvas, this._viewportElement), this._register(C(() => this._canvas?.remove()));
-        let h19 = this._canvas.getContext("2d");
-        if (h19) this._ctx = h19;
+        let h22 = this._canvas.getContext("2d");
+        if (h22) this._ctx = h22;
         else throw new Error("Ctx cannot be null");
         this._register(this._decorationService.onDecorationRegistered(() => this._queueRefresh(void 0, true))), this._register(this._decorationService.onDecorationRemoved(() => this._queueRefresh(void 0, true))), this._register(this._renderService.onRenderedViewportChange(() => this._queueRefresh())), this._register(this._bufferService.buffers.onBufferActivate(() => {
           this._canvas.style.display = this._bufferService.buffer === this._bufferService.buffers.alt ? "none" : "block";
@@ -4049,8 +4049,8 @@ ${h19.join(`
     ((l) => {
       function s15(a, u) {
         if (J = (u.rgba & 255) / 255, J === 1) return { css: u.css, rgba: u.rgba };
-        let h19 = u.rgba >> 24 & 255, c = u.rgba >> 16 & 255, d = u.rgba >> 8 & 255, _ = a.rgba >> 24 & 255, p = a.rgba >> 16 & 255, m = a.rgba >> 8 & 255;
-        ue = _ + Math.round((h19 - _) * J), he = p + Math.round((c - p) * J), de = m + Math.round((d - m) * J);
+        let h22 = u.rgba >> 24 & 255, c = u.rgba >> 16 & 255, d = u.rgba >> 8 & 255, _ = a.rgba >> 24 & 255, p = a.rgba >> 16 & 255, m = a.rgba >> 8 & 255;
+        ue = _ + Math.round((h22 - _) * J), he = p + Math.round((c - p) * J), de = m + Math.round((d - m) * J);
         let f = j.toCss(ue, he, de), A = j.toRgba(ue, he, de);
         return { css: f, rgba: A };
       }
@@ -4059,8 +4059,8 @@ ${h19.join(`
         return (a.rgba & 255) === 255;
       }
       l.isOpaque = t2;
-      function e(a, u, h19) {
-        let c = $r.ensureContrastRatio(a.rgba, u.rgba, h19);
+      function e(a, u, h22) {
+        let c = $r.ensureContrastRatio(a.rgba, u.rgba, h22);
         if (c) return j.toColor(c >> 24 & 255, c >> 16 & 255, c >> 8 & 255);
       }
       l.ensureContrastRatio = e;
@@ -4117,22 +4117,22 @@ ${h19.join(`
       }
       e.relativeLuminance = s15;
       function t2(i, r, n) {
-        let o = i / 255, l = r / 255, a = n / 255, u = o <= 0.03928 ? o / 12.92 : Math.pow((o + 0.055) / 1.055, 2.4), h19 = l <= 0.03928 ? l / 12.92 : Math.pow((l + 0.055) / 1.055, 2.4), c = a <= 0.03928 ? a / 12.92 : Math.pow((a + 0.055) / 1.055, 2.4);
-        return u * 0.2126 + h19 * 0.7152 + c * 0.0722;
+        let o = i / 255, l = r / 255, a = n / 255, u = o <= 0.03928 ? o / 12.92 : Math.pow((o + 0.055) / 1.055, 2.4), h22 = l <= 0.03928 ? l / 12.92 : Math.pow((l + 0.055) / 1.055, 2.4), c = a <= 0.03928 ? a / 12.92 : Math.pow((a + 0.055) / 1.055, 2.4);
+        return u * 0.2126 + h22 * 0.7152 + c * 0.0722;
       }
       e.relativeLuminance2 = t2;
     })(ve ||= {});
     ((n) => {
       function s15(o, l) {
         if (J = (l & 255) / 255, J === 1) return l;
-        let a = l >> 24 & 255, u = l >> 16 & 255, h19 = l >> 8 & 255, c = o >> 24 & 255, d = o >> 16 & 255, _ = o >> 8 & 255;
-        return ue = c + Math.round((a - c) * J), he = d + Math.round((u - d) * J), de = _ + Math.round((h19 - _) * J), j.toRgba(ue, he, de);
+        let a = l >> 24 & 255, u = l >> 16 & 255, h22 = l >> 8 & 255, c = o >> 24 & 255, d = o >> 16 & 255, _ = o >> 8 & 255;
+        return ue = c + Math.round((a - c) * J), he = d + Math.round((u - d) * J), de = _ + Math.round((h22 - _) * J), j.toRgba(ue, he, de);
       }
       n.blend = s15;
       function t2(o, l, a) {
-        let u = ve.relativeLuminance(o >> 8), h19 = ve.relativeLuminance(l >> 8);
-        if (Xe(u, h19) < a) {
-          if (h19 < u) {
+        let u = ve.relativeLuminance(o >> 8), h22 = ve.relativeLuminance(l >> 8);
+        if (Xe(u, h22) < a) {
+          if (h22 < u) {
             let p = e(o, l, a), m = Xe(u, ve.relativeLuminance(p >> 8));
             if (m < a) {
               let f = i(o, l, a), A = Xe(u, ve.relativeLuminance(f >> 8));
@@ -4150,14 +4150,14 @@ ${h19.join(`
       }
       n.ensureContrastRatio = t2;
       function e(o, l, a) {
-        let u = o >> 24 & 255, h19 = o >> 16 & 255, c = o >> 8 & 255, d = l >> 24 & 255, _ = l >> 16 & 255, p = l >> 8 & 255, m = Xe(ve.relativeLuminance2(d, _, p), ve.relativeLuminance2(u, h19, c));
-        for (; m < a && (d > 0 || _ > 0 || p > 0); ) d -= Math.max(0, Math.ceil(d * 0.1)), _ -= Math.max(0, Math.ceil(_ * 0.1)), p -= Math.max(0, Math.ceil(p * 0.1)), m = Xe(ve.relativeLuminance2(d, _, p), ve.relativeLuminance2(u, h19, c));
+        let u = o >> 24 & 255, h22 = o >> 16 & 255, c = o >> 8 & 255, d = l >> 24 & 255, _ = l >> 16 & 255, p = l >> 8 & 255, m = Xe(ve.relativeLuminance2(d, _, p), ve.relativeLuminance2(u, h22, c));
+        for (; m < a && (d > 0 || _ > 0 || p > 0); ) d -= Math.max(0, Math.ceil(d * 0.1)), _ -= Math.max(0, Math.ceil(_ * 0.1)), p -= Math.max(0, Math.ceil(p * 0.1)), m = Xe(ve.relativeLuminance2(d, _, p), ve.relativeLuminance2(u, h22, c));
         return (d << 24 | _ << 16 | p << 8 | 255) >>> 0;
       }
       n.reduceLuminance = e;
       function i(o, l, a) {
-        let u = o >> 24 & 255, h19 = o >> 16 & 255, c = o >> 8 & 255, d = l >> 24 & 255, _ = l >> 16 & 255, p = l >> 8 & 255, m = Xe(ve.relativeLuminance2(d, _, p), ve.relativeLuminance2(u, h19, c));
-        for (; m < a && (d < 255 || _ < 255 || p < 255); ) d = Math.min(255, d + Math.ceil((255 - d) * 0.1)), _ = Math.min(255, _ + Math.ceil((255 - _) * 0.1)), p = Math.min(255, p + Math.ceil((255 - p) * 0.1)), m = Xe(ve.relativeLuminance2(d, _, p), ve.relativeLuminance2(u, h19, c));
+        let u = o >> 24 & 255, h22 = o >> 16 & 255, c = o >> 8 & 255, d = l >> 24 & 255, _ = l >> 16 & 255, p = l >> 8 & 255, m = Xe(ve.relativeLuminance2(d, _, p), ve.relativeLuminance2(u, h22, c));
+        for (; m < a && (d < 255 || _ < 255 || p < 255); ) d = Math.min(255, d + Math.ceil((255 - d) * 0.1)), _ = Math.min(255, _ + Math.ceil((255 - _) * 0.1)), p = Math.min(255, p + Math.ceil((255 - p) * 0.1)), m = Xe(ve.relativeLuminance2(d, _, p), ve.relativeLuminance2(u, h22, c));
         return (d << 24 | _ << 16 | p << 8 | 255) >>> 0;
       }
       n.increaseLuminance = i;
@@ -4211,19 +4211,19 @@ ${h19.join(`
         let e = this._bufferService.buffer.lines.get(t2);
         if (!e || e.length === 0) return [];
         let i = [], r = e.translateToString(true), n = 0, o = 0, l = 0, a = e.getFg(0), u = e.getBg(0);
-        for (let h19 = 0; h19 < e.getTrimmedLength(); h19++) if (e.loadCell(h19, this._workCell), this._workCell.getWidth() !== 0) {
+        for (let h22 = 0; h22 < e.getTrimmedLength(); h22++) if (e.loadCell(h22, this._workCell), this._workCell.getWidth() !== 0) {
           if (this._workCell.fg !== a || this._workCell.bg !== u) {
-            if (h19 - n > 1) {
+            if (h22 - n > 1) {
               let c = this._getJoinedRanges(r, l, o, e, n);
               for (let d = 0; d < c.length; d++) i.push(c[d]);
             }
-            n = h19, l = o, a = this._workCell.fg, u = this._workCell.bg;
+            n = h22, l = o, a = this._workCell.fg, u = this._workCell.bg;
           }
           o += this._workCell.getChars().length || we.length;
         }
         if (this._bufferService.cols - n > 1) {
-          let h19 = this._getJoinedRanges(r, l, o, e, n);
-          for (let c = 0; c < h19.length; c++) i.push(h19[c]);
+          let h22 = this._getJoinedRanges(r, l, o, e, n);
+          for (let c = 0; c < h22.length; c++) i.push(h22[c]);
         }
         return i;
       }
@@ -4236,7 +4236,7 @@ ${h19.join(`
         }
         for (let a = 1; a < this._characterJoiners.length; a++) try {
           let u = this._characterJoiners[a].handler(o);
-          for (let h19 = 0; h19 < u.length; h19++) ct._mergeRanges(l, u[h19]);
+          for (let h22 = 0; h22 < u.length; h22++) ct._mergeRanges(l, u[h22]);
         } catch (u) {
           console.error(u);
         }
@@ -4246,13 +4246,13 @@ ${h19.join(`
         let r = 0, n = false, o = 0, l = t2[r];
         if (l) {
           for (let a = i; a < this._bufferService.cols; a++) {
-            let u = e.getWidth(a), h19 = e.getString(a).length || we.length;
+            let u = e.getWidth(a), h22 = e.getString(a).length || we.length;
             if (u !== 0) {
               if (!n && l[0] <= o && (l[0] = a, n = true), l[1] <= o) {
                 if (l[1] = a, l = t2[++r], !l) break;
                 l[0] <= o ? (l[0] = a, n = true) : n = false;
               }
-              o += h19;
+              o += h22;
             }
           }
           l && (l[1] = this._bufferService.cols);
@@ -4293,10 +4293,10 @@ ${h19.join(`
       handleSelectionChanged(t2, e, i) {
         this._selectionStart = t2, this._selectionEnd = e, this._columnSelectMode = i;
       }
-      createRow(t2, e, i, r, n, o, l, a, u, h19, c) {
+      createRow(t2, e, i, r, n, o, l, a, u, h22, c) {
         let d = [], _ = this._characterJoinerService.getJoinedCharacters(e), p = this._themeService.colors, m = t2.getNoBgTrimmedLength();
         i && m < o + 1 && (m = o + 1);
-        let f, A = 0, R = "", O = 0, I = 0, k = 0, P = 0, oe = false, Me = 0, Pe = false, Ke = 0, di = 0, V = [], Qe = h19 !== -1 && c !== -1;
+        let f, A = 0, R = "", O = 0, I = 0, k = 0, P = 0, oe = false, Me = 0, Pe = false, Ke = 0, di = 0, V = [], Qe = h22 !== -1 && c !== -1;
         for (let y = 0; y < m; y++) {
           t2.loadCell(y, this._workCell);
           let T = this._workCell.getWidth();
@@ -4307,7 +4307,7 @@ ${h19.join(`
             for (O = W[0] + 1; O < W[1]; O++) w &&= An === this._isCellInSelection(O, e);
             w &&= !i || o < W[0] || o >= W[1], w ? (g = true, x = new Vr(this._workCell, t2.translateToString(true, W[0], W[1]), W[1] - W[0]), E = W[1] - 1, T = x.getWidth()) : di = W[1];
           }
-          let N = this._isCellInSelection(y, e), Z = i && y === o, te = Qe && y >= h19 && y <= c, Oe = false;
+          let N = this._isCellInSelection(y, e), Z = i && y === o, te = Qe && y >= h22 && y <= c, Oe = false;
           this._decorationService.forEachDecorationAtCell(y, e, void 0, (W) => {
             Oe = true;
           });
@@ -4476,7 +4476,7 @@ ${h19.join(`
       }
     };
     _s = "xterm-dom-renderer-owner-", Le = "xterm-rows", jr = "xterm-fg-", jo = "xterm-bg-", ki = "xterm-focus", Xr = "xterm-selection", Na = 1, Yt = class extends D {
-      constructor(e, i, r, n, o, l, a, u, h19, c, d, _, p, m) {
+      constructor(e, i, r, n, o, l, a, u, h22, c, d, _, p, m) {
         super();
         this._terminal = e;
         this._document = i;
@@ -4485,7 +4485,7 @@ ${h19.join(`
         this._viewportElement = o;
         this._helperContainer = l;
         this._linkifier2 = a;
-        this._charSizeService = h19;
+        this._charSizeService = h22;
         this._optionsService = c;
         this._bufferService = d;
         this._coreService = _;
@@ -4546,11 +4546,11 @@ ${h19.join(`
         if (this._selectionContainer.replaceChildren(), this._rowFactory.handleSelectionChanged(e, i, r), this.renderRows(0, this._bufferService.rows - 1), !e || !i || (this._selectionRenderModel.update(this._terminal, e, i, r), !this._selectionRenderModel.hasSelection)) return;
         let n = this._selectionRenderModel.viewportStartRow, o = this._selectionRenderModel.viewportEndRow, l = this._selectionRenderModel.viewportCappedStartRow, a = this._selectionRenderModel.viewportCappedEndRow, u = this._document.createDocumentFragment();
         if (r) {
-          let h19 = e[0] > i[0];
-          u.appendChild(this._createSelectionElement(l, h19 ? i[0] : e[0], h19 ? e[0] : i[0], a - l + 1));
+          let h22 = e[0] > i[0];
+          u.appendChild(this._createSelectionElement(l, h22 ? i[0] : e[0], h22 ? e[0] : i[0], a - l + 1));
         } else {
-          let h19 = n === l ? e[0] : 0, c = l === o ? i[0] : this._bufferService.cols;
-          u.appendChild(this._createSelectionElement(l, h19, c));
+          let h22 = n === l ? e[0] : 0, c = l === o ? i[0] : this._bufferService.cols;
+          u.appendChild(this._createSelectionElement(l, h22, c));
           let d = a - l - 1;
           if (u.appendChild(this._createSelectionElement(l + 1, 0, this._bufferService.cols, d)), l !== a) {
             let _ = o === a ? i[0] : this._bufferService.cols;
@@ -4573,8 +4573,8 @@ ${h19.join(`
       }
       renderRows(e, i) {
         let r = this._bufferService.buffer, n = r.ybase + r.y, o = Math.min(r.x, this._bufferService.cols - 1), l = this._coreService.decPrivateModes.cursorBlink ?? this._optionsService.rawOptions.cursorBlink, a = this._coreService.decPrivateModes.cursorStyle ?? this._optionsService.rawOptions.cursorStyle, u = this._optionsService.rawOptions.cursorInactiveStyle;
-        for (let h19 = e; h19 <= i; h19++) {
-          let c = h19 + r.ydisp, d = this._rowElements[h19], _ = r.lines.get(c);
+        for (let h22 = e; h22 <= i; h22++) {
+          let c = h22 + r.ydisp, d = this._rowElements[h22], _ = r.lines.get(c);
           if (!d || !_) break;
           d.replaceChildren(...this._rowFactory.createRow(_, c, c === n, a, u, o, l, this.dimensions.css.cell.width, this._widthCache, -1, -1));
         }
@@ -4592,11 +4592,11 @@ ${h19.join(`
         r < 0 && (e = 0), n < 0 && (i = 0);
         let a = this._bufferService.rows - 1;
         r = Math.max(Math.min(r, a), 0), n = Math.max(Math.min(n, a), 0), o = Math.min(o, this._bufferService.cols);
-        let u = this._bufferService.buffer, h19 = u.ybase + u.y, c = Math.min(u.x, o - 1), d = this._optionsService.rawOptions.cursorBlink, _ = this._optionsService.rawOptions.cursorStyle, p = this._optionsService.rawOptions.cursorInactiveStyle;
+        let u = this._bufferService.buffer, h22 = u.ybase + u.y, c = Math.min(u.x, o - 1), d = this._optionsService.rawOptions.cursorBlink, _ = this._optionsService.rawOptions.cursorStyle, p = this._optionsService.rawOptions.cursorInactiveStyle;
         for (let m = r; m <= n; ++m) {
           let f = m + u.ydisp, A = this._rowElements[m], R = u.lines.get(f);
           if (!A || !R) break;
-          A.replaceChildren(...this._rowFactory.createRow(R, f, f === h19, _, p, c, d, this.dimensions.css.cell.width, this._widthCache, l ? m === r ? e : 0 : -1, l ? (m === n ? i : o) - 1 : -1));
+          A.replaceChildren(...this._rowFactory.createRow(R, f, f === h22, _, p, c, d, this.dimensions.css.cell.width, this._widthCache, l ? m === r ? e : 0 : -1, l ? (m === n ? i : o) - 1 : -1));
         }
       }
     };
@@ -4829,7 +4829,7 @@ ${h19.join(`
       }
     };
     Qt = class extends D {
-      constructor(e, i, r, n, o, l, a, u, h19) {
+      constructor(e, i, r, n, o, l, a, u, h22) {
         super();
         this._rowCount = e;
         this._optionsService = r;
@@ -4856,7 +4856,7 @@ ${h19.join(`
         this.onRefreshRequest = this._onRefreshRequest.event;
         this._renderDebouncer = new en((c, d) => this._renderRows(c, d), this._coreBrowserService), this._register(this._renderDebouncer), this._syncOutputHandler = new xs(this._coreBrowserService, this._coreService, () => this._fullRefresh()), this._register(C(() => this._syncOutputHandler.dispose())), this._register(this._coreBrowserService.onDprChange(() => this.handleDevicePixelRatioChange())), this._register(a.onResize(() => this._fullRefresh())), this._register(a.buffers.onBufferActivate(() => this._renderer.value?.clear())), this._register(this._optionsService.onOptionChange(() => this._handleOptionsChanged())), this._register(this._charSizeService.onCharSizeChange(() => this.handleCharSizeChanged())), this._register(l.onDecorationRegistered(() => this._fullRefresh())), this._register(l.onDecorationRemoved(() => this._fullRefresh())), this._register(this._optionsService.onMultipleOptionChange(["customGlyphs", "drawBoldTextInBrightColors", "letterSpacing", "lineHeight", "fontFamily", "fontSize", "fontWeight", "fontWeightBold", "minimumContrastRatio", "rescaleOverlappingGlyphs"], () => {
           this.clear(), this.handleResize(a.cols, a.rows), this._fullRefresh();
-        })), this._register(this._optionsService.onMultipleOptionChange(["cursorBlink", "cursorStyle"], () => this.refreshRows(a.buffer.y, a.buffer.y, true))), this._register(h19.onChangeColors(() => this._fullRefresh())), this._registerIntersectionObserver(this._coreBrowserService.window, i), this._register(this._coreBrowserService.onWindowChange((c) => this._registerIntersectionObserver(c, i)));
+        })), this._register(this._optionsService.onMultipleOptionChange(["cursorBlink", "cursorStyle"], () => this.refreshRows(a.buffer.y, a.buffer.y, true))), this._register(h22.onChangeColors(() => this._fullRefresh())), this._registerIntersectionObserver(this._coreBrowserService.window, i), this._register(this._coreBrowserService.onWindowChange((c) => this._registerIntersectionObserver(c, i)));
       }
       get dimensions() {
         return this._renderer.value.dimensions;
@@ -5000,7 +5000,7 @@ ${h19.join(`
     };
     Ds = 50, Ya = 15, ja = 50, Xa = 500, Za = " ", Ja = new RegExp(Za, "g");
     ei = class extends D {
-      constructor(e, i, r, n, o, l, a, u, h19) {
+      constructor(e, i, r, n, o, l, a, u, h22) {
         super();
         this._element = e;
         this._screenElement = i;
@@ -5010,7 +5010,7 @@ ${h19.join(`
         this._mouseService = l;
         this._optionsService = a;
         this._renderService = u;
-        this._coreBrowserService = h19;
+        this._coreBrowserService = h22;
         this._dragScrollAmount = 0;
         this._enabled = true;
         this._workCell = new q();
@@ -5061,15 +5061,15 @@ ${h19.join(`
           if (e[0] === i[0]) return "";
           let l = e[0] < i[0] ? e[0] : i[0], a = e[0] < i[0] ? i[0] : e[0];
           for (let u = e[1]; u <= i[1]; u++) {
-            let h19 = r.translateBufferLineToString(u, true, l, a);
-            n.push(h19);
+            let h22 = r.translateBufferLineToString(u, true, l, a);
+            n.push(h22);
           }
         } else {
           let l = e[1] === i[1] ? i[0] : void 0;
           n.push(r.translateBufferLineToString(e[1], true, e[0], l));
           for (let a = e[1] + 1; a <= i[1] - 1; a++) {
-            let u = r.lines.get(a), h19 = r.translateBufferLineToString(a, true);
-            u?.isWrapped ? n[n.length - 1] += h19 : n.push(h19);
+            let u = r.lines.get(a), h22 = r.translateBufferLineToString(a, true);
+            u?.isWrapped ? n[n.length - 1] += h22 : n.push(h22);
           }
           if (e[1] !== i[1]) {
             let a = r.lines.get(i[1]), u = r.translateBufferLineToString(i[1], true, 0, i[0]);
@@ -5226,28 +5226,28 @@ ${h19.join(`
         if (e[0] >= this._bufferService.cols) return;
         let o = this._bufferService.buffer, l = o.lines.get(e[1]);
         if (!l) return;
-        let a = o.translateBufferLineToString(e[1], false), u = this._convertViewportColToCharacterIndex(l, e[0]), h19 = u, c = e[0] - u, d = 0, _ = 0, p = 0, m = 0;
+        let a = o.translateBufferLineToString(e[1], false), u = this._convertViewportColToCharacterIndex(l, e[0]), h22 = u, c = e[0] - u, d = 0, _ = 0, p = 0, m = 0;
         if (a.charAt(u) === " ") {
           for (; u > 0 && a.charAt(u - 1) === " "; ) u--;
-          for (; h19 < a.length && a.charAt(h19 + 1) === " "; ) h19++;
+          for (; h22 < a.length && a.charAt(h22 + 1) === " "; ) h22++;
         } else {
           let R = e[0], O = e[0];
           l.getWidth(R) === 0 && (d++, R--), l.getWidth(O) === 2 && (_++, O++);
           let I = l.getString(O).length;
-          for (I > 1 && (m += I - 1, h19 += I - 1); R > 0 && u > 0 && !this._isCharWordSeparator(l.loadCell(R - 1, this._workCell)); ) {
+          for (I > 1 && (m += I - 1, h22 += I - 1); R > 0 && u > 0 && !this._isCharWordSeparator(l.loadCell(R - 1, this._workCell)); ) {
             l.loadCell(R - 1, this._workCell);
             let k = this._workCell.getChars().length;
             this._workCell.getWidth() === 0 ? (d++, R--) : k > 1 && (p += k - 1, u -= k - 1), u--, R--;
           }
-          for (; O < l.length && h19 + 1 < a.length && !this._isCharWordSeparator(l.loadCell(O + 1, this._workCell)); ) {
+          for (; O < l.length && h22 + 1 < a.length && !this._isCharWordSeparator(l.loadCell(O + 1, this._workCell)); ) {
             l.loadCell(O + 1, this._workCell);
             let k = this._workCell.getChars().length;
-            this._workCell.getWidth() === 2 ? (_++, O++) : k > 1 && (m += k - 1, h19 += k - 1), h19++, O++;
+            this._workCell.getWidth() === 2 ? (_++, O++) : k > 1 && (m += k - 1, h22 += k - 1), h22++, O++;
           }
         }
-        h19++;
-        let f = u + c - d + p, A = Math.min(this._bufferService.cols, h19 - u + d + _ - p - m);
-        if (!(!i && a.slice(u, h19).trim() === "")) {
+        h22++;
+        let f = u + c - d + p, A = Math.min(this._bufferService.cols, h22 - u + d + _ - p - m);
+        if (!(!i && a.slice(u, h22).trim() === "")) {
           if (r && f === 0 && l.getCodePoint(0) !== 32) {
             let R = o.lines.get(e[1] - 1);
             if (R && l.isWrapped && R.getCodePoint(this._bufferService.cols - 1) !== 32) {
@@ -5858,7 +5858,7 @@ ${h19.join(`
             let I = this.ybase + this.y;
             if (I >= l && I < l + u.length) continue;
           }
-          let h19 = u[u.length - 1].getTrimmedLength(), c = al(u, this._cols, t2), d = c.length - u.length, _;
+          let h22 = u[u.length - 1].getTrimmedLength(), c = al(u, this._cols, t2), d = c.length - u.length, _;
           this.ybase === 0 && this.y !== this.lines.length - 1 ? _ = Math.max(0, this.y - this.lines.maxLength + d) : _ = Math.max(0, this.lines.length - this.lines.maxLength + d);
           let p = [];
           for (let I = 0; I < d; I++) {
@@ -5868,7 +5868,7 @@ ${h19.join(`
           p.length > 0 && (n.push({ start: l + u.length + o, newLines: p }), o += p.length), u.push(...p);
           let m = c.length - 1, f = c[m];
           f === 0 && (m--, f = c[m]);
-          let A = u.length - d - 1, R = h19;
+          let A = u.length - d - 1, R = h22;
           for (; A >= 0; ) {
             let I = Math.min(R, f);
             if (u[m] === void 0) break;
@@ -5886,13 +5886,13 @@ ${h19.join(`
         if (n.length > 0) {
           let l = [], a = [];
           for (let f = 0; f < this.lines.length; f++) a.push(this.lines.get(f));
-          let u = this.lines.length, h19 = u - 1, c = 0, d = n[c];
+          let u = this.lines.length, h22 = u - 1, c = 0, d = n[c];
           this.lines.length = Math.min(this.lines.maxLength, this.lines.length + o);
           let _ = 0;
-          for (let f = Math.min(this.lines.maxLength - 1, u + o - 1); f >= 0; f--) if (d && d.start > h19 + _) {
+          for (let f = Math.min(this.lines.maxLength - 1, u + o - 1); f >= 0; f--) if (d && d.start > h22 + _) {
             for (let A = d.newLines.length - 1; A >= 0; A--) this.lines.set(f--, d.newLines[A]);
-            f++, l.push({ index: h19 + 1, amount: d.newLines.length }), _ += d.newLines.length, d = n[++c];
-          } else this.lines.set(f, a[h19--]);
+            f++, l.push({ index: h22 + 1, amount: d.newLines.length }), _ += d.newLines.length, d = n[++c];
+          } else this.lines.set(f, a[h22--]);
           let p = 0;
           for (let f = l.length - 1; f >= 0; f--) l[f].index += p, this.lines.onInsertEmitter.fire(l[f]), p += l[f].amount;
           let m = Math.max(0, u + o - this.lines.maxLength);
@@ -6682,17 +6682,17 @@ ${h19.join(`
         if (this._parseStack.state) if (this._parseStack.state === 2) this._parseStack.state = 0, l = this._parseStack.chunkPos + 1;
         else {
           if (r === void 0 || this._parseStack.state === 1) throw this._parseStack.state = 1, new Error("improper continuation due to previous async handler, giving up parsing");
-          let u = this._parseStack.handlers, h19 = this._parseStack.handlerPos - 1;
+          let u = this._parseStack.handlers, h22 = this._parseStack.handlerPos - 1;
           switch (this._parseStack.state) {
             case 3:
-              if (r === false && h19 > -1) {
-                for (; h19 >= 0 && (a = u[h19](this._params), a !== true); h19--) if (a instanceof Promise) return this._parseStack.handlerPos = h19, a;
+              if (r === false && h22 > -1) {
+                for (; h22 >= 0 && (a = u[h22](this._params), a !== true); h22--) if (a instanceof Promise) return this._parseStack.handlerPos = h22, a;
               }
               this._parseStack.handlers = [];
               break;
             case 4:
-              if (r === false && h19 > -1) {
-                for (; h19 >= 0 && (a = u[h19](), a !== true); h19--) if (a instanceof Promise) return this._parseStack.handlerPos = h19, a;
+              if (r === false && h22 > -1) {
+                for (; h22 >= 0 && (a = u[h22](), a !== true); h22--) if (a instanceof Promise) return this._parseStack.handlerPos = h22, a;
               }
               this._parseStack.handlers = [];
               break;
@@ -6802,7 +6802,7 @@ ${h19.join(`
     dc = /^([\da-f])\/([\da-f])\/([\da-f])$|^([\da-f]{2})\/([\da-f]{2})\/([\da-f]{2})$|^([\da-f]{3})\/([\da-f]{3})\/([\da-f]{3})$|^([\da-f]{4})\/([\da-f]{4})\/([\da-f]{4})$/, fc = /^[\da-f]+$/;
     mc = { "(": 0, ")": 1, "*": 2, "+": 3, "-": 1, ".": 2 }, ut = 131072, _l = 10;
     vl = 5e3, gl = 0, vn = class extends D {
-      constructor(e, i, r, n, o, l, a, u, h19 = new bn()) {
+      constructor(e, i, r, n, o, l, a, u, h22 = new bn()) {
         super();
         this._bufferService = e;
         this._charsetService = i;
@@ -6812,7 +6812,7 @@ ${h19.join(`
         this._oscLinkService = l;
         this._coreMouseService = a;
         this._unicodeService = u;
-        this._parser = h19;
+        this._parser = h22;
         this._parseBuffer = new Uint32Array(4096);
         this._stringDecoder = new er();
         this._utf8Decoder = new tr();
@@ -6894,11 +6894,11 @@ ${h19.join(`
           if (r = this._parser.parse(this._parseBuffer, c)) return this._preserveStack(n, o, c, 0), this._logSlowResolvingAsync(r), r;
         }
         (this._activeBuffer.x !== n || this._activeBuffer.y !== o) && this._onCursorMove.fire();
-        let u = this._dirtyRowTracker.end + (this._bufferService.buffer.ybase - this._bufferService.buffer.ydisp), h19 = this._dirtyRowTracker.start + (this._bufferService.buffer.ybase - this._bufferService.buffer.ydisp);
-        h19 < this._bufferService.rows && this._onRequestRefreshRows.fire({ start: Math.min(h19, this._bufferService.rows - 1), end: Math.min(u, this._bufferService.rows - 1) });
+        let u = this._dirtyRowTracker.end + (this._bufferService.buffer.ybase - this._bufferService.buffer.ydisp), h22 = this._dirtyRowTracker.start + (this._bufferService.buffer.ybase - this._bufferService.buffer.ydisp);
+        h22 < this._bufferService.rows && this._onRequestRefreshRows.fire({ start: Math.min(h22, this._bufferService.rows - 1), end: Math.min(u, this._bufferService.rows - 1) });
       }
       print(e, i, r) {
-        let n, o, l = this._charsetService.charset, a = this._optionsService.rawOptions.screenReaderMode, u = this._bufferService.cols, h19 = this._coreService.decPrivateModes.wraparound, c = this._coreService.modes.insertMode, d = this._curAttrData, _ = this._activeBuffer.lines.get(this._activeBuffer.ybase + this._activeBuffer.y);
+        let n, o, l = this._charsetService.charset, a = this._optionsService.rawOptions.screenReaderMode, u = this._bufferService.cols, h22 = this._coreService.decPrivateModes.wraparound, c = this._coreService.modes.insertMode, d = this._curAttrData, _ = this._activeBuffer.lines.get(this._activeBuffer.ybase + this._activeBuffer.y);
         this._dirtyRowTracker.markDirty(this._activeBuffer.y), this._activeBuffer.x && r - i > 0 && _.getWidth(this._activeBuffer.x - 1) === 2 && _.setCellFromCodepoint(this._activeBuffer.x - 1, 0, 1, d);
         let p = this._parser.precedingJoinState;
         for (let m = i; m < r; ++m) {
@@ -6910,7 +6910,7 @@ ${h19.join(`
           o = Ae.extractWidth(f);
           let A = Ae.extractShouldJoin(f), R = A ? Ae.extractWidth(p) : 0;
           if (p = f, a && this._onA11yChar.fire(Ce(n)), this._getCurrentLinkId() && this._oscLinkService.addLineToLink(this._getCurrentLinkId(), this._activeBuffer.ybase + this._activeBuffer.y), this._activeBuffer.x + o - R > u) {
-            if (h19) {
+            if (h22) {
               let O = _, I = this._activeBuffer.x - R;
               for (this._activeBuffer.x = R, this._activeBuffer.y++, this._activeBuffer.y === this._activeBuffer.scrollBottom + 1 ? (this._activeBuffer.y--, this._bufferService.scroll(this._eraseAttrData(), true)) : (this._activeBuffer.y >= this._bufferService.rows && (this._activeBuffer.y = this._bufferService.rows - 1), this._activeBuffer.lines.get(this._activeBuffer.ybase + this._activeBuffer.y).isWrapped = true), _ = this._activeBuffer.lines.get(this._activeBuffer.ybase + this._activeBuffer.y), R > 0 && _ instanceof Ze && _.copyCellsFrom(O, I, 0, R, false); I < u; ) O.setCellFromCodepoint(I++, 0, 1, d);
             } else if (this._activeBuffer.x = u - 1, o === 2) continue;
@@ -7167,13 +7167,13 @@ ${h19.join(`
       repeatPrecedingCharacter(e) {
         let i = this._parser.precedingJoinState;
         if (!i) return true;
-        let r = e.params[0] || 1, n = Ae.extractWidth(i), o = this._activeBuffer.x - n, a = this._activeBuffer.lines.get(this._activeBuffer.ybase + this._activeBuffer.y).getString(o), u = new Uint32Array(a.length * r), h19 = 0;
+        let r = e.params[0] || 1, n = Ae.extractWidth(i), o = this._activeBuffer.x - n, a = this._activeBuffer.lines.get(this._activeBuffer.ybase + this._activeBuffer.y).getString(o), u = new Uint32Array(a.length * r), h22 = 0;
         for (let d = 0; d < a.length; ) {
           let _ = a.codePointAt(d) || 0;
-          u[h19++] = _, d += _ > 65535 ? 2 : 1;
+          u[h22++] = _, d += _ > 65535 ? 2 : 1;
         }
-        let c = h19;
-        for (let d = 1; d < r; ++d) u.copyWithin(c, 0, h19), c += h19;
+        let c = h22;
+        for (let d = 1; d < r; ++d) u.copyWithin(c, 0, h22), c += h22;
         return this.print(u, 0, c), true;
       }
       sendDeviceAttributesPrimary(e) {
@@ -7348,8 +7348,8 @@ ${h19.join(`
       requestMode(e, i) {
         let r;
         ((P) => (P[P.NOT_RECOGNIZED = 0] = "NOT_RECOGNIZED", P[P.SET = 1] = "SET", P[P.RESET = 2] = "RESET", P[P.PERMANENTLY_SET = 3] = "PERMANENTLY_SET", P[P.PERMANENTLY_RESET = 4] = "PERMANENTLY_RESET"))(r ||= {});
-        let n = this._coreService.decPrivateModes, { activeProtocol: o, activeEncoding: l } = this._coreMouseService, a = this._coreService, { buffers: u, cols: h19 } = this._bufferService, { active: c, alt: d } = u, _ = this._optionsService.rawOptions, p = (A, R) => (a.triggerDataEvent(`${b.ESC}[${i ? "" : "?"}${A};${R}$y`), true), m = (A) => A ? 1 : 2, f = e.params[0];
-        return i ? f === 2 ? p(f, 4) : f === 4 ? p(f, m(a.modes.insertMode)) : f === 12 ? p(f, 3) : f === 20 ? p(f, m(_.convertEol)) : p(f, 0) : f === 1 ? p(f, m(n.applicationCursorKeys)) : f === 3 ? p(f, _.windowOptions.setWinLines ? h19 === 80 ? 2 : h19 === 132 ? 1 : 0 : 0) : f === 6 ? p(f, m(n.origin)) : f === 7 ? p(f, m(n.wraparound)) : f === 8 ? p(f, 3) : f === 9 ? p(f, m(o === "X10")) : f === 12 ? p(f, m(_.cursorBlink)) : f === 25 ? p(f, m(!a.isCursorHidden)) : f === 45 ? p(f, m(n.reverseWraparound)) : f === 66 ? p(f, m(n.applicationKeypad)) : f === 67 ? p(f, 4) : f === 1e3 ? p(f, m(o === "VT200")) : f === 1002 ? p(f, m(o === "DRAG")) : f === 1003 ? p(f, m(o === "ANY")) : f === 1004 ? p(f, m(n.sendFocus)) : f === 1005 ? p(f, 4) : f === 1006 ? p(f, m(l === "SGR")) : f === 1015 ? p(f, 4) : f === 1016 ? p(f, m(l === "SGR_PIXELS")) : f === 1048 ? p(f, 1) : f === 47 || f === 1047 || f === 1049 ? p(f, m(c === d)) : f === 2004 ? p(f, m(n.bracketedPasteMode)) : f === 2026 ? p(f, m(n.synchronizedOutput)) : p(f, 0);
+        let n = this._coreService.decPrivateModes, { activeProtocol: o, activeEncoding: l } = this._coreMouseService, a = this._coreService, { buffers: u, cols: h22 } = this._bufferService, { active: c, alt: d } = u, _ = this._optionsService.rawOptions, p = (A, R) => (a.triggerDataEvent(`${b.ESC}[${i ? "" : "?"}${A};${R}$y`), true), m = (A) => A ? 1 : 2, f = e.params[0];
+        return i ? f === 2 ? p(f, 4) : f === 4 ? p(f, m(a.modes.insertMode)) : f === 12 ? p(f, 3) : f === 20 ? p(f, m(_.convertEol)) : p(f, 0) : f === 1 ? p(f, m(n.applicationCursorKeys)) : f === 3 ? p(f, _.windowOptions.setWinLines ? h22 === 80 ? 2 : h22 === 132 ? 1 : 0 : 0) : f === 6 ? p(f, m(n.origin)) : f === 7 ? p(f, m(n.wraparound)) : f === 8 ? p(f, 3) : f === 9 ? p(f, m(o === "X10")) : f === 12 ? p(f, m(_.cursorBlink)) : f === 25 ? p(f, m(!a.isCursorHidden)) : f === 45 ? p(f, m(n.reverseWraparound)) : f === 66 ? p(f, m(n.applicationKeypad)) : f === 67 ? p(f, 4) : f === 1e3 ? p(f, m(o === "VT200")) : f === 1002 ? p(f, m(o === "DRAG")) : f === 1003 ? p(f, m(o === "ANY")) : f === 1004 ? p(f, m(n.sendFocus)) : f === 1005 ? p(f, 4) : f === 1006 ? p(f, m(l === "SGR")) : f === 1015 ? p(f, 4) : f === 1016 ? p(f, m(l === "SGR_PIXELS")) : f === 1048 ? p(f, 1) : f === 47 || f === 1047 || f === 1049 ? p(f, m(c === d)) : f === 2004 ? p(f, m(n.bracketedPasteMode)) : f === 2026 ? p(f, m(n.synchronizedOutput)) : p(f, 0);
       }
       _updateAttrColor(e, i, r, n, o) {
         return i === 2 ? (e |= 50331648, e &= -16777216, e |= De.fromColorRGB([r, n, o])) : i === 5 && (e &= -50331904, e |= 33554432 | r & 255), e;
@@ -8019,8 +8019,8 @@ ${h19.join(`
       _renderRows(e, i) {
         let r = this._terminal.buffer, n = r.lines.length.toString();
         for (let o = e; o <= i; o++) {
-          let l = r.lines.get(r.ydisp + o), a = [], u = l?.translateToString(true, void 0, void 0, a) || "", h19 = (r.ydisp + o + 1).toString(), c = this._rowElements[o];
-          c && (u.length === 0 ? (c.textContent = " ", this._rowColumns.set(c, [0, 1])) : (c.textContent = u, this._rowColumns.set(c, a)), c.setAttribute("aria-posinset", h19), c.setAttribute("aria-setsize", n), this._alignRowWidth(c));
+          let l = r.lines.get(r.ydisp + o), a = [], u = l?.translateToString(true, void 0, void 0, a) || "", h22 = (r.ydisp + o + 1).toString(), c = this._rowElements[o];
+          c && (u.length === 0 ? (c.textContent = " ", this._rowColumns.set(c, [0, 1])) : (c.textContent = u, this._rowColumns.set(c, a)), c.setAttribute("aria-posinset", h22), c.setAttribute("aria-setsize", n), this._alignRowWidth(c));
         }
         this._announceCharacters();
       }
@@ -8032,11 +8032,11 @@ ${h19.join(`
         if (o === l || e.relatedTarget !== n) return;
         let a, u;
         if (i === 0 ? (a = r, u = this._rowElements.pop(), this._rowContainer.removeChild(u)) : (a = this._rowElements.shift(), u = r, this._rowContainer.removeChild(a)), a.removeEventListener("focus", this._topBoundaryFocusListener), u.removeEventListener("focus", this._bottomBoundaryFocusListener), i === 0) {
-          let h19 = this._createAccessibilityTreeNode();
-          this._rowElements.unshift(h19), this._rowContainer.insertAdjacentElement("afterbegin", h19);
+          let h22 = this._createAccessibilityTreeNode();
+          this._rowElements.unshift(h22), this._rowContainer.insertAdjacentElement("afterbegin", h22);
         } else {
-          let h19 = this._createAccessibilityTreeNode();
-          this._rowElements.push(h19), this._rowContainer.appendChild(h19);
+          let h22 = this._createAccessibilityTreeNode();
+          this._rowElements.push(h22), this._rowContainer.appendChild(h22);
         }
         this._rowElements[0].addEventListener("focus", this._topBoundaryFocusListener), this._rowElements[this._rowElements.length - 1].addEventListener("focus", this._bottomBoundaryFocusListener), this._terminal.scrollLines(i === 0 ? -1 : 1), this._rowElements[i === 0 ? 1 : this._rowElements.length - 2].focus(), e.preventDefault(), e.stopImmediatePropagation();
       }
@@ -8056,12 +8056,12 @@ ${h19.join(`
         if ((i.node.compareDocumentPosition(r.node) & Node.DOCUMENT_POSITION_PRECEDING || i.node === r.node && i.offset > r.offset) && ([i, r] = [r, i]), i.node.compareDocumentPosition(this._rowElements[0]) & (Node.DOCUMENT_POSITION_CONTAINED_BY | Node.DOCUMENT_POSITION_FOLLOWING) && (i = { node: this._rowElements[0].childNodes[0], offset: 0 }), !this._rowContainer.contains(i.node)) return;
         let n = this._rowElements.slice(-1)[0];
         if (r.node.compareDocumentPosition(n) & (Node.DOCUMENT_POSITION_CONTAINED_BY | Node.DOCUMENT_POSITION_PRECEDING) && (r = { node: n, offset: n.textContent?.length ?? 0 }), !this._rowContainer.contains(r.node)) return;
-        let o = ({ node: u, offset: h19 }) => {
+        let o = ({ node: u, offset: h22 }) => {
           let c = u instanceof Text ? u.parentNode : u, d = parseInt(c?.getAttribute("aria-posinset"), 10) - 1;
           if (isNaN(d)) return console.warn("row is invalid. Race condition?"), null;
           let _ = this._rowColumns.get(c);
           if (!_) return console.warn("columns is null. Race condition?"), null;
-          let p = h19 < _.length ? _[h19] : _.slice(-1)[0] + 1;
+          let p = h22 < _.length ? _[h22] : _.slice(-1)[0] + 1;
           return p >= this._terminal.cols && (++d, p = 0), { row: d, column: p };
         }, l = o(i), a = o(r);
         if (!(!l || !a)) {
@@ -8162,8 +8162,8 @@ ${h19.join(`
         for (let n = 0; n < i.size; n++) {
           let o = i.get(n);
           if (o) for (let l = 0; l < o.length; l++) {
-            let a = o[l], u = a.link.range.start.y < e ? 0 : a.link.range.start.x, h19 = a.link.range.end.y > e ? this._bufferService.cols : a.link.range.end.x;
-            for (let c = u; c <= h19; c++) {
+            let a = o[l], u = a.link.range.start.y < e ? 0 : a.link.range.start.x, h22 = a.link.range.end.y > e ? this._bufferService.cols : a.link.range.end.x;
+            for (let c = u; c <= h22; c++) {
               if (r.has(c)) {
                 o.splice(l--, 1);
                 break;
@@ -8404,27 +8404,27 @@ ${h19.join(`
         function r(l) {
           let a = e._mouseService.getMouseReportCoords(l, e.screenElement);
           if (!a) return false;
-          let u, h19;
+          let u, h22;
           switch (l.overrideType || l.type) {
             case "mousemove":
-              h19 = 32, l.buttons === void 0 ? (u = 3, l.button !== void 0 && (u = l.button < 3 ? l.button : 3)) : u = l.buttons & 1 ? 0 : l.buttons & 4 ? 1 : l.buttons & 2 ? 2 : 3;
+              h22 = 32, l.buttons === void 0 ? (u = 3, l.button !== void 0 && (u = l.button < 3 ? l.button : 3)) : u = l.buttons & 1 ? 0 : l.buttons & 4 ? 1 : l.buttons & 2 ? 2 : 3;
               break;
             case "mouseup":
-              h19 = 0, u = l.button < 3 ? l.button : 3;
+              h22 = 0, u = l.button < 3 ? l.button : 3;
               break;
             case "mousedown":
-              h19 = 1, u = l.button < 3 ? l.button : 3;
+              h22 = 1, u = l.button < 3 ? l.button : 3;
               break;
             case "wheel":
               if (e._customWheelEventHandler && e._customWheelEventHandler(l) === false) return false;
               let c = l.deltaY;
               if (c === 0 || e.coreMouseService.consumeWheelEvent(l, e._renderService?.dimensions?.device?.cell?.height, e._coreBrowserService?.dpr) === 0) return false;
-              h19 = c < 0 ? 0 : 1, u = 4;
+              h22 = c < 0 ? 0 : 1, u = 4;
               break;
             default:
               return false;
           }
-          return h19 === void 0 || u === void 0 || u > 4 ? false : e.coreMouseService.triggerMouseEvent({ col: a.col, row: a.row, x: a.x, y: a.y, button: u, action: h19, ctrl: l.ctrlKey, alt: l.altKey, shift: l.shiftKey });
+          return h22 === void 0 || u === void 0 || u > 4 ? false : e.coreMouseService.triggerMouseEvent({ col: a.col, row: a.row, x: a.x, y: a.y, button: u, action: h22, ctrl: l.ctrlKey, alt: l.altKey, shift: l.shiftKey });
         }
         let n = { mouseup: null, wheel: null, mousedrag: null, mousemove: null }, o = { mouseup: (l) => (r(l), l.buttons || (this._document.removeEventListener("mouseup", n.mouseup), n.mousedrag && this._document.removeEventListener("mousemove", n.mousedrag)), this.cancel(l)), wheel: (l) => (r(l), this.cancel(l, true)), mousedrag: (l) => {
           l.buttons && r(l);
@@ -8441,8 +8441,8 @@ ${h19.join(`
             if (!this.buffer.hasScrollback) {
               if (l.deltaY === 0) return false;
               if (e.coreMouseService.consumeWheelEvent(l, e._renderService?.dimensions?.device?.cell?.height, e._coreBrowserService?.dpr) === 0) return this.cancel(l, true);
-              let h19 = b.ESC + (this.coreService.decPrivateModes.applicationCursorKeys ? "O" : "[") + (l.deltaY < 0 ? "A" : "B");
-              return this.coreService.triggerDataEvent(h19, true), this.cancel(l, true);
+              let h22 = b.ESC + (this.coreService.decPrivateModes.applicationCursorKeys ? "O" : "[") + (l.deltaY < 0 ? "A" : "B");
+              return this.coreService.triggerDataEvent(h22, true), this.cancel(l, true);
             }
           }
         }, { passive: false }));
@@ -16507,8 +16507,405 @@ var AUTOMATIONS_CSS = `
 @media (max-width:720px){.oa-in{padding:20px 16px 40px}}
 `;
 
-// src/client/omni-tree.js
+// src/client/code-pattern.js
 var import_react15 = require("react");
+var PATTERN_LENGTH_MIN = 4;
+var PATTERN_LENGTH_MAX = 64;
+var patternFields = (pattern) => ({
+  prefix: pattern?.prefix ?? "",
+  characters: pattern?.characters ?? "",
+  length: Number.isInteger(pattern?.length) ? String(pattern.length) : "",
+  lookAlikes: pattern?.lookAlikes === true
+});
+function patternOf(fields) {
+  const characters = fields.characters.trim();
+  const length = Number(fields.length);
+  if (!/^[0-9A-Za-z]{2,}$/.test(characters)) return { problem: t("Type the characters a code may have: letters and digits.") };
+  if (fields.length === "" || !Number.isInteger(length) || length < PATTERN_LENGTH_MIN || length > PATTERN_LENGTH_MAX) {
+    return { problem: t("The length is a whole number from {min} to {max}.", { min: PATTERN_LENGTH_MIN, max: PATTERN_LENGTH_MAX }) };
+  }
+  const prefix = fields.prefix.trim();
+  return { pattern: { ...prefix ? { prefix } : {}, characters, length, ...fields.lookAlikes ? { lookAlikes: true } : {} } };
+}
+function patternSummary(pattern) {
+  const shape = pattern.prefix ? t("{prefix} then {length} of {characters}", { prefix: pattern.prefix, length: pattern.length, characters: pattern.characters }) : t("{length} of {characters}", { length: pattern.length, characters: pattern.characters });
+  return pattern.lookAlikes ? `${shape} · ${t("look-alikes read as one")}` : shape;
+}
+function PatternFields({ value, onChange, locked = false, prefixRequired = false }) {
+  const set3 = (key, next) => onChange({ ...value, [key]: next });
+  const lookAlikes = t("Read look-alike characters as one (O and 0; I, L and 1)");
+  return (0, import_react15.createElement)(
+    "fieldset",
+    { className: "ot-pattern", disabled: locked, "aria-label": t("Code pattern") },
+    (0, import_react15.createElement)(
+      "div",
+      { className: "ot-pattern-row" },
+      (0, import_react15.createElement)(
+        "label",
+        { className: "ot-answer-label ot-pattern-prefix" },
+        (0, import_react15.createElement)("span", { className: "bt-field-label" }, prefixRequired ? t("Prefix") : t("Prefix (optional)")),
+        (0, import_react15.createElement)("input", { className: "bt-input", type: "text", value: value.prefix, maxLength: 16, spellCheck: false, autoComplete: "off", onChange: (event) => set3("prefix", event.target.value) })
+      ),
+      (0, import_react15.createElement)(
+        "label",
+        { className: "ot-answer-label ot-pattern-length" },
+        (0, import_react15.createElement)("span", { className: "bt-field-label" }, t("Length")),
+        (0, import_react15.createElement)("input", { className: "bt-input", type: "number", min: PATTERN_LENGTH_MIN, max: PATTERN_LENGTH_MAX, step: 1, inputMode: "numeric", value: value.length, onChange: (event) => set3("length", event.target.value) })
+      )
+    ),
+    (0, import_react15.createElement)(
+      "label",
+      { className: "ot-answer-label" },
+      (0, import_react15.createElement)("span", { className: "bt-field-label" }, t("Characters after the prefix")),
+      (0, import_react15.createElement)("input", { className: "bt-input ot-pattern-characters", type: "text", value: value.characters, maxLength: 72, spellCheck: false, autoComplete: "off", onChange: (event) => set3("characters", event.target.value) })
+    ),
+    // The Bot team's switch, as the answer settings draw it.
+    (0, import_react15.createElement)(
+      "div",
+      { className: "ot-answer-switch" },
+      (0, import_react15.createElement)("span", null, lookAlikes),
+      (0, import_react15.createElement)(
+        "button",
+        { type: "button", role: "switch", className: "bt-switch", disabled: locked, "aria-checked": value.lookAlikes, "aria-label": lookAlikes, onClick: () => set3("lookAlikes", !value.lookAlikes) },
+        (0, import_react15.createElement)("span", { className: "bt-switch-knob", "aria-hidden": true })
+      )
+    ),
+    (0, import_react15.createElement)("span", { className: "bt-note" }, locked ? t("This list's pattern is set; new codes must fit it.") : t("Case never matters. A code stands alone in the message, not inside a longer word or number."))
+  );
+}
+var CODE_PATTERN_CSS = `
+.ot-pattern{display:grid;gap:6px;min-width:0;margin:0;padding:0;border:0}
+.ot-pattern-row{display:flex;flex-wrap:wrap;gap:6px 8px;min-width:0}
+.ot-pattern-prefix{flex:1 1 96px;min-width:0}
+.ot-pattern-length{flex:0 0 72px;min-width:0}
+.ot-pattern .bt-input{box-sizing:border-box;width:100%;min-width:0}
+.ot-pattern-characters{font-family:var(--bt-mono, ui-monospace, monospace);font-size:12px}
+.ot-pattern:disabled .bt-input{opacity:.7}
+`;
+
+// src/client/code-lists.js
+var import_react16 = require("react");
+var pad2 = (value) => String(value).padStart(2, "0");
+var endOfDay = (year, month, day) => {
+  const at2 = new Date(year, month - 1, day, 23, 59, 59, 999);
+  return at2.getFullYear() === year && at2.getMonth() === month - 1 && at2.getDate() === day ? at2.toISOString() : void 0;
+};
+var dayOf = (iso) => {
+  const at2 = new Date(iso);
+  return Number.isNaN(at2.getTime()) ? "" : `${at2.getFullYear()}-${pad2(at2.getMonth() + 1)}-${pad2(at2.getDate())}`;
+};
+function parseCodeLines(text) {
+  const trimmed = String(text ?? "").trim();
+  if (trimmed === "") return { problem: t("Paste at least one code.") };
+  if (trimmed.startsWith("[")) {
+    let entries2;
+    try {
+      entries2 = JSON.parse(trimmed);
+    } catch {
+      return { problem: t("The JSON could not be read.") };
+    }
+    return Array.isArray(entries2) && entries2.length > 0 ? { entries: entries2 } : { problem: t("The JSON must be a list of codes.") };
+  }
+  const entries = [];
+  for (const [index, line] of trimmed.split(/\r?\n/).entries()) {
+    if (line.trim() === "" || line.trim().startsWith("#")) continue;
+    const parts = line.split(",").map((part) => part.trim());
+    const date = /^(?:expires\s+)?(\d{4})-(\d{2})-(\d{2})$/i.exec(parts[1] ?? "");
+    const expiresAt = date ? endOfDay(Number(date[1]), Number(date[2]), Number(date[3])) : void 0;
+    if (parts.length !== 2 || parts[0] === "" || expiresAt === void 0) return { problem: t("Line {n}: write code, expires YYYY-MM-DD.", { n: index + 1 }) };
+    entries.push({ code: parts[0], expiresAt });
+  }
+  return entries.length > 0 ? { entries } : { problem: t("Paste at least one code.") };
+}
+function parseRuleDetails(text) {
+  const trimmed = String(text ?? "").trim();
+  if (trimmed === "") return { metadata: {} };
+  if (trimmed.startsWith("{")) {
+    let metadata2;
+    try {
+      metadata2 = JSON.parse(trimmed);
+    } catch {
+      return { problem: t("The rule details JSON could not be read.") };
+    }
+    return metadata2 && typeof metadata2 === "object" && !Array.isArray(metadata2) ? { metadata: metadata2 } : { problem: t("The rule details JSON must be an object.") };
+  }
+  const metadata = {};
+  for (const [index, line] of trimmed.split(/\r?\n/).entries()) {
+    if (line.trim() === "" || line.trim().startsWith("#")) continue;
+    const at2 = line.indexOf("=");
+    const key = at2 === -1 ? "" : line.slice(0, at2).trim();
+    if (key === "") return { problem: t("Rule details line {n}: write key = value.", { n: index + 1 }) };
+    metadata[key] = line.slice(at2 + 1).trim();
+  }
+  return { metadata };
+}
+var ruleDetailsText = (metadata = {}) => Object.values(metadata).every((value) => typeof value === "string" && !value.includes("\n")) ? Object.entries(metadata).map(([key, value]) => `${key} = ${value}`).join("\n") : JSON.stringify(metadata, null, 2);
+var stateText = (state) => state === "open" ? t("Open") : state === "used" ? t("Used") : state === "expired" ? t("Expired") : state;
+var detailsLine = (metadata) => Object.entries(metadata ?? {}).map(([key, value]) => `${key} = ${typeof value === "string" ? value : JSON.stringify(value)}`).join(" · ");
+function CodeLists() {
+  const [shown, setShown] = (0, import_react16.useState)(false);
+  const [view, setView] = (0, import_react16.useState)(null);
+  const [read, setRead] = (0, import_react16.useState)(0);
+  const [name, setName] = (0, import_react16.useState)("");
+  const [fields, setFields] = (0, import_react16.useState)(patternFields());
+  const [details, setDetails] = (0, import_react16.useState)("");
+  const [text, setText] = (0, import_react16.useState)("");
+  const [busy, setBusy] = (0, import_react16.useState)(false);
+  const [result, setResult] = (0, import_react16.useState)(null);
+  (0, import_react16.useEffect)(() => {
+    if (!shown) return void 0;
+    let alive = true;
+    call("omni-code-lists", {}).then(
+      (reply) => {
+        if (alive) setView({ lists: Array.isArray(reply?.lists) ? reply.lists : [], codes: Array.isArray(reply?.codes) ? reply.codes : [] });
+      },
+      (error) => {
+        if (alive) setResult({ ok: false, text: hostText(error.message) });
+      }
+    );
+    return () => {
+      alive = false;
+    };
+  }, [shown, read]);
+  const known = view?.lists.find((list) => list.name === name.trim());
+  (0, import_react16.useEffect)(() => {
+    if (!known) return;
+    setFields(patternFields(known.pattern));
+    setDetails(ruleDetailsText(known.metadata));
+  }, [known?.name, read]);
+  const add = async () => {
+    const pattern = patternOf(fields);
+    const metadata = parseRuleDetails(details);
+    const parsed = parseCodeLines(text);
+    const problem = name.trim() === "" ? t("Name the list.") : pattern.problem ?? metadata.problem ?? parsed.problem;
+    if (problem) {
+      setResult({ ok: false, text: problem });
+      return;
+    }
+    setBusy(true);
+    setResult(null);
+    try {
+      const reply = await call("omni-code-lists-add", { list: name.trim(), pattern: pattern.pattern, metadata: metadata.metadata, entries: parsed.entries });
+      setText("");
+      const counts = t("Added {added}, updated {updated}.", { added: reply?.added ?? 0, updated: reply?.updated ?? 0 });
+      setResult({ ok: true, text: reply?.used ? `${counts} ${t("{n} already used, left as they were.", { n: reply.used })}` : counts });
+      setRead((before) => before + 1);
+    } catch (error) {
+      setResult({ ok: false, text: hostText(error.message) });
+    } finally {
+      setBusy(false);
+    }
+  };
+  const label = t("Code lists");
+  return (0, import_react16.createElement)(
+    "div",
+    { className: "ot-codes", role: "group", "aria-label": label },
+    (0, import_react16.createElement)(
+      "div",
+      { className: "ot-codes-head" },
+      (0, import_react16.createElement)("span", { className: "bt-field-label" }, shown && view !== null ? t("Code lists ({n})", { n: view.lists.length }) : label),
+      (0, import_react16.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", "aria-expanded": shown, onClick: () => setShown((before) => !before) }, shown ? t("Hide") : t("Show"))
+    ),
+    shown ? (0, import_react16.createElement)("span", { className: "bt-note" }, t("A person whose first message carries an open code from a list is let in, once. Each code admits one person.")) : null,
+    shown ? (0, import_react16.createElement)(
+      "label",
+      { className: "ot-answer-label" },
+      (0, import_react16.createElement)("span", { className: "bt-field-label" }, t("List name")),
+      (0, import_react16.createElement)("input", { className: "bt-input", type: "text", value: name, maxLength: 60, list: "ot-code-list-names", spellCheck: false, autoComplete: "off", onChange: (event) => setName(event.target.value) }),
+      (0, import_react16.createElement)("datalist", { id: "ot-code-list-names" }, (view?.lists ?? []).map((list) => (0, import_react16.createElement)("option", { key: list.name, value: list.name })))
+    ) : null,
+    shown ? (0, import_react16.createElement)(PatternFields, { value: fields, onChange: setFields, locked: known !== void 0 }) : null,
+    shown ? (0, import_react16.createElement)(
+      "div",
+      { className: "bt-field ot-answer-field" },
+      (0, import_react16.createElement)(
+        "label",
+        { className: "ot-answer-label" },
+        (0, import_react16.createElement)("span", { className: "bt-field-label" }, t("Rule details")),
+        (0, import_react16.createElement)("textarea", { className: "bt-input bt-input-area ot-codes-details", value: details, spellCheck: false, autoComplete: "off", onChange: (event) => setDetails(event.target.value) })
+      ),
+      (0, import_react16.createElement)("span", { className: "bt-note" }, t('Copied into the allow rule of each person a code from this list admits. One "key = value" a line, or a JSON object.'))
+    ) : null,
+    shown ? (0, import_react16.createElement)(
+      "div",
+      { className: "bt-field ot-answer-field" },
+      (0, import_react16.createElement)(
+        "label",
+        { className: "ot-answer-label" },
+        (0, import_react16.createElement)("span", { className: "bt-field-label" }, t("Codes to add")),
+        (0, import_react16.createElement)("textarea", { className: "bt-input bt-input-area ot-codes-paste", value: text, spellCheck: false, autoComplete: "off", onChange: (event) => setText(event.target.value) })
+      ),
+      (0, import_react16.createElement)("span", { className: "bt-note" }, t("One code a line: code, expires YYYY-MM-DD. Or paste a JSON list."))
+    ) : null,
+    shown ? (0, import_react16.createElement)(
+      "div",
+      { className: "bt-actions" },
+      (0, import_react16.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: busy || text.trim() === "", onClick: add }, t("Add codes"))
+    ) : null,
+    shown && result ? (0, import_react16.createElement)("p", { className: result.ok ? "ot-picker-note" : "ot-picker-problem", role: result.ok ? "status" : "alert" }, result.text) : null,
+    !shown || view === null ? null : view.codes.length === 0 ? (0, import_react16.createElement)("span", { className: "bt-note" }, t("No codes yet.")) : (0, import_react16.createElement)(
+      "div",
+      { className: "ot-codes-view" },
+      (0, import_react16.createElement)("ul", { className: "ot-code-lists" }, view.lists.map((list) => (0, import_react16.createElement)(
+        "li",
+        { key: list.name, className: "ot-code-list" },
+        (0, import_react16.createElement)("span", { className: "ot-code-list-name" }, list.name),
+        (0, import_react16.createElement)("span", { className: "ot-code-list-count" }, t("{open} open of {count}", { open: list.open, count: list.count })),
+        (0, import_react16.createElement)("span", { className: "ot-code-list-meta" }, patternSummary(list.pattern)),
+        Object.keys(list.metadata ?? {}).length > 0 ? (0, import_react16.createElement)("span", { className: "ot-code-list-meta" }, detailsLine(list.metadata)) : null
+      ))),
+      (0, import_react16.createElement)("ul", { className: "ot-code-items" }, view.codes.map((code) => (0, import_react16.createElement)(
+        "li",
+        { key: code.code, className: "ot-code", "data-state": code.state },
+        (0, import_react16.createElement)("span", { className: "ot-code-text" }, code.code),
+        (0, import_react16.createElement)("span", { className: "ot-code-state" }, stateText(code.state)),
+        (0, import_react16.createElement)("span", { className: "ot-code-meta" }, t("{list} · expires {day}", { list: code.list, day: dayOf(code.expiresAt) }))
+      )))
+    )
+  );
+}
+var CODE_LISTS_CSS = `${CODE_PATTERN_CSS}
+.ot-codes{display:grid;gap:6px;min-width:0}
+.ot-codes-head{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}
+.ot-codes .bt-input-area{box-sizing:border-box;width:100%;min-width:0;font-family:var(--bt-mono, ui-monospace, monospace);font-size:12px}
+.ot-codes .bt-actions{justify-content:flex-end}
+.ot-codes-view{display:grid;gap:6px;min-width:0}
+.ot-code-lists,.ot-code-items{display:grid;gap:6px;margin:0;padding:0;list-style:none;min-width:0}
+.ot-code-items{max-height:220px;overflow-y:auto}
+.ot-code-list,.ot-code{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:1px 8px;min-width:0;padding:6px 8px;border:1px solid var(--bt-line, rgba(127,127,127,.2));border-radius:8px}
+.ot-code-list-name{flex:1 0 auto;max-width:100%;overflow-wrap:anywhere;font-size:12px;line-height:17px;font-weight:600;color:var(--bt-ink)}
+.ot-code-text{flex:1 0 auto;max-width:100%;overflow-wrap:anywhere;font-family:var(--bt-mono, ui-monospace, monospace);font-size:12px;line-height:17px;color:var(--bt-ink)}
+.ot-code-list-count,.ot-code-state{flex:none;font-size:11px;line-height:17px;color:var(--bt-ink-2)}
+.ot-code[data-state=open] .ot-code-state{color:var(--bt-ok, #16a34a)}
+.ot-code-list-meta,.ot-code-meta{flex-basis:100%;min-width:0;overflow-wrap:anywhere;font-size:12px;line-height:17px;color:var(--bt-ink-3)}
+`;
+
+// src/client/outside-check.js
+var import_react17 = require("react");
+var emptyPattern = (fields) => fields.prefix.trim() === "" && fields.characters.trim() === "" && fields.length === "";
+var fieldsOf = (value) => ({
+  url: value?.url ?? "",
+  pattern: patternFields(value?.pattern),
+  label: value?.label ?? "",
+  tier: value?.tier ?? ""
+});
+function OutsideCheck({ botId, value }) {
+  const [fields, setFields] = (0, import_react17.useState)(fieldsOf(value));
+  const [secretSet, setSecretSet] = (0, import_react17.useState)(value?.secretSet === true);
+  const [secret, setSecret] = (0, import_react17.useState)("");
+  const [busy, setBusy] = (0, import_react17.useState)(false);
+  const [result, setResult] = (0, import_react17.useState)(null);
+  const shown = JSON.stringify(fieldsOf(value));
+  (0, import_react17.useEffect)(() => {
+    setFields(fieldsOf(value));
+    setSecretSet(value?.secretSet === true);
+  }, [shown, value?.secretSet]);
+  const set3 = (key, next) => setFields((before) => ({ ...before, [key]: next }));
+  const send = async (body, done) => {
+    setBusy(true);
+    setResult(null);
+    try {
+      const reply = await call("omni-outside-check", { botId, ...body });
+      setFields(fieldsOf(reply));
+      setSecretSet(reply?.secretSet === true);
+      setSecret("");
+      setResult({ ok: true, text: done });
+    } catch (error) {
+      setResult({ ok: false, text: hostText(error.message) });
+    } finally {
+      setBusy(false);
+    }
+  };
+  const changed = JSON.stringify(fields) !== shown || secret !== "";
+  const save = () => {
+    const pattern = emptyPattern(fields.pattern) ? { pattern: null } : patternOf(fields.pattern);
+    const problem = pattern.problem ?? (pattern.pattern && !pattern.pattern.prefix ? t("Give the pattern a prefix, so that ordinary words never go to the outside check.") : void 0);
+    if (problem) {
+      setResult({ ok: false, text: problem });
+      return;
+    }
+    send({
+      url: fields.url.trim() || null,
+      pattern: pattern.pattern,
+      label: fields.label.trim() || null,
+      tier: fields.tier.trim() || null,
+      ...secret === "" ? {} : { secret }
+    }, t("Saved."));
+  };
+  const clear = () => send({ secret: null }, t("The secret is cleared."));
+  const label = t("Outside code check");
+  return (0, import_react17.createElement)(
+    "div",
+    { className: "ot-outside", role: "group", "aria-label": label },
+    (0, import_react17.createElement)("span", { className: "bt-field-label" }, label),
+    (0, import_react17.createElement)("p", { className: "bt-note" }, t("A code of this pattern in the message of someone not let in is sent to this HTTPS address, and its reply goes to them. On only when the address, the secret and the pattern are all set.")),
+    (0, import_react17.createElement)(
+      "label",
+      { className: "ot-answer-label" },
+      (0, import_react17.createElement)("span", { className: "bt-field-label" }, t("Check URL")),
+      (0, import_react17.createElement)("input", { className: "bt-input ot-outside-url", type: "url", value: fields.url, title: fields.url || void 0, spellCheck: false, autoComplete: "off", onChange: (event) => set3("url", event.target.value) })
+    ),
+    (0, import_react17.createElement)(
+      "label",
+      { className: "ot-answer-label" },
+      (0, import_react17.createElement)(
+        "span",
+        { className: "ot-outside-secret-head" },
+        (0, import_react17.createElement)("span", { className: "bt-field-label" }, t("Secret")),
+        (0, import_react17.createElement)("span", { className: "ot-picker-tag ot-outside-state", "data-set": secretSet }, secretSet ? t("Set") : t("Not set"))
+      ),
+      (0, import_react17.createElement)("input", {
+        className: "bt-input ot-outside-secret",
+        type: "password",
+        value: secret,
+        spellCheck: false,
+        autoComplete: "new-password",
+        placeholder: secretSet ? t("New secret") : "",
+        onChange: (event) => setSecret(event.target.value)
+      })
+    ),
+    (0, import_react17.createElement)(PatternFields, { value: fields.pattern, onChange: (next) => set3("pattern", next), prefixRequired: true }),
+    (0, import_react17.createElement)(
+      "div",
+      { className: "bt-field ot-answer-field" },
+      (0, import_react17.createElement)(
+        "label",
+        { className: "ot-answer-label" },
+        (0, import_react17.createElement)("span", { className: "bt-field-label" }, t("Label on a confirmed row")),
+        (0, import_react17.createElement)("input", { className: "bt-input ot-outside-label", type: "text", value: fields.label, maxLength: 60, onChange: (event) => set3("label", event.target.value) })
+      ),
+      (0, import_react17.createElement)("span", { className: "bt-note" }, t("Staff see it on a request row the service confirmed. Empty: no label."))
+    ),
+    (0, import_react17.createElement)(
+      "div",
+      { className: "bt-field ot-answer-field" },
+      (0, import_react17.createElement)(
+        "label",
+        { className: "ot-answer-label" },
+        (0, import_react17.createElement)("span", { className: "bt-field-label" }, t("Tier name")),
+        (0, import_react17.createElement)("input", { className: "bt-input ot-outside-tier", type: "text", value: fields.tier, maxLength: 60, onChange: (event) => set3("tier", event.target.value) })
+      ),
+      (0, import_react17.createElement)("span", { className: "bt-note" }, t("Written on a request row the service confirmed. Empty: none."))
+    ),
+    (0, import_react17.createElement)(
+      "div",
+      { className: "bt-actions" },
+      (0, import_react17.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: busy || !secretSet, onClick: clear }, t("Clear")),
+      (0, import_react17.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: busy || !changed, onClick: save }, t("Save"))
+    ),
+    result ? (0, import_react17.createElement)("p", { className: result.ok ? "ot-picker-note" : "ot-picker-problem", role: result.ok ? "status" : "alert" }, result.text) : null
+  );
+}
+var OUTSIDE_CHECK_CSS = `
+.ot-outside{display:grid;gap:6px;min-width:0}
+.ot-outside .bt-input{box-sizing:border-box;width:100%;min-width:0}
+.ot-outside-secret-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;min-width:0}
+.ot-outside-state[data-set=true]{color:var(--bt-ok, #16a34a)}
+.ot-outside .bt-actions{justify-content:flex-end}
+`;
+
+// src/client/omni-tree.js
+var import_react18 = require("react");
 var { ChevronRightIcon: ChevronRightIcon2, CloseIcon, DotsIcon, PlusIcon: PlusIcon3, SparkIcon } = icons;
 var OPEN_KEY = "omni.tree.open";
 var SEARCH_DELAY_MS = 250;
@@ -16599,8 +16996,8 @@ function needsStaffOf(thread) {
   return { label: "Needs a person", reason: thread.needsStaff.reason, title: `Needs a person from the team: ${thread.needsStaff.reason}` };
 }
 function useNow(on2) {
-  const [now, setNow] = (0, import_react15.useState)(() => Date.now());
-  (0, import_react15.useEffect)(() => {
+  const [now, setNow] = (0, import_react18.useState)(() => Date.now());
+  (0, import_react18.useEffect)(() => {
     if (!on2) return void 0;
     setNow(Date.now());
     const timer = setInterval(() => setNow(Date.now()), 15e3);
@@ -16639,14 +17036,14 @@ function ThreadRow({ thread, actions, rowProps = {}, shown = true }) {
   const asking = useStatus((map) => map.get(id)?.pendingInteraction !== void 0);
   const running = useStatus((map) => map.get(id)?.running === true);
   const active = useRetain(id, (info) => (info?.retainedBy?.mainView ?? 0) > 0);
-  const [confirming, setConfirming] = (0, import_react15.useState)(false);
-  const [deleting2, setDeleting] = (0, import_react15.useState)(null);
-  const [problem, setProblem] = (0, import_react15.useState)(null);
-  const [menu, setMenu] = (0, import_react15.useState)(false);
-  const [whyOpen, setWhyOpen] = (0, import_react15.useState)(false);
-  const row = (0, import_react15.useRef)(null);
+  const [confirming, setConfirming] = (0, import_react18.useState)(false);
+  const [deleting2, setDeleting] = (0, import_react18.useState)(null);
+  const [problem, setProblem] = (0, import_react18.useState)(null);
+  const [menu, setMenu] = (0, import_react18.useState)(false);
+  const [whyOpen, setWhyOpen] = (0, import_react18.useState)(false);
+  const row = (0, import_react18.useRef)(null);
   const opens = teamReady(rowProps.roster);
-  (0, import_react15.useEffect)(() => {
+  (0, import_react18.useEffect)(() => {
     if (!menu || typeof document === "undefined" || typeof document.addEventListener !== "function") return void 0;
     const away = (event) => {
       if (!row.current?.contains?.(event.target)) setMenu(false);
@@ -16654,10 +17051,10 @@ function ThreadRow({ thread, actions, rowProps = {}, shown = true }) {
     document.addEventListener("pointerdown", away, true);
     return () => document.removeEventListener("pointerdown", away, true);
   }, [menu]);
-  (0, import_react15.useEffect)(() => {
+  (0, import_react18.useEffect)(() => {
     if (opens && openOnArrival.delete(thread.id)) openThread(thread, actions, setProblem);
   }, [opens, thread.id]);
-  (0, import_react15.useEffect)(() => {
+  (0, import_react18.useEffect)(() => {
     if (!opens) return void 0;
     const opener = () => openThread(thread, actions, setProblem);
     rowOpeners.set(thread.id, opener);
@@ -16726,10 +17123,10 @@ function ThreadRow({ thread, actions, rowProps = {}, shown = true }) {
     event.stopPropagation();
     setMenu(false);
   };
-  return (0, import_react15.createElement)(
+  return (0, import_react18.createElement)(
     "div",
     { ref: row, className: "ot-thread", "data-idle": state === "idle" || void 0, "data-answer": answer ? true : void 0, "data-paused": pause ? true : void 0, "data-needs": need ? true : void 0 },
-    (0, import_react15.createElement)(
+    (0, import_react18.createElement)(
       "button",
       {
         type: "button",
@@ -16742,17 +17139,17 @@ function ThreadRow({ thread, actions, rowProps = {}, shown = true }) {
         tabIndex: shown ? void 0 : -1,
         onClick
       },
-      (0, import_react15.createElement)("span", { className: state === "waiting" ? "bt-thread-wait" : state === "working" ? "bt-thread-spin" : "ot-thread-idle", "aria-hidden": true }),
-      (0, import_react15.createElement)("span", { className: "bt-thread-title" }, name),
-      answer && !pause ? (0, import_react15.createElement)("span", { className: "ot-mode", "data-mode": answer.mode, title: answer.title, "aria-hidden": true }, answer.label) : null,
-      reason ? (0, import_react15.createElement)("span", { className: "ot-thread-reason" }, reason) : null,
-      free ? (0, import_react15.createElement)("span", { className: "ot-thread-free", title: free, "aria-hidden": true }, (0, import_react15.createElement)(SparkIcon)) : null,
-      dot ? (0, import_react15.createElement)("span", { className: "bt-unread", "aria-hidden": true }) : null
+      (0, import_react18.createElement)("span", { className: state === "waiting" ? "bt-thread-wait" : state === "working" ? "bt-thread-spin" : "ot-thread-idle", "aria-hidden": true }),
+      (0, import_react18.createElement)("span", { className: "bt-thread-title" }, name),
+      answer && !pause ? (0, import_react18.createElement)("span", { className: "ot-mode", "data-mode": answer.mode, title: answer.title, "aria-hidden": true }, answer.label) : null,
+      reason ? (0, import_react18.createElement)("span", { className: "ot-thread-reason" }, reason) : null,
+      free ? (0, import_react18.createElement)("span", { className: "ot-thread-free", title: free, "aria-hidden": true }, (0, import_react18.createElement)(SparkIcon)) : null,
+      dot ? (0, import_react18.createElement)("span", { className: "bt-unread", "aria-hidden": true }) : null
     ),
-    (0, import_react15.createElement)(
+    (0, import_react18.createElement)(
       "span",
       { className: "ot-thread-acts", "data-on": confirming || menu || void 0 },
-      confirming ? null : (0, import_react15.createElement)("button", {
+      confirming ? null : (0, import_react18.createElement)("button", {
         type: "button",
         className: "ot-thread-more",
         "aria-label": menuLabel,
@@ -16761,8 +17158,8 @@ function ThreadRow({ thread, actions, rowProps = {}, shown = true }) {
         "aria-expanded": menu,
         tabIndex: shown ? void 0 : -1,
         onClick: () => setMenu((open) => !open)
-      }, (0, import_react15.createElement)(DotsIcon)),
-      (0, import_react15.createElement)("button", {
+      }, (0, import_react18.createElement)(DotsIcon)),
+      (0, import_react18.createElement)("button", {
         type: "button",
         className: "ot-thread-remove",
         "data-confirm": confirming || void 0,
@@ -16771,15 +17168,15 @@ function ThreadRow({ thread, actions, rowProps = {}, shown = true }) {
         tabIndex: shown ? void 0 : -1,
         onClick: remove,
         onBlur: () => setConfirming(false)
-      }, confirming ? t("Remove") : (0, import_react15.createElement)(CloseIcon))
+      }, confirming ? t("Remove") : (0, import_react18.createElement)(CloseIcon))
     ),
     // Needs a person: its own line under the name, at every width: the badge and Dismiss, then
     // the child's reason, cut to one line until it is opened; the whole reason is the tooltip.
-    need ? (0, import_react15.createElement)(
+    need ? (0, import_react18.createElement)(
       "div",
       { className: "ot-needs", title: need.title },
-      (0, import_react15.createElement)("span", { className: "ot-mode", "data-mode": "needs", "aria-hidden": true }, need.label),
-      (0, import_react15.createElement)("button", {
+      (0, import_react18.createElement)("span", { className: "ot-mode", "data-mode": "needs", "aria-hidden": true }, need.label),
+      (0, import_react18.createElement)("button", {
         type: "button",
         className: "ot-needs-why",
         "aria-expanded": whyOpen,
@@ -16787,7 +17184,7 @@ function ThreadRow({ thread, actions, rowProps = {}, shown = true }) {
         tabIndex: shown ? void 0 : -1,
         onClick: () => setWhyOpen((open) => !open)
       }, need.reason),
-      (0, import_react15.createElement)("button", {
+      (0, import_react18.createElement)("button", {
         type: "button",
         className: "bt-soft bt-soft-sm ot-dismiss",
         "aria-label": `Dismiss: ${name} needs a person`,
@@ -16797,12 +17194,12 @@ function ThreadRow({ thread, actions, rowProps = {}, shown = true }) {
       }, "Dismiss")
     ) : null,
     // Paused: its own line under the name, at every width, with the time left and Resume.
-    pause ? (0, import_react15.createElement)(
+    pause ? (0, import_react18.createElement)(
       "div",
       { className: "ot-paused", title: pause.title },
-      (0, import_react15.createElement)("span", { className: "ot-mode", "data-mode": "paused", "aria-hidden": true }, pause.label),
-      (0, import_react15.createElement)("span", { className: "ot-paused-left", "aria-hidden": true }, pause.left),
-      (0, import_react15.createElement)("button", {
+      (0, import_react18.createElement)("span", { className: "ot-mode", "data-mode": "paused", "aria-hidden": true }, pause.label),
+      (0, import_react18.createElement)("span", { className: "ot-paused-left", "aria-hidden": true }, pause.left),
+      (0, import_react18.createElement)("button", {
         type: "button",
         className: "bt-soft bt-soft-sm ot-resume",
         "aria-label": `Resume answering in ${name}`,
@@ -16811,14 +17208,14 @@ function ThreadRow({ thread, actions, rowProps = {}, shown = true }) {
         onClick: resume
       }, "Resume")
     ) : null,
-    menu ? (0, import_react15.createElement)(
+    menu ? (0, import_react18.createElement)(
       "div",
       { className: "ot-thread-menu", role: "menu", "aria-label": menuLabel, onKeyDown: onMenuKey },
-      permissionMenuOf(thread).map((group) => (0, import_react15.createElement)(
+      permissionMenuOf(thread).map((group) => (0, import_react18.createElement)(
         "div",
         { key: group.field, className: "ot-thread-menu-group", role: "group", "aria-label": group.label },
-        (0, import_react15.createElement)("span", { className: "ot-thread-menu-head" }, group.label),
-        group.items.map((choice) => (0, import_react15.createElement)("button", {
+        (0, import_react18.createElement)("span", { className: "ot-thread-menu-head" }, group.label),
+        group.items.map((choice) => (0, import_react18.createElement)("button", {
           key: String(choice.value),
           type: "button",
           role: "menuitemradio",
@@ -16829,33 +17226,33 @@ function ThreadRow({ thread, actions, rowProps = {}, shown = true }) {
           onClick: () => choose(choice)
         }, choice.label))
       )),
-      answer?.progress ? (0, import_react15.createElement)("span", { className: "ot-thread-menu-note" }, answer.progress) : null
+      answer?.progress ? (0, import_react18.createElement)("span", { className: "ot-thread-menu-note" }, answer.progress) : null
     ) : null,
-    (thread.automations?.length ?? 0) > 0 ? (0, import_react15.createElement)(
+    (thread.automations?.length ?? 0) > 0 ? (0, import_react18.createElement)(
       "ul",
       { className: "ot-thread-automations", "aria-label": "Automations" },
-      thread.automations.map((automation) => (0, import_react15.createElement)("li", { key: automation.id }, automation.name))
+      thread.automations.map((automation) => (0, import_react18.createElement)("li", { key: automation.id }, automation.name))
     ) : null,
-    deleting2 ? (0, import_react15.createElement)(
+    deleting2 ? (0, import_react18.createElement)(
       "div",
       { className: "ot-thread-menu", role: "group", "aria-label": "What should happen to these automations?" },
-      (0, import_react15.createElement)("p", null, `What should happen to: ${deleting2.map((automation) => automation.name).join(", ")}?`),
-      ...[["keep", "Keep automations"], ["pause", "Pause automations"], ["delete", "Delete automations"]].map(([choice, label2]) => (0, import_react15.createElement)("button", {
+      (0, import_react18.createElement)("p", null, `What should happen to: ${deleting2.map((automation) => automation.name).join(", ")}?`),
+      ...[["keep", "Keep automations"], ["pause", "Pause automations"], ["delete", "Delete automations"]].map(([choice, label2]) => (0, import_react18.createElement)("button", {
         key: choice,
         type: "button",
         onClick: () => {
           void remove(choice);
         }
       }, label2)),
-      (0, import_react15.createElement)("button", { type: "button", onClick: () => setDeleting(null) }, "Cancel")
+      (0, import_react18.createElement)("button", { type: "button", onClick: () => setDeleting(null) }, "Cancel")
     ) : null,
-    problem ? (0, import_react15.createElement)("span", { className: "ot-thread-problem", role: "alert" }, hostText(problem)) : null
+    problem ? (0, import_react18.createElement)("span", { className: "ot-thread-problem", role: "alert" }, hostText(problem)) : null
   );
 }
 function PickerChat({ chat, busy, selected, onPick }) {
   const name = chat.name ?? (chat.kind === "group" ? t("Group") : t("Chat"));
   const tag = chat.added ? t("Added") : busy === chat.id ? t("Adding…") : null;
-  return (0, import_react15.createElement)(
+  return (0, import_react18.createElement)(
     "button",
     {
       type: "button",
@@ -16870,40 +17267,40 @@ function PickerChat({ chat, busy, selected, onPick }) {
         void onPick(chat);
       }
     },
-    (0, import_react15.createElement)(ChatAvatar, { chat: { ...chat, name }, size: 30 }),
-    (0, import_react15.createElement)(
+    (0, import_react18.createElement)(ChatAvatar, { chat: { ...chat, name }, size: 30 }),
+    (0, import_react18.createElement)(
       "span",
       { className: "ot-picker-body" },
-      (0, import_react15.createElement)(
+      (0, import_react18.createElement)(
         "span",
         { className: "ot-picker-top" },
-        (0, import_react15.createElement)("span", { className: "ot-picker-name" }, name),
-        tag ? (0, import_react15.createElement)("span", { className: "ot-picker-tag" }, tag) : chat.at > 0 ? (0, import_react15.createElement)("span", { className: "ot-picker-at" }, relativeShort(chat.at)) : null
+        (0, import_react18.createElement)("span", { className: "ot-picker-name" }, name),
+        tag ? (0, import_react18.createElement)("span", { className: "ot-picker-tag" }, tag) : chat.at > 0 ? (0, import_react18.createElement)("span", { className: "ot-picker-at" }, relativeShort(chat.at)) : null
       ),
-      chat.number ? (0, import_react15.createElement)("span", { className: "ot-picker-number" }, chat.number) : null,
-      chat.preview ? (0, import_react15.createElement)("span", { className: "ot-picker-preview" }, chat.preview) : null
+      chat.number ? (0, import_react18.createElement)("span", { className: "ot-picker-number" }, chat.number) : null,
+      chat.preview ? (0, import_react18.createElement)("span", { className: "ot-picker-preview" }, chat.preview) : null
     )
   );
 }
 function ThreadPicker({ channel, channels: channels2 = [channel], onPick, onClose }) {
-  const [query, setQuery] = (0, import_react15.useState)("");
-  const [channelId, setChannelId] = (0, import_react15.useState)(channel.id);
-  const [selected, setSelected] = (0, import_react15.useState)([]);
-  const [title, setTitle] = (0, import_react15.useState)("");
-  const [notes, setNotes] = (0, import_react15.useState)("");
-  const [list, setList] = (0, import_react15.useState)({ status: "loading", chats: [], error: null });
-  const [busy, setBusy] = (0, import_react15.useState)(null);
-  const [problem, setProblem] = (0, import_react15.useState)(null);
-  const asked = (0, import_react15.useRef)(0);
-  const alive = (0, import_react15.useRef)(true);
-  (0, import_react15.useEffect)(() => {
+  const [query, setQuery] = (0, import_react18.useState)("");
+  const [channelId, setChannelId] = (0, import_react18.useState)(channel.id);
+  const [selected, setSelected] = (0, import_react18.useState)([]);
+  const [title, setTitle] = (0, import_react18.useState)("");
+  const [notes, setNotes] = (0, import_react18.useState)("");
+  const [list, setList] = (0, import_react18.useState)({ status: "loading", chats: [], error: null });
+  const [busy, setBusy] = (0, import_react18.useState)(null);
+  const [problem, setProblem] = (0, import_react18.useState)(null);
+  const asked = (0, import_react18.useRef)(0);
+  const alive = (0, import_react18.useRef)(true);
+  (0, import_react18.useEffect)(() => {
     alive.current = true;
     return () => {
       alive.current = false;
     };
   }, []);
   const words = query.trim();
-  (0, import_react15.useEffect)(() => {
+  (0, import_react18.useEffect)(() => {
     const ticket = ++asked.current;
     const load = () => call("omni-thread-chats", words ? { channelId, query: words } : { channelId }).then(
       (reply) => {
@@ -16955,21 +17352,21 @@ function ThreadPicker({ channel, channels: channels2 = [channel], onPick, onClos
   const availableChats = list.chats.filter((chat) => chat.added !== true);
   const empty = list.status === "ready" && availableChats.length === 0;
   const emptyText = list.chats.length > 0 ? t("No chats to add here. Search for another chat.") : words ? t("No chats match.") : t("No chats yet");
-  return (0, import_react15.createElement)(
+  return (0, import_react18.createElement)(
     "div",
     { className: "ot-picker", role: "group", "aria-label": t("Add a chat from {name}", { name: channel.name }), onKeyDown },
-    (0, import_react15.createElement)(
+    (0, import_react18.createElement)(
       "select",
       { "aria-label": "Channel", value: channelId, disabled: busy !== null, onChange: (event) => {
         setChannelId(event.target.value);
         setQuery("");
       } },
-      channels2.map((item) => (0, import_react15.createElement)("option", { key: item.id, value: item.id }, item.name))
+      channels2.map((item) => (0, import_react18.createElement)("option", { key: item.id, value: item.id }, item.name))
     ),
-    (0, import_react15.createElement)(
+    (0, import_react18.createElement)(
       "div",
       { className: "ot-picker-head" },
-      (0, import_react15.createElement)("input", {
+      (0, import_react18.createElement)("input", {
         type: "search",
         className: "ot-picker-search",
         value: query,
@@ -16978,28 +17375,28 @@ function ThreadPicker({ channel, channels: channels2 = [channel], onPick, onClos
         autoFocus: true,
         onChange: (event) => setQuery(event.target.value)
       }),
-      (0, import_react15.createElement)("button", { type: "button", className: "ot-picker-close", "aria-label": t("Close"), title: t("Close"), onClick: onClose }, (0, import_react15.createElement)(CloseIcon))
+      (0, import_react18.createElement)("button", { type: "button", className: "ot-picker-close", "aria-label": t("Close"), title: t("Close"), onClick: onClose }, (0, import_react18.createElement)(CloseIcon))
     ),
-    problem ? (0, import_react15.createElement)("p", { className: "ot-picker-problem", role: "alert" }, hostText(problem)) : null,
-    list.status === "loading" ? (0, import_react15.createElement)("p", { className: "ot-picker-note" }, t("Loading…")) : null,
-    list.status === "failed" ? (0, import_react15.createElement)("p", { className: "ot-picker-problem", role: "alert" }, hostText(list.error)) : null,
-    empty ? (0, import_react15.createElement)("p", { className: "ot-picker-note" }, emptyText) : null,
-    availableChats.length > 0 ? (0, import_react15.createElement)(
+    problem ? (0, import_react18.createElement)("p", { className: "ot-picker-problem", role: "alert" }, hostText(problem)) : null,
+    list.status === "loading" ? (0, import_react18.createElement)("p", { className: "ot-picker-note" }, t("Loading…")) : null,
+    list.status === "failed" ? (0, import_react18.createElement)("p", { className: "ot-picker-problem", role: "alert" }, hostText(list.error)) : null,
+    empty ? (0, import_react18.createElement)("p", { className: "ot-picker-note" }, emptyText) : null,
+    availableChats.length > 0 ? (0, import_react18.createElement)(
       "div",
       { className: "ot-picker-list" },
-      availableChats.map((chat) => (0, import_react15.createElement)(PickerChat, { key: chat.id, chat, busy, selected: selected.some((item) => item.chatId === chat.id), onPick: toggle }))
+      availableChats.map((chat) => (0, import_react18.createElement)(PickerChat, { key: chat.id, chat, busy, selected: selected.some((item) => item.chatId === chat.id), onPick: toggle }))
     ) : null,
-    (0, import_react15.createElement)("p", { className: "ot-picker-selected" }, selected.map((item) => item.name ?? item.chatId).join(", ")),
-    (0, import_react15.createElement)("input", { "aria-label": "Thread title", placeholder: "Thread title", value: title, maxLength: 80, onChange: (event) => setTitle(event.target.value) }),
-    (0, import_react15.createElement)("textarea", { "aria-label": "Thread notes", placeholder: "Thread notes", value: notes, maxLength: 8e3, onChange: (event) => setNotes(event.target.value) }),
-    (0, import_react15.createElement)("button", { type: "button", disabled: busy !== null || selected.length === 0 || !title.trim(), onClick: () => {
+    (0, import_react18.createElement)("p", { className: "ot-picker-selected" }, selected.map((item) => item.name ?? item.chatId).join(", ")),
+    (0, import_react18.createElement)("input", { "aria-label": "Thread title", placeholder: "Thread title", value: title, maxLength: 80, onChange: (event) => setTitle(event.target.value) }),
+    (0, import_react18.createElement)("textarea", { "aria-label": "Thread notes", placeholder: "Thread notes", value: notes, maxLength: 8e3, onChange: (event) => setNotes(event.target.value) }),
+    (0, import_react18.createElement)("button", { type: "button", disabled: busy !== null || selected.length === 0 || !title.trim(), onClick: () => {
       void pick();
     } }, "Create thread")
   );
 }
 var addThread = (payload) => call("omni-thread-add", payload);
 function ChannelItem({ channel, state, roster, rowProps, actions, omni: omni2, plus, open, picking, onToggle, onPlus, onClosePicker }) {
-  const plusButton = (0, import_react15.useRef)(null);
+  const plusButton = (0, import_react18.useRef)(null);
   const threads = threadsOf(roster, channel.id);
   const hasChats = state.chats.some((chat) => chat.channelId === channel.id);
   const unread = unreadOf(state, channel.id);
@@ -17018,13 +17415,13 @@ function ChannelItem({ channel, state, roster, rowProps, actions, omni: omni2, p
     else openOnArrival.add(result.threadId);
     return result;
   });
-  return (0, import_react15.createElement)(
+  return (0, import_react18.createElement)(
     "div",
     { className: "ot-channel" },
-    (0, import_react15.createElement)(
+    (0, import_react18.createElement)(
       "div",
       { className: "ot-channel-head" },
-      (0, import_react15.createElement)(
+      (0, import_react18.createElement)(
         "button",
         {
           type: "button",
@@ -17034,12 +17431,12 @@ function ChannelItem({ channel, state, roster, rowProps, actions, omni: omni2, p
           title: `${type.label} · ${channel.name}`,
           onClick: onToggle
         },
-        (0, import_react15.createElement)("span", { className: "ot-chevron", "aria-hidden": true }, (0, import_react15.createElement)(ChevronRightIcon2)),
-        (0, import_react15.createElement)(Tile, { type: channel.type, size: 18 }),
-        (0, import_react15.createElement)("span", { className: "ot-channel-name" }, channel.name),
-        unread > 0 ? (0, import_react15.createElement)("span", { className: "ot-count", "aria-label": t("{n} unread", { n: unread }) }, unread) : (0, import_react15.createElement)(StatusDot, { status: channel.status })
+        (0, import_react18.createElement)("span", { className: "ot-chevron", "aria-hidden": true }, (0, import_react18.createElement)(ChevronRightIcon2)),
+        (0, import_react18.createElement)(Tile, { type: channel.type, size: 18 }),
+        (0, import_react18.createElement)("span", { className: "ot-channel-name" }, channel.name),
+        unread > 0 ? (0, import_react18.createElement)("span", { className: "ot-count", "aria-label": t("{n} unread", { n: unread }) }, unread) : (0, import_react18.createElement)(StatusDot, { status: channel.status })
       ),
-      plus.offered ? (0, import_react15.createElement)("button", {
+      plus.offered ? (0, import_react18.createElement)("button", {
         ref: plusButton,
         type: "button",
         className: "ot-plus",
@@ -17047,18 +17444,18 @@ function ChannelItem({ channel, state, roster, rowProps, actions, omni: omni2, p
         title: t("Add a chat"),
         "aria-expanded": picking,
         onClick: onPlus
-      }, (0, import_react15.createElement)(PlusIcon3)) : null
+      }, (0, import_react18.createElement)(PlusIcon3)) : null
     ),
-    (0, import_react15.createElement)(
+    (0, import_react18.createElement)(
       "div",
       { id: panelId, className: "ot-chats", "data-open": open || void 0 },
-      (0, import_react15.createElement)(
+      (0, import_react18.createElement)(
         "div",
         { className: "ot-chats-in" },
-        picking && plus.offered ? (0, import_react15.createElement)(ThreadPicker, { channel, channels: state.channels, onPick, onClose: closePicker }) : null,
-        !plus.offered && plus.reason ? (0, import_react15.createElement)("span", { className: "ot-empty" }, hostText(plus.reason)) : null,
-        threads.map((thread) => (0, import_react15.createElement)(ThreadRow, { key: rowKey(thread, rowProps), thread, actions, rowProps, shown: open })),
-        (0, import_react15.createElement)(
+        picking && plus.offered ? (0, import_react18.createElement)(ThreadPicker, { channel, channels: state.channels, onPick, onClose: closePicker }) : null,
+        !plus.offered && plus.reason ? (0, import_react18.createElement)("span", { className: "ot-empty" }, hostText(plus.reason)) : null,
+        threads.map((thread) => (0, import_react18.createElement)(ThreadRow, { key: rowKey(thread, rowProps), thread, actions, rowProps, shown: open })),
+        (0, import_react18.createElement)(
           "button",
           { type: "button", className: "ot-chat ot-all", tabIndex: open ? void 0 : -1, onClick: () => omni2.openChannels("channel", channel.id) },
           hasChats ? t("All chats") : t("Channel health")
@@ -17068,11 +17465,11 @@ function ChannelItem({ channel, state, roster, rowProps, actions, omni: omni2, p
   );
 }
 function ChannelBotForm({ channels: channels2, roster, onClose }) {
-  const [name, setName] = (0, import_react15.useState)("");
-  const [selected, setSelected] = (0, import_react15.useState)([]);
-  const [local, setLocal] = (0, import_react15.useState)(null);
-  const [busy, setBusy] = (0, import_react15.useState)(false);
-  const [problem, setProblem] = (0, import_react15.useState)(null);
+  const [name, setName] = (0, import_react18.useState)("");
+  const [selected, setSelected] = (0, import_react18.useState)([]);
+  const [local, setLocal] = (0, import_react18.useState)(null);
+  const [busy, setBusy] = (0, import_react18.useState)(false);
+  const [problem, setProblem] = (0, import_react18.useState)(null);
   const pending = local ? [local] : roster.omniBotProposals ?? [];
   const act = async (endpoint, body, after) => {
     setBusy(true);
@@ -17086,32 +17483,32 @@ function ChannelBotForm({ channels: channels2, roster, onClose }) {
       setBusy(false);
     }
   };
-  return (0, import_react15.createElement)(
+  return (0, import_react18.createElement)(
     "div",
     { className: "ot-picker", role: "group", "aria-label": "Dedicated channel bot" },
-    problem ? (0, import_react15.createElement)("p", { role: "alert" }, hostText(problem)) : null,
-    pending.map((proposal) => (0, import_react15.createElement)(
+    problem ? (0, import_react18.createElement)("p", { role: "alert" }, hostText(problem)) : null,
+    pending.map((proposal) => (0, import_react18.createElement)(
       "div",
       { key: proposal.proposalId },
-      (0, import_react15.createElement)("p", null, `Create ${proposal.name} and hand over: ${proposal.channelIds.map((id) => channels2.find((channel) => channel.id === id)?.name ?? id).join(", ")}? The default bot will only read these channels.`),
-      (0, import_react15.createElement)("button", { type: "button", disabled: busy, onClick: () => act("confirm_answer_bot", { proposalId: proposal.proposalId }, () => {
+      (0, import_react18.createElement)("p", null, `Create ${proposal.name} and hand over: ${proposal.channelIds.map((id) => channels2.find((channel) => channel.id === id)?.name ?? id).join(", ")}? The default bot will only read these channels.`),
+      (0, import_react18.createElement)("button", { type: "button", disabled: busy, onClick: () => act("confirm_answer_bot", { proposalId: proposal.proposalId }, () => {
         setLocal(null);
         onClose();
       }) }, "Confirm hand-over"),
-      (0, import_react15.createElement)("button", { type: "button", disabled: busy, onClick: () => act("cancel_answer_bot", { proposalId: proposal.proposalId }, () => {
+      (0, import_react18.createElement)("button", { type: "button", disabled: busy, onClick: () => act("cancel_answer_bot", { proposalId: proposal.proposalId }, () => {
         setLocal(null);
         onClose();
       }) }, "Cancel proposal")
     )),
-    (0, import_react15.createElement)("input", { "aria-label": "Bot name", value: name, maxLength: 40, onChange: (event) => setName(event.target.value) }),
-    channels2.map((channel) => (0, import_react15.createElement)(
+    (0, import_react18.createElement)("input", { "aria-label": "Bot name", value: name, maxLength: 40, onChange: (event) => setName(event.target.value) }),
+    channels2.map((channel) => (0, import_react18.createElement)(
       "label",
       { key: channel.id },
-      (0, import_react15.createElement)("input", { type: "checkbox", checked: selected.includes(channel.id), onChange: (event) => setSelected((before) => event.target.checked ? [...before, channel.id] : before.filter((id) => id !== channel.id)) }),
+      (0, import_react18.createElement)("input", { type: "checkbox", checked: selected.includes(channel.id), onChange: (event) => setSelected((before) => event.target.checked ? [...before, channel.id] : before.filter((id) => id !== channel.id)) }),
       channel.name
     )),
-    (0, import_react15.createElement)("button", { type: "button", disabled: busy || !name.trim() || !selected.length, onClick: () => act("propose_answer_bot", { name, channelIds: selected }, (value) => setLocal({ ...value, name, channelIds: selected })) }, "Review hand-over"),
-    (0, import_react15.createElement)("button", { type: "button", disabled: busy, onClick: onClose }, "Close")
+    (0, import_react18.createElement)("button", { type: "button", disabled: busy || !name.trim() || !selected.length, onClick: () => act("propose_answer_bot", { name, channelIds: selected }, (value) => setLocal({ ...value, name, channelIds: selected })) }, "Review hand-over"),
+    (0, import_react18.createElement)("button", { type: "button", disabled: busy, onClick: onClose }, "Close")
   );
 }
 var VISIBILITY = {
@@ -17128,24 +17525,25 @@ var minutesOf = (ms2) => String(Number.isInteger(ms2) && ms2 >= 6e4 ? Math.round
 var ANSWER_TOOLS = [["read", "Read files"], ["read_image", "Read images"], ["glob", "Find files by name"], ["grep", "Search inside files"]];
 var SHARED_NOTES_MAX = 32e3;
 var STRANGER_REPLY_MAX = 1e3;
+var CODE_WELCOME_MAX = 1e3;
 function SwitchRow({ label, title, on: on2, onChange }) {
-  return (0, import_react15.createElement)(
+  return (0, import_react18.createElement)(
     "div",
     { className: "ot-answer-switch", title },
-    (0, import_react15.createElement)("span", null, label),
-    (0, import_react15.createElement)(
+    (0, import_react18.createElement)("span", null, label),
+    (0, import_react18.createElement)(
       "button",
       { type: "button", role: "switch", className: "bt-switch", "aria-checked": on2, "aria-label": label, onClick: () => onChange(!on2) },
-      (0, import_react15.createElement)("span", { className: "bt-switch-knob", "aria-hidden": true })
+      (0, import_react18.createElement)("span", { className: "bt-switch-knob", "aria-hidden": true })
     )
   );
 }
 function Field({ label, note, children }) {
-  return (0, import_react15.createElement)(
+  return (0, import_react18.createElement)(
     "div",
     { className: "bt-field ot-answer-field" },
-    (0, import_react15.createElement)("label", { className: "ot-answer-label" }, (0, import_react15.createElement)("span", { className: "bt-field-label" }, label), children),
-    note ? (0, import_react15.createElement)("span", { className: "bt-note" }, note) : null
+    (0, import_react18.createElement)("label", { className: "ot-answer-label" }, (0, import_react18.createElement)("span", { className: "bt-field-label" }, label), children),
+    note ? (0, import_react18.createElement)("span", { className: "bt-note" }, note) : null
   );
 }
 function staffChatOptions(chats, threads, chosen, several) {
@@ -17153,11 +17551,11 @@ function staffChatOptions(chats, threads, chosen, several) {
   const options = chats.filter((chat) => !answered.has(chat.id)).map((chat) => ({ id: chat.id, label: several ? `${chat.name ?? chat.id} · ${chat.channel}` : chat.name ?? chat.id }));
   return chosen && !options.some((option) => option.id === chosen) ? [{ id: chosen, label: "The chosen chat" }, ...options] : options;
 }
-function StrangerRequests({ botId }) {
-  const [shown, setShown] = (0, import_react15.useState)(false);
-  const [requests, setRequests] = (0, import_react15.useState)(null);
-  const [problem, setProblem] = (0, import_react15.useState)(null);
-  (0, import_react15.useEffect)(() => {
+function StrangerRequests({ botId, confirmedLabel }) {
+  const [shown, setShown] = (0, import_react18.useState)(false);
+  const [requests, setRequests] = (0, import_react18.useState)(null);
+  const [problem, setProblem] = (0, import_react18.useState)(null);
+  (0, import_react18.useEffect)(() => {
     if (!shown) return void 0;
     let alive = true;
     setProblem(null);
@@ -17174,42 +17572,47 @@ function StrangerRequests({ botId }) {
     };
   }, [shown, botId]);
   const messages = (count) => `${count} ${count === 1 ? "message" : "messages"}`;
-  return (0, import_react15.createElement)(
+  return (0, import_react18.createElement)(
     "div",
     { className: "ot-answer-requests", role: "group", "aria-label": "Requests" },
-    (0, import_react15.createElement)(
+    (0, import_react18.createElement)(
       "div",
       { className: "ot-answer-requests-head" },
-      (0, import_react15.createElement)("span", { className: "bt-field-label" }, shown && requests !== null ? `Requests (${requests.length})` : "Requests"),
-      (0, import_react15.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", "aria-expanded": shown, onClick: () => setShown((before) => !before) }, shown ? "Hide" : "Show")
+      (0, import_react18.createElement)("span", { className: "bt-field-label" }, shown && requests !== null ? `Requests (${requests.length})` : "Requests"),
+      (0, import_react18.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", "aria-expanded": shown, onClick: () => setShown((before) => !before) }, shown ? "Hide" : "Show")
     ),
-    !shown ? null : problem ? (0, import_react15.createElement)("p", { className: "ot-picker-problem", role: "alert" }, hostText(problem)) : requests === null ? null : requests.length === 0 ? (0, import_react15.createElement)("span", { className: "bt-note" }, "Nobody yet.") : (0, import_react15.createElement)("ul", { className: "ot-requests" }, requests.map((request) => (0, import_react15.createElement)(
+    !shown ? null : problem ? (0, import_react18.createElement)("p", { className: "ot-picker-problem", role: "alert" }, hostText(problem)) : requests === null ? null : requests.length === 0 ? (0, import_react18.createElement)("span", { className: "bt-note" }, "Nobody yet.") : (0, import_react18.createElement)("ul", { className: "ot-requests" }, requests.map((request) => (0, import_react18.createElement)(
       "li",
       { key: request.chatUuid, className: "ot-request" },
-      (0, import_react15.createElement)("span", { className: "ot-request-who", title: (request.senders ?? []).join(", ") }, (request.senders ?? []).join(" · ")),
-      (0, import_react15.createElement)("span", { className: "ot-request-text", title: request.text }, request.text),
-      (0, import_react15.createElement)("span", { className: "ot-picker-at" }, `${relativeShort(request.lastAt)} · ${messages(request.count)}`)
+      (0, import_react18.createElement)("span", { className: "ot-request-who", title: (request.senders ?? []).join(", ") }, (request.senders ?? []).join(" · ")),
+      (0, import_react18.createElement)("span", { className: "ot-request-text", title: request.text }, request.text),
+      (0, import_react18.createElement)("span", { className: "ot-picker-at" }, `${relativeShort(request.lastAt)} · ${messages(request.count)}`),
+      // #1732: a chat a code from a staff list let in, so staff do not let them in again by hand.
+      request.admitted ? (0, import_react18.createElement)("span", { className: "ot-picker-tag" }, t("Admitted by code")) : null,
+      // #1742: a chat whose code the bot's outside check confirmed, with the label staff set for it.
+      request.confirmed && confirmedLabel ? (0, import_react18.createElement)("span", { className: "ot-picker-tag" }, confirmedLabel) : null
     )))
   );
 }
 function AnswerSettings({ bot, value = {}, channels: channels2 = [], threads = [] }) {
-  const [open, setOpen] = (0, import_react15.useState)(false);
-  const [enabled, setEnabled] = (0, import_react15.useState)(value.enabled === true);
-  const [visibility, setVisibility] = (0, import_react15.useState)(value.visibility ?? "isolated");
-  const [allowedTools, setAllowedTools] = (0, import_react15.useState)(value.allowedTools ?? []);
-  const [sharedNotes, setSharedNotes] = (0, import_react15.useState)(value.sharedNotes ?? "");
-  const [newChildMode, setNewChildMode] = (0, import_react15.useState)(value.newChildMode ?? "training");
-  const [graduates, setGraduates] = (0, import_react15.useState)(Number.isInteger(value.graduateAfter));
-  const [graduateAfter, setGraduateAfter] = (0, import_react15.useState)(String(value.graduateAfter ?? 5));
-  const [resumeMinutes, setResumeMinutes] = (0, import_react15.useState)(minutesOf(value.resumeAfterMs));
-  const [knowledgeFolder, setKnowledgeFolder] = (0, import_react15.useState)(value.knowledgeFolder ?? "");
-  const [personBinding, setPersonBinding] = (0, import_react15.useState)(value.personBinding === true);
-  const [staffChat, setStaffChat] = (0, import_react15.useState)(value.needsStaffChatId ?? "");
-  const [staffChats, setStaffChats] = (0, import_react15.useState)([]);
-  const [strangerReply, setStrangerReply] = (0, import_react15.useState)(value.strangerReply ?? "");
-  const [busy, setBusy] = (0, import_react15.useState)(false);
-  const [problem, setProblem] = (0, import_react15.useState)(null);
-  (0, import_react15.useEffect)(() => {
+  const [open, setOpen] = (0, import_react18.useState)(false);
+  const [enabled, setEnabled] = (0, import_react18.useState)(value.enabled === true);
+  const [visibility, setVisibility] = (0, import_react18.useState)(value.visibility ?? "isolated");
+  const [allowedTools, setAllowedTools] = (0, import_react18.useState)(value.allowedTools ?? []);
+  const [sharedNotes, setSharedNotes] = (0, import_react18.useState)(value.sharedNotes ?? "");
+  const [newChildMode, setNewChildMode] = (0, import_react18.useState)(value.newChildMode ?? "training");
+  const [graduates, setGraduates] = (0, import_react18.useState)(Number.isInteger(value.graduateAfter));
+  const [graduateAfter, setGraduateAfter] = (0, import_react18.useState)(String(value.graduateAfter ?? 5));
+  const [resumeMinutes, setResumeMinutes] = (0, import_react18.useState)(minutesOf(value.resumeAfterMs));
+  const [knowledgeFolder, setKnowledgeFolder] = (0, import_react18.useState)(value.knowledgeFolder ?? "");
+  const [personBinding, setPersonBinding] = (0, import_react18.useState)(value.personBinding === true);
+  const [staffChat, setStaffChat] = (0, import_react18.useState)(value.needsStaffChatId ?? "");
+  const [staffChats, setStaffChats] = (0, import_react18.useState)([]);
+  const [strangerReply, setStrangerReply] = (0, import_react18.useState)(value.strangerReply ?? "");
+  const [codeWelcome, setCodeWelcome] = (0, import_react18.useState)(value.codeWelcome ?? "");
+  const [busy, setBusy] = (0, import_react18.useState)(false);
+  const [problem, setProblem] = (0, import_react18.useState)(null);
+  (0, import_react18.useEffect)(() => {
     setEnabled(value.enabled === true);
     setVisibility(value.visibility ?? "isolated");
     setAllowedTools(value.allowedTools ?? []);
@@ -17222,9 +17625,10 @@ function AnswerSettings({ bot, value = {}, channels: channels2 = [], threads = [
     setPersonBinding(value.personBinding === true);
     setStaffChat(value.needsStaffChatId ?? "");
     setStrangerReply(value.strangerReply ?? "");
-  }, [value.enabled, value.visibility, JSON.stringify(value.allowedTools), value.sharedNotes, value.newChildMode, value.graduateAfter, value.resumeAfterMs, value.knowledgeFolder, value.personBinding, value.needsStaffChatId, value.strangerReply]);
+    setCodeWelcome(value.codeWelcome ?? "");
+  }, [value.enabled, value.visibility, JSON.stringify(value.allowedTools), value.sharedNotes, value.newChildMode, value.graduateAfter, value.resumeAfterMs, value.knowledgeFolder, value.personBinding, value.needsStaffChatId, value.strangerReply, value.codeWelcome]);
   const channelIds = channels2.map((channel) => channel.id).join(",");
-  (0, import_react15.useEffect)(() => {
+  (0, import_react18.useEffect)(() => {
     if (!open || channels2.length === 0) return void 0;
     let alive = true;
     Promise.all(channels2.map((channel) => call("omni-thread-chats", { channelId: channel.id }).then(
@@ -17251,8 +17655,9 @@ function AnswerSettings({ bot, value = {}, channels: channels2 = [], threads = [
     const person = personBinding || value.personBinding === true ? { personBinding } : {};
     const staff = staffChat || value.needsStaffChatId ? { needsStaffChatId: staffChat || null } : {};
     const stranger = strangerReply.trim() || value.strangerReply ? { strangerReply: strangerReply.trim() || null } : {};
+    const welcome = codeWelcome.trim() || value.codeWelcome ? { codeWelcome: codeWelcome.trim() || null } : {};
     try {
-      await call("omni-answer-settings", { botId: bot.id, enabled, visibility, allowedTools, sharedNotes, newChildMode, graduateAfter: graduates ? count : null, resumeAfterMs: minutes * 6e4, knowledgeFolder: knowledgeFolder.trim() || null, ...person, ...staff, ...stranger });
+      await call("omni-answer-settings", { botId: bot.id, enabled, visibility, allowedTools, sharedNotes, newChildMode, graduateAfter: graduates ? count : null, resumeAfterMs: minutes * 6e4, knowledgeFolder: knowledgeFolder.trim() || null, ...person, ...staff, ...stranger, ...welcome });
       setOpen(false);
     } catch (error) {
       setProblem(error.message);
@@ -17261,38 +17666,38 @@ function AnswerSettings({ bot, value = {}, channels: channels2 = [], threads = [
     }
   };
   const tool = (name, on2) => setAllowedTools((before) => on2 ? [...before.filter((item) => item !== name), name] : before.filter((item) => item !== name));
-  return (0, import_react15.createElement)(
+  return (0, import_react18.createElement)(
     "div",
     null,
-    (0, import_react15.createElement)("button", { type: "button", className: "ot-channel-row", "aria-expanded": open, onClick: () => setOpen((before) => !before) }, "Answer mode"),
-    open ? (0, import_react15.createElement)(
+    (0, import_react18.createElement)("button", { type: "button", className: "ot-channel-row", "aria-expanded": open, onClick: () => setOpen((before) => !before) }, "Answer mode"),
+    open ? (0, import_react18.createElement)(
       "div",
       { className: "ot-picker ot-answer", role: "group", "aria-label": "Answer mode settings" },
-      (0, import_react15.createElement)(SwitchRow, { label: "Answer new messages", on: enabled, onChange: setEnabled }),
-      (0, import_react15.createElement)("p", { className: "bt-note" }, "Each child replies only in its own chat. Switch a child between training and sending from its menu in the list below."),
-      (0, import_react15.createElement)(
+      (0, import_react18.createElement)(SwitchRow, { label: "Answer new messages", on: enabled, onChange: setEnabled }),
+      (0, import_react18.createElement)("p", { className: "bt-note" }, "Each child replies only in its own chat. Switch a child between training and sending from its menu in the list below."),
+      (0, import_react18.createElement)(
         Field,
         { label: "Visibility", note: VISIBILITY[visibility]?.[1] },
-        (0, import_react15.createElement)(
+        (0, import_react18.createElement)(
           "select",
           { className: "bt-select", value: visibility, onChange: (event) => setVisibility(event.target.value) },
-          Object.entries(VISIBILITY).map(([value2, [label]]) => (0, import_react15.createElement)("option", { key: value2, value: value2 }, label))
+          Object.entries(VISIBILITY).map(([value2, [label]]) => (0, import_react18.createElement)("option", { key: value2, value: value2 }, label))
         )
       ),
-      (0, import_react15.createElement)(
+      (0, import_react18.createElement)(
         Field,
         { label: "New children start in", note: NEW_CHILD_MODES[newChildMode]?.[1] },
-        (0, import_react15.createElement)(
+        (0, import_react18.createElement)(
           "select",
           { className: "bt-select", value: newChildMode, onChange: (event) => setNewChildMode(event.target.value) },
-          Object.entries(NEW_CHILD_MODES).map(([value2, [label]]) => (0, import_react15.createElement)("option", { key: value2, value: value2 }, label))
+          Object.entries(NEW_CHILD_MODES).map(([value2, [label]]) => (0, import_react18.createElement)("option", { key: value2, value: value2 }, label))
         )
       ),
-      (0, import_react15.createElement)(SwitchRow, { label: "Switch a training child to sending by itself", on: graduates, onChange: setGraduates }),
-      graduates ? (0, import_react15.createElement)(
+      (0, import_react18.createElement)(SwitchRow, { label: "Switch a training child to sending by itself", on: graduates, onChange: setGraduates }),
+      graduates ? (0, import_react18.createElement)(
         Field,
         { label: "Approved drafts in a row", note: "Only drafts sent unchanged count. An edit or a rejection starts the count again." },
-        (0, import_react15.createElement)("input", {
+        (0, import_react18.createElement)("input", {
           className: "bt-input ot-answer-count",
           type: "number",
           min: 1,
@@ -17304,13 +17709,13 @@ function AnswerSettings({ bot, value = {}, channels: channels2 = [], threads = [
           onChange: (event) => setGraduateAfter(event.target.value)
         })
       ) : null,
-      (0, import_react15.createElement)(
+      (0, import_react18.createElement)(
         Field,
         { label: "Resume a paused child after", note: "A child pauses when staff write in its chat from their own phone. It answers again after this many minutes with no staff message there, or when you press Resume." },
-        (0, import_react15.createElement)(
+        (0, import_react18.createElement)(
           "span",
           { className: "ot-answer-minutes" },
-          (0, import_react15.createElement)("input", {
+          (0, import_react18.createElement)("input", {
             className: "bt-input ot-answer-count",
             type: "number",
             min: 1,
@@ -17321,56 +17726,65 @@ function AnswerSettings({ bot, value = {}, channels: channels2 = [], threads = [
             "aria-invalid": !minutesOk || void 0,
             onChange: (event) => setResumeMinutes(event.target.value)
           }),
-          (0, import_react15.createElement)("span", { "aria-hidden": true }, "minutes")
+          (0, import_react18.createElement)("span", { "aria-hidden": true }, "minutes")
         )
       ),
-      (0, import_react15.createElement)(
+      (0, import_react18.createElement)(
         Field,
         { label: "Staff chat when a person is needed", note: "When a child says its person needs someone from the team, the bot's own chat and the child's row here show it. Pick a chat only staff are in to get a message there too." },
-        (0, import_react15.createElement)(
+        (0, import_react18.createElement)(
           "select",
           { className: "bt-select ot-answer-staff", value: staffChat, onChange: (event) => setStaffChat(event.target.value) },
-          (0, import_react15.createElement)("option", { value: "" }, "None"),
-          staffOptions.map((option) => (0, import_react15.createElement)("option", { key: option.id, value: option.id }, option.label))
+          (0, import_react18.createElement)("option", { value: "" }, "None"),
+          staffOptions.map((option) => (0, import_react18.createElement)("option", { key: option.id, value: option.id }, option.label))
         )
       ),
-      (0, import_react15.createElement)(
+      (0, import_react18.createElement)(
         Field,
         { label: "Reply to people who are not let in", note: "Sent once a day to each person no rule lets in. Empty: no reply." },
-        (0, import_react15.createElement)("textarea", { className: "bt-input bt-input-area ot-answer-stranger", maxLength: STRANGER_REPLY_MAX, value: strangerReply, onChange: (event) => setStrangerReply(event.target.value) })
+        (0, import_react18.createElement)("textarea", { className: "bt-input bt-input-area ot-answer-stranger", maxLength: STRANGER_REPLY_MAX, value: strangerReply, onChange: (event) => setStrangerReply(event.target.value) })
       ),
-      (0, import_react15.createElement)(StrangerRequests, { botId: bot.id }),
-      (0, import_react15.createElement)(
+      (0, import_react18.createElement)(StrangerRequests, { botId: bot.id, confirmedLabel: value.outsideCheck?.label ?? null }),
+      (0, import_react18.createElement)(
         "div",
         { className: "ot-answer-tools", role: "group", "aria-label": "Children may also" },
-        (0, import_react15.createElement)("span", { className: "bt-field-label", "aria-hidden": true }, "Children may also"),
-        ANSWER_TOOLS.map(([name, label]) => (0, import_react15.createElement)(SwitchRow, { key: name, label, title: name, on: allowedTools.includes(name), onChange: (on2) => tool(name, on2) }))
+        (0, import_react18.createElement)("span", { className: "bt-field-label", "aria-hidden": true }, "Children may also"),
+        ANSWER_TOOLS.map(([name, label]) => (0, import_react18.createElement)(SwitchRow, { key: name, label, title: name, on: allowedTools.includes(name), onChange: (on2) => tool(name, on2) }))
       ),
       // #1689: the host checks the folder and keeps its real path; no model tool can set it.
-      (0, import_react15.createElement)(
+      (0, import_react18.createElement)(
         Field,
         { label: "Knowledge folder", note: "The business's own files, such as instructions and FAQ. While a folder is set, children read, find and search files there, and nowhere else. Full path; empty for none." },
-        (0, import_react15.createElement)("input", { className: "bt-input ot-answer-folder", type: "text", value: knowledgeFolder, title: knowledgeFolder || void 0, placeholder: "/path/to/folder", spellCheck: false, autoComplete: "off", onChange: (event) => setKnowledgeFolder(event.target.value) })
+        (0, import_react18.createElement)("input", { className: "bt-input ot-answer-folder", type: "text", value: knowledgeFolder, title: knowledgeFolder || void 0, placeholder: "/path/to/folder", spellCheck: false, autoComplete: "off", onChange: (event) => setKnowledgeFolder(event.target.value) })
       ),
-      (0, import_react15.createElement)(SwitchRow, { label: "Bind each child to its person", on: personBinding, onChange: setPersonBinding }),
-      (0, import_react15.createElement)("p", { className: "bt-note" }, "A child then takes the notes and the capability in its person's access rule, and answers only messages that rule lets in. Needs isolated visibility, and the file tools off or limited to a knowledge folder."),
-      (0, import_react15.createElement)(
+      (0, import_react18.createElement)(SwitchRow, { label: "Bind each child to its person", on: personBinding, onChange: setPersonBinding }),
+      (0, import_react18.createElement)("p", { className: "bt-note" }, "A child then takes the notes and the capability in its person's access rule, and answers only messages that rule lets in. Needs isolated visibility, and the file tools off or limited to a knowledge folder."),
+      // #1732: a person whose first message carries an open code from a staff list is let in (host answer-codes.js).
+      (0, import_react18.createElement)(
+        Field,
+        { label: t("Message when a code admits someone"), note: t("Sent to the person once a code from a list admits them; their child answers from their next message. Empty: no message, and the child answers the one with the code.") },
+        (0, import_react18.createElement)("textarea", { className: "bt-input bt-input-area ot-answer-welcome", maxLength: CODE_WELCOME_MAX, value: codeWelcome, onChange: (event) => setCodeWelcome(event.target.value) })
+      ),
+      (0, import_react18.createElement)(CodeLists),
+      // #1742: a code from a person not let in is checked with this outside service (host answer-outside-check.js).
+      (0, import_react18.createElement)(OutsideCheck, { botId: bot.id, value: value.outsideCheck }),
+      (0, import_react18.createElement)(
         Field,
         { label: "Shared notes for collective children" },
-        (0, import_react15.createElement)("textarea", { className: "bt-input bt-input-area", maxLength: SHARED_NOTES_MAX, value: sharedNotes, onChange: (event) => setSharedNotes(event.target.value) })
+        (0, import_react18.createElement)("textarea", { className: "bt-input bt-input-area", maxLength: SHARED_NOTES_MAX, value: sharedNotes, onChange: (event) => setSharedNotes(event.target.value) })
       ),
-      problem ? (0, import_react15.createElement)("p", { className: "ot-picker-problem", role: "alert" }, hostText(problem)) : null,
-      (0, import_react15.createElement)(
+      problem ? (0, import_react18.createElement)("p", { className: "ot-picker-problem", role: "alert" }, hostText(problem)) : null,
+      (0, import_react18.createElement)(
         "div",
         { className: "bt-actions" },
-        (0, import_react15.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: busy || graduates && !countOk || !minutesOk, onClick: save }, "Save answer settings")
+        (0, import_react18.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: busy || graduates && !countOk || !minutesOk, onClick: save }, "Save answer settings")
       )
     ) : null
   );
 }
 function RepairTools({ bot }) {
-  const [busy, setBusy] = (0, import_react15.useState)(false);
-  const [result, setResult] = (0, import_react15.useState)(null);
+  const [busy, setBusy] = (0, import_react18.useState)(false);
+  const [result, setResult] = (0, import_react18.useState)(null);
   const repair = async () => {
     setBusy(true);
     setResult(null);
@@ -17383,11 +17797,11 @@ function RepairTools({ bot }) {
       setBusy(false);
     }
   };
-  return (0, import_react15.createElement)(
+  return (0, import_react18.createElement)(
     "div",
     null,
-    (0, import_react15.createElement)("button", { type: "button", className: "ot-channel-row", disabled: busy, title: "For a bot whose every turn fails with a tool error", onClick: repair }, busy ? "Repairing tools…" : "Repair tools"),
-    result ? (0, import_react15.createElement)("p", { className: result.ok ? "ot-picker-note" : "ot-picker-problem", role: result.ok ? "status" : "alert" }, result.text) : null
+    (0, import_react18.createElement)("button", { type: "button", className: "ot-channel-row", disabled: busy, title: "For a bot whose every turn fails with a tool error", onClick: repair }, busy ? "Repairing tools…" : "Repair tools"),
+    result ? (0, import_react18.createElement)("p", { className: result.ok ? "ot-picker-note" : "ot-picker-problem", role: result.ok ? "status" : "alert" }, result.text) : null
   );
 }
 function waitingOf(roster, botId) {
@@ -17398,11 +17812,11 @@ function waitingOf(roster, botId) {
 function OmniTree(props) {
   const { bot, actions, roster } = props;
   const state = useOmni();
-  const omni2 = (0, import_react15.useMemo)(() => omniActions((id) => actions.selectPanel(id), call), [actions]);
-  const [open, setOpen] = (0, import_react15.useState)(readOpen);
-  const [picking, setPicking] = (0, import_react15.useState)(null);
-  const [creatingBot, setCreatingBot] = (0, import_react15.useState)(false);
-  (0, import_react15.useEffect)(() => {
+  const omni2 = (0, import_react18.useMemo)(() => omniActions((id) => actions.selectPanel(id), call), [actions]);
+  const [open, setOpen] = (0, import_react18.useState)(readOpen);
+  const [picking, setPicking] = (0, import_react18.useState)(null);
+  const [creatingBot, setCreatingBot] = (0, import_react18.useState)(false);
+  (0, import_react18.useEffect)(() => {
     startLive(call);
   }, []);
   if (!isOmniBot(bot)) return null;
@@ -17415,14 +17829,14 @@ function OmniTree(props) {
   const ownedChannels = state.channels.filter((channel) => ownerOf(channel.id) === bot.id);
   const ownedState = { ...state, channels: ownedChannels };
   const ownedView = { ...roster, omniThreads: threads };
-  const others = (list) => list.length === 0 ? null : (0, import_react15.createElement)(
+  const others = (list) => list.length === 0 ? null : (0, import_react18.createElement)(
     "div",
     { className: "ot-others", role: "group", "aria-label": t("Other chats") },
-    (0, import_react15.createElement)("span", { className: "ot-empty" }, t("Other chats")),
-    list.map((thread) => (0, import_react15.createElement)(ThreadRow, { key: rowKey(thread, rowProps), thread, actions, rowProps }))
+    (0, import_react18.createElement)("span", { className: "ot-empty" }, t("Other chats")),
+    list.map((thread) => (0, import_react18.createElement)(ThreadRow, { key: rowKey(thread, rowProps), thread, actions, rowProps }))
   );
   if (state.preview) {
-    return (0, import_react15.createElement)("div", { className: "ot-tree" }, (0, import_react15.createElement)("button", { type: "button", className: "ot-channel-row ot-link", onClick: openConnectWizard }, t("Connect Omni"), (0, import_react15.createElement)("span", { "aria-hidden": true }, " →")), others(threads));
+    return (0, import_react18.createElement)("div", { className: "ot-tree" }, (0, import_react18.createElement)("button", { type: "button", className: "ot-channel-row ot-link", onClick: openConnectWizard }, t("Connect Omni"), (0, import_react18.createElement)("span", { "aria-hidden": true }, " →")), others(threads));
   }
   const change = (id, show) => setOpen((before) => {
     const next = new Set(before);
@@ -17434,20 +17848,20 @@ function OmniTree(props) {
   const plus = plusOf(roster, state);
   const listed = new Set(ownedChannels.map((channel) => channel.id));
   const waiting = waitingOf(roster, bot.id);
-  return (0, import_react15.createElement)(
+  return (0, import_react18.createElement)(
     "div",
     { className: "ot-tree", role: "group", "aria-label": t("{name}'s channels", { name: bot.name }) },
-    waiting ? (0, import_react15.createElement)(
+    waiting ? (0, import_react18.createElement)(
       "div",
       { className: "ot-channel-row ot-waiting", role: "status", title: waiting.title, "aria-label": `${waiting.count} ${waiting.label}` },
-      (0, import_react15.createElement)("span", { className: "ot-count", "aria-hidden": true }, String(waiting.count)),
-      (0, import_react15.createElement)("span", { className: "ot-waiting-text", "aria-hidden": true }, waiting.label)
+      (0, import_react18.createElement)("span", { className: "ot-count", "aria-hidden": true }, String(waiting.count)),
+      (0, import_react18.createElement)("span", { className: "ot-waiting-text", "aria-hidden": true }, waiting.label)
     ) : null,
-    (0, import_react15.createElement)(AnswerSettings, { bot, value: roster?.omniAnswers?.[bot.id], channels: ownedChannels, threads }),
-    (0, import_react15.createElement)(RepairTools, { bot }),
-    bot.id === defaultBotId ? (0, import_react15.createElement)("button", { type: "button", className: "ot-channel-row", onClick: () => setCreatingBot((value) => !value) }, "Add channel bot") : null,
-    bot.id === defaultBotId && (creatingBot || roster?.omniBotProposals?.length > 0) ? (0, import_react15.createElement)(ChannelBotForm, { channels: state.channels, roster, onClose: () => setCreatingBot(false) }) : null,
-    ownedChannels.map((channel) => (0, import_react15.createElement)(ChannelItem, {
+    (0, import_react18.createElement)(AnswerSettings, { bot, value: roster?.omniAnswers?.[bot.id], channels: ownedChannels, threads }),
+    (0, import_react18.createElement)(RepairTools, { bot }),
+    bot.id === defaultBotId ? (0, import_react18.createElement)("button", { type: "button", className: "ot-channel-row", onClick: () => setCreatingBot((value) => !value) }, "Add channel bot") : null,
+    bot.id === defaultBotId && (creatingBot || roster?.omniBotProposals?.length > 0) ? (0, import_react18.createElement)(ChannelBotForm, { channels: state.channels, roster, onClose: () => setCreatingBot(false) }) : null,
+    ownedChannels.map((channel) => (0, import_react18.createElement)(ChannelItem, {
       key: channel.id,
       channel,
       state: ownedState,
@@ -17476,7 +17890,7 @@ function OmniTree(props) {
 var threadDocks = 0;
 function ThreadDock({ sessionId, useRoster }) {
   const thread = useRoster((roster) => isThreadSession(roster, sessionId));
-  (0, import_react15.useEffect)(() => {
+  (0, import_react18.useEffect)(() => {
     if (!thread || typeof document === "undefined") return void 0;
     threadDocks += 1;
     document.body.dataset.omniThread = "";
@@ -17620,10 +18034,10 @@ ${stackedRow(".ot-thread[data-answer]:has(.ot-thread-reason)")}
 @keyframes ot-in{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion:reduce){.ot-chats{transition:none}.ot-chats .ot-thread{animation:none}.ot-chevron{transition:none}.ot-thread-acts{transition:none}}
 body[data-omni-thread] .bt-voice,body[data-omni-thread] .bt-plus,body[data-omni-thread] .bt-composer-model,body[data-omni-thread] .bt-mw-dock,body[data-omni-thread] .bt-btw-dock{display:none!important}
-`;
+${CODE_LISTS_CSS}${OUTSIDE_CHECK_CSS}`;
 
 // src/client/permissions.js
-var import_react16 = require("react");
+var import_react19 = require("react");
 var NONE = {};
 var ASKING_TOOLS = ["omni_messages", "omni_send", "omni_react", "omni_media", "omni_delete", "omni_call"];
 var KIND_OF = { chat: "chat", group: "group", self: "your own chat", channel: "channel" };
@@ -17656,17 +18070,17 @@ var CONFIRM_LABEL = { send: "Send", delete: "Delete", disconnect: "Disconnect", 
 function Preview({ entry }) {
   const preview = entry.preview ?? NONE;
   const lines = [];
-  if (entry.resource?.type === "call") lines.push((0, import_react16.createElement)("code", { key: "op", className: "om-perm-op" }, `${preview.method ?? ""} ${preview.path ?? ""}${preview.query ? ` ?${preview.query}` : ""}`.trim()));
-  if (preview.channel) lines.push((0, import_react16.createElement)("div", { key: "channel", className: "om-perm-to" }, t("From {channel}", { channel: preview.channel })));
-  if (preview.to) lines.push((0, import_react16.createElement)("div", { key: "to", className: "om-perm-to" }, t("To {to}", { to: preview.to })));
-  if (preview.emoji) lines.push((0, import_react16.createElement)("div", { key: "emoji", className: "om-perm-emoji" }, preview.emoji));
-  if (preview.text) lines.push((0, import_react16.createElement)("blockquote", { key: "text", className: "om-perm-text" }, preview.text));
-  if (preview.body) lines.push((0, import_react16.createElement)("pre", { key: "body", className: "om-perm-body" }, preview.body));
-  return lines.length === 0 ? null : (0, import_react16.createElement)("div", { className: "om-perm-preview" }, lines);
+  if (entry.resource?.type === "call") lines.push((0, import_react19.createElement)("code", { key: "op", className: "om-perm-op" }, `${preview.method ?? ""} ${preview.path ?? ""}${preview.query ? ` ?${preview.query}` : ""}`.trim()));
+  if (preview.channel) lines.push((0, import_react19.createElement)("div", { key: "channel", className: "om-perm-to" }, t("From {channel}", { channel: preview.channel })));
+  if (preview.to) lines.push((0, import_react19.createElement)("div", { key: "to", className: "om-perm-to" }, t("To {to}", { to: preview.to })));
+  if (preview.emoji) lines.push((0, import_react19.createElement)("div", { key: "emoji", className: "om-perm-emoji" }, preview.emoji));
+  if (preview.text) lines.push((0, import_react19.createElement)("blockquote", { key: "text", className: "om-perm-text" }, preview.text));
+  if (preview.body) lines.push((0, import_react19.createElement)("pre", { key: "body", className: "om-perm-body" }, preview.body));
+  return lines.length === 0 ? null : (0, import_react19.createElement)("div", { className: "om-perm-preview" }, lines);
 }
 function ConsentCard({ bot, entry }) {
-  const [busy, setBusy] = (0, import_react16.useState)("");
-  const [error, setError] = (0, import_react16.useState)("");
+  const [busy, setBusy] = (0, import_react19.useState)("");
+  const [error, setError] = (0, import_react19.useState)("");
   const answer = (choice) => {
     if (busy) return;
     setBusy(choice);
@@ -17675,37 +18089,37 @@ function ConsentCard({ bot, entry }) {
   };
   const running = entry.status === "running";
   const confirm2 = entry.kind === "confirm";
-  const button = (choice, label, primary = false) => (0, import_react16.createElement)("button", {
+  const button = (choice, label, primary = false) => (0, import_react19.createElement)("button", {
     type: "button",
     className: primary ? "bt-q-submit" : "bt-q-btn",
     disabled: Boolean(busy) || running,
     onClick: () => answer(choice)
   }, busy === choice ? "…" : label);
-  return (0, import_react16.createElement)(
+  return (0, import_react19.createElement)(
     "div",
     { className: "bt-q om-perm", role: "group", "aria-label": askTitle(bot, entry), "data-kind": entry.kind },
-    (0, import_react16.createElement)(
+    (0, import_react19.createElement)(
       "div",
       { className: "bt-q-head" },
-      (0, import_react16.createElement)("span", { className: "om-perm-who" }, (0, import_react16.createElement)(BotMark, { bot, size: 28 })),
-      (0, import_react16.createElement)(
+      (0, import_react19.createElement)("span", { className: "om-perm-who" }, (0, import_react19.createElement)(BotMark, { bot, size: 28 })),
+      (0, import_react19.createElement)(
         "div",
         { className: "bt-q-text" },
-        (0, import_react16.createElement)("p", { className: "bt-q-title" }, askTitle(bot, entry)),
-        (0, import_react16.createElement)("div", { className: "bt-q-detail" }, reachText(entry))
+        (0, import_react19.createElement)("p", { className: "bt-q-title" }, askTitle(bot, entry)),
+        (0, import_react19.createElement)("div", { className: "bt-q-detail" }, reachText(entry))
       )
     ),
-    (0, import_react16.createElement)(Preview, { entry }),
-    error ? (0, import_react16.createElement)("div", { className: "om-perm-error", role: "alert" }, error) : null,
-    (0, import_react16.createElement)(
+    (0, import_react19.createElement)(Preview, { entry }),
+    error ? (0, import_react19.createElement)("div", { className: "om-perm-error", role: "alert" }, error) : null,
+    (0, import_react19.createElement)(
       "div",
       { className: "bt-q-foot" },
-      running ? (0, import_react16.createElement)("span", { className: "om-perm-running" }, t("Running…")) : null,
-      confirm2 ? [(0, import_react16.createElement)("span", { key: "deny" }, button("deny", t("Cancel"))), (0, import_react16.createElement)("span", { key: "once" }, button("once", t(CONFIRM_LABEL[entry.action] ?? "Allow"), true))] : [
-        (0, import_react16.createElement)("span", { key: "deny" }, button("deny", t("No"))),
-        (0, import_react16.createElement)("span", { key: "once" }, button("once", t("Once"))),
-        entry.resource?.channelId && entry.resource.channelName ? (0, import_react16.createElement)("span", { key: "channel" }, button("channel", t("Always, all of {channel}", { channel: entry.resource.channelName }))) : null,
-        (0, import_react16.createElement)("span", { key: "always" }, button("always", t("Always"), true))
+      running ? (0, import_react19.createElement)("span", { className: "om-perm-running" }, t("Running…")) : null,
+      confirm2 ? [(0, import_react19.createElement)("span", { key: "deny" }, button("deny", t("Cancel"))), (0, import_react19.createElement)("span", { key: "once" }, button("once", t(CONFIRM_LABEL[entry.action] ?? "Allow"), true))] : [
+        (0, import_react19.createElement)("span", { key: "deny" }, button("deny", t("No"))),
+        (0, import_react19.createElement)("span", { key: "once" }, button("once", t("Once"))),
+        entry.resource?.channelId && entry.resource.channelName ? (0, import_react19.createElement)("span", { key: "channel" }, button("channel", t("Always, all of {channel}", { channel: entry.resource.channelName }))) : null,
+        (0, import_react19.createElement)("span", { key: "always" }, button("always", t("Always"), true))
       ]
     )
   );
@@ -17720,10 +18134,10 @@ var SETTLED = {
   replaced: "Asked again"
 };
 function Settled({ bot, entry }) {
-  return (0, import_react16.createElement)(
+  return (0, import_react19.createElement)(
     "div",
     { className: "bt-event om-perm-done", "data-status": entry.status },
-    (0, import_react16.createElement)(BotMark, { bot, size: 16 }),
+    (0, import_react19.createElement)(BotMark, { bot, size: 16 }),
     ` ${askTitle(bot, entry)} · ${t(SETTLED[entry.status] ?? entry.status)}`
   );
 }
@@ -17734,10 +18148,10 @@ function withConsent(render) {
     const callId = props.call?.callId;
     const entry = bot && callId ? entryAt(props.roster, bot, props.sessionId, callId) : void 0;
     if (entry === void 0) {
-      if (props.done && /^(consent|confirmation)_required:/.test(props.content ?? "")) return (0, import_react16.createElement)("div", { className: "bt-event" }, t("Asked you for permission in its chat"));
+      if (props.done && /^(consent|confirmation)_required:/.test(props.content ?? "")) return (0, import_react19.createElement)("div", { className: "bt-event" }, t("Asked you for permission in its chat"));
       return render ? render(props) : null;
     }
-    return (0, import_react16.createElement)("div", { className: "bt-q-inline" }, entry.status === "pending" || entry.status === "running" ? (0, import_react16.createElement)(ConsentCard, { bot, entry }) : (0, import_react16.createElement)(Settled, { bot, entry }));
+    return (0, import_react19.createElement)("div", { className: "bt-q-inline" }, entry.status === "pending" || entry.status === "running" ? (0, import_react19.createElement)(ConsentCard, { bot, entry }) : (0, import_react19.createElement)(Settled, { bot, entry }));
   };
 }
 function ConsentDock({ sessionId, useRoster, useCards }) {
@@ -17748,7 +18162,7 @@ function ConsentDock({ sessionId, useRoster, useCards }) {
   const drawn = (entry) => entry.callId && entry.sessionId === sessionId && shown[entry.callId] > 0;
   const waiting = (roster.omniConsents?.[bot.id] ?? []).filter((entry) => (entry.status === "pending" || entry.status === "running") && !drawn(entry));
   if (waiting.length === 0) return null;
-  return (0, import_react16.createElement)("div", { className: "bt-q-dock om-perm-dock" }, waiting.map((entry) => (0, import_react16.createElement)(ConsentCard, { key: entry.id, bot, entry })));
+  return (0, import_react19.createElement)("div", { className: "bt-q-dock om-perm-dock" }, waiting.map((entry) => (0, import_react19.createElement)(ConsentCard, { key: entry.id, bot, entry })));
 }
 var ACTION_TEXT = { read: "read", media: "files", send: "send", react: "react", delete: "delete" };
 function PermissionsCard({ bot, roster, run, Card, SwitchRow: SwitchRow2 }) {
@@ -17757,35 +18171,35 @@ function PermissionsCard({ bot, roster, run, Card, SwitchRow: SwitchRow2 }) {
   const grants = (roster.omniGrants ?? []).filter((grant) => grant.botId === bot.id);
   const now = Date.now();
   if (main) {
-    return (0, import_react16.createElement)(
+    return (0, import_react19.createElement)(
       Card,
       { title: t("On Omni") },
-      (0, import_react16.createElement)("div", { className: "bt-set-row bt-bs-row" }, (0, import_react16.createElement)(
+      (0, import_react19.createElement)("div", { className: "bt-set-row bt-bs-row" }, (0, import_react19.createElement)(
         "span",
         { className: "bt-set-copy" },
-        (0, import_react16.createElement)("span", { className: "bt-bs-label" }, t("All of Omni")),
-        (0, import_react16.createElement)("span", { className: "bt-set-hint" }, t("Omni and Main Bots operate Omni. Messaging a person, deleting and disconnecting still ask you first."))
+        (0, import_react19.createElement)("span", { className: "bt-bs-label" }, t("All of Omni")),
+        (0, import_react19.createElement)("span", { className: "bt-set-hint" }, t("Omni and Main Bots operate Omni. Messaging a person, deleting and disconnecting still ask you first."))
       ))
     );
   }
-  return (0, import_react16.createElement)(
+  return (0, import_react19.createElement)(
     Card,
     { title: t("On Omni") },
-    grants.length === 0 ? (0, import_react16.createElement)("div", { className: "bt-set-row bt-bs-row" }, (0, import_react16.createElement)(
+    grants.length === 0 ? (0, import_react19.createElement)("div", { className: "bt-set-row bt-bs-row" }, (0, import_react19.createElement)(
       "span",
       { className: "bt-set-copy" },
-      (0, import_react16.createElement)("span", { className: "bt-bs-label" }, t("Nothing yet")),
-      (0, import_react16.createElement)("span", { className: "bt-set-hint" }, t("When {bot} needs a chat, it asks you there, on a card.", { bot: bot.name }))
-    )) : grants.map((grant) => (0, import_react16.createElement)(
+      (0, import_react19.createElement)("span", { className: "bt-bs-label" }, t("Nothing yet")),
+      (0, import_react19.createElement)("span", { className: "bt-set-hint" }, t("When {bot} needs a chat, it asks you there, on a card.", { bot: bot.name }))
+    )) : grants.map((grant) => (0, import_react19.createElement)(
       "div",
       { key: grant.id, className: "om-grant" },
-      (0, import_react16.createElement)(SwitchRow2, {
+      (0, import_react19.createElement)(SwitchRow2, {
         label: `${grant.resource?.name ?? t("a chat")} · ${grant.actions.map((action) => t(ACTION_TEXT[action] ?? action)).join(", ")}`,
         hint: [kindText(grant.resource), typeof grant.expiresAt === "number" && grant.expiresAt <= now ? t("expired") : "", t("Ask each time")].filter(Boolean).join(" · "),
         on: grant.approval === "confirm",
         onChange: (on2) => run(call("omni-grant-approval", { id: grant.id, approval: on2 ? "confirm" : "auto" }))
       }),
-      (0, import_react16.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm om-grant-revoke", onClick: () => run(call("omni-grant-revoke", { id: grant.id })) }, t("Revoke"))
+      (0, import_react19.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm om-grant-revoke", onClick: () => run(call("omni-grant-revoke", { id: grant.id })) }, t("Revoke"))
     ))
   );
 }
@@ -18577,11 +18991,63 @@ var STRINGS = {
   "The message before this one is still being sent.": "上一条消息仍在发送中。",
   "Could not reach Omni. Nothing was sent.": "无法连接 Omni。没有发送任何内容。",
   "Omni did not answer, so this message may have gone out. Check the chat before sending it again.": "Omni 没有回应，这条消息可能已经发出。再次发送前请先查看聊天。",
-  "The Verify token is not your Graph API access token. Connection alone does not verify the webhook; Meta must be able to reach this HTTPS URL.": "验证令牌不是 Graph API 访问令牌。连接成功不代表 Webhook 已验证；Meta 必须能够访问此 HTTPS URL。"
+  "The Verify token is not your Graph API access token. Connection alone does not verify the webhook; Meta must be able to reach this HTTPS URL.": "验证令牌不是 Graph API 访问令牌。连接成功不代表 Webhook 已验证；Meta 必须能够访问此 HTTPS URL。",
+  // #1732: code lists that let a person in, and code patterns.
+  "Admitted by code": "已凭代码加入",
+  "Message when a code admits someone": "代码让某人加入时发送的消息",
+  "Sent to the person once a code from a list admits them; their child answers from their next message. Empty: no message, and the child answers the one with the code.": "列表中的代码让此人加入后发送给对方；其子代理从对方的下一条消息开始回复。留空：不发送消息，由子代理回复带代码的那条消息。",
+  "Code lists": "代码列表",
+  "Code lists ({n})": "代码列表（{n}）",
+  "A person whose first message carries an open code from a list is let in, once. Each code admits one person.": "首条消息带有列表中有效代码的人会被允许加入，仅一次。每个代码只让一个人加入。",
+  "List name": "列表名称",
+  "Rule details": "规则详情",
+  'Copied into the allow rule of each person a code from this list admits. One "key = value" a line, or a JSON object.': '会复制到此列表代码让其加入的每个人的允许规则中。每行一个 "key = value"，或一个 JSON 对象。',
+  "Codes to add": "要添加的代码",
+  "One code a line: code, expires YYYY-MM-DD. Or paste a JSON list.": "每行一个代码：代码, expires YYYY-MM-DD。或粘贴一个 JSON 列表。",
+  "Add codes": "添加代码",
+  "No codes yet.": "还没有代码。",
+  "Used": "已使用",
+  "{open} open of {count}": "{count} 个中 {open} 个可用",
+  "{list} · expires {day}": "{list} · {day} 到期",
+  "Added {added}, updated {updated}.": "已添加 {added} 个，已更新 {updated} 个。",
+  "{n} already used, left as they were.": "{n} 个已使用，保持不变。",
+  "Name the list.": "请为列表命名。",
+  "Paste at least one code.": "请至少粘贴一个代码。",
+  "The JSON could not be read.": "无法读取该 JSON。",
+  "The JSON must be a list of codes.": "该 JSON 必须是代码列表。",
+  "Line {n}: write code, expires YYYY-MM-DD.": "第 {n} 行：请写成 代码, expires YYYY-MM-DD。",
+  "The rule details JSON could not be read.": "无法读取规则详情 JSON。",
+  "The rule details JSON must be an object.": "规则详情 JSON 必须是一个对象。",
+  "Rule details line {n}: write key = value.": "规则详情第 {n} 行：请写成 key = value。",
+  "Code pattern": "代码格式",
+  "Prefix (optional)": "前缀（可选）",
+  "Prefix": "前缀",
+  "Length": "长度",
+  "Characters after the prefix": "前缀后的字符",
+  "Read look-alike characters as one (O and 0; I, L and 1)": "把形近字符视为同一个（O 和 0；I、L 和 1）",
+  "look-alikes read as one": "形近字符视为相同",
+  "{prefix} then {length} of {characters}": "{prefix} 后接 {length} 个 {characters} 中的字符",
+  "{length} of {characters}": "{length} 个 {characters} 中的字符",
+  "Type the characters a code may have: letters and digits.": "请输入代码可用的字符：字母和数字。",
+  "The length is a whole number from {min} to {max}.": "长度是 {min} 到 {max} 之间的整数。",
+  "This list's pattern is set; new codes must fit it.": "此列表的格式已确定；新代码必须符合它。",
+  "Case never matters. A code stands alone in the message, not inside a longer word or number.": "不区分大小写。代码在消息中单独出现，不在更长的单词或数字之中。",
+  // #1742: the outside code check.
+  "Outside code check": "外部代码核对",
+  "A code of this pattern in the message of someone not let in is sent to this HTTPS address, and its reply goes to them. On only when the address, the secret and the pattern are all set.": "未获准加入的人在消息中附带的符合此格式的代码会发送到这个 HTTPS 地址，其回复会发给对方。只有地址、密钥和格式都设置后才会启用。",
+  "Check URL": "核对地址",
+  "Secret": "密钥",
+  "New secret": "新密钥",
+  "The secret is cleared.": "密钥已清除。",
+  "Label on a confirmed row": "已确认行的标签",
+  "Staff see it on a request row the service confirmed. Empty: no label.": "员工会在服务已确认的请求行上看到它。留空：不显示标签。",
+  "Tier name": "级别名称",
+  "Written on a request row the service confirmed. Empty: none.": "写入服务已确认的请求行。留空：不写入。",
+  "Give the pattern a prefix, so that ordinary words never go to the outside check.": "请为格式设置前缀，这样普通词语永远不会发送到外部核对。"
 };
 
 // src/client/index.js
-var import_react17 = require("react");
+var import_react20 = require("react");
 var { ClockIcon: ClockIcon3 } = icons;
 var inject = ["slots"];
 var channels = Object.freeze({ Badge, KeyValue, LiveChannel, LiveChat, LiveQr, Table });
@@ -18623,8 +19089,8 @@ var PHRASES = {
   omni_media: () => ({ label: t("Opening a file"), state: "working" }),
   omni_delete: () => ({ label: t("Deleting a message"), state: "working" })
 };
-var callCard = ({ arg, content, done }) => (0, import_react17.createElement)(OmniCallCard, { ...parseCall(arg, content), done });
-var toolCard = ({ tool, arg, content, done }) => (0, import_react17.createElement)(OmniToolCard, { tool, arg, content, done });
+var callCard = ({ arg, content, done }) => (0, import_react20.createElement)(OmniCallCard, { ...parseCall(arg, content), done });
+var toolCard = ({ tool, arg, content, done }) => (0, import_react20.createElement)(OmniToolCard, { tool, arg, content, done });
 function apply(ctx) {
   ctx.effect(() => addStrings(STRINGS), "ds-bot: channels copy");
   registerConnectStep(ctx);
@@ -18642,12 +19108,12 @@ function apply(ctx) {
   }
   if (botSettings) ctx.effect(() => botSettings.register({ id: "omni-permissions", order: 0, Component: PermissionsCard }), "ds-bot: Omni permissions settings");
   for (const name of ["find_chats", "omni_endpoints"]) ctx.effect(() => toolCards.register(name, null, { phrase: PHRASES[name] }), `ds-bot: ${name} phrase`);
-  ctx.effect(() => toolCards.register("save_automation", (props) => (0, import_react17.createElement)(SavedAutomationCard, props), { phrase: PHRASES.save_automation }), "ds-bot: save_automation card");
-  ctx.effect(() => badges.register({ id: "omni-events", Component: ({ bot, roster, useWork }) => isEventsBot(roster, bot.id) ? (0, import_react17.createElement)(EventsBadge, { roster, useWork, botId: bot.id }) : null }), "ds-bot: automations badge");
+  ctx.effect(() => toolCards.register("save_automation", (props) => (0, import_react20.createElement)(SavedAutomationCard, props), { phrase: PHRASES.save_automation }), "ds-bot: save_automation card");
+  ctx.effect(() => badges.register({ id: "omni-events", Component: ({ bot, roster, useWork }) => isEventsBot(roster, bot.id) ? (0, import_react20.createElement)(EventsBadge, { roster, useWork, botId: bot.id }) : null }), "ds-bot: automations badge");
   if (botChildren) ctx.effect(() => botChildren.register({ id: "omni-channels", Component: OmniTree }), "ds-bot: Omni channels in the sidebar");
   ctx.effect(() => headerButtons.register({
     id: "omni-board",
-    Component: ({ bot, roster, actions, useWork }) => isEventsBot(roster, bot.id) ? (0, import_react17.createElement)(SubscriptionsButton, { roster, useWork, botId: bot.id, onToggle: () => toggleBoard(actions.reportError, bot.id) }) : null
+    Component: ({ bot, roster, actions, useWork }) => isEventsBot(roster, bot.id) ? (0, import_react20.createElement)(SubscriptionsButton, { roster, useWork, botId: bot.id, onToggle: () => toggleBoard(actions.reportError, bot.id) }) : null
   }), "ds-bot: automations button");
   if (chatSuggestions?.register) ctx.effect(() => chatSuggestions.register({ id: "omni-automations", order: -10, when: ({ bot, roster }) => Boolean(bot?.id) && bot.id === roster?.eventsBotId, items: automationExamples }), "ds-bot: automation suggestions");
   ctx.effect(() => nav.register({ id: "automations", label: () => t("Automations"), icon: ClockIcon3, run: (actions) => actions.selectPanel(AUTOMATIONS_PANEL) }), "ds-bot: automations nav");
