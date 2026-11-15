@@ -3233,6 +3233,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/two-responders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Instances two responders may answer
+         * @description Read-only. Lists each instance the caller key may see where an active instance agent is set (so Omni answers its trigger messages) and at least one active durable consumer receives those messages and has a reader that may send on the instance, so an attached app may answer the same person again. Writes nothing. Needs system:read.
+         */
+        get: operations["getTwoResponders"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/update": {
         parameters: {
             query?: never;
@@ -8246,6 +8266,45 @@ export interface components {
                 /** @enum {string|null} */
                 reason: "flag_unset" | "multitenancy_enabled" | null;
             };
+        };
+        TwoResponders: {
+            /** @description A consumer counts only when its updated_at moved within this many days */
+            activeWindowDays: number;
+            instances: {
+                /** Format: uuid */
+                instanceId: string;
+                instanceName: string;
+                channel: string;
+                /** Format: uuid */
+                agentId: string;
+                agentName: string;
+                consumers: {
+                    /** Format: uuid */
+                    id: string;
+                    name: string;
+                    /** @description The consumer type filter (exact type or trailing-* glob) */
+                    eventType: string;
+                    /**
+                     * Format: date-time
+                     * @description When the consumer updated_at last moved: an ack, a skipped page, a shared lease, or the create
+                     */
+                    lastMovedAt: string;
+                    /**
+                     * @description owner-key: the stored owner key may send on the instance (active, unexpired, messages:send, instance allowed). owning-agent: an agent-owned consumer whose agent is active. unrecorded: no owner key is stored, so any instance-unrestricted key with events:write may pull it
+                     * @enum {string}
+                     */
+                    reader: "owner-key" | "owning-agent" | "unrecorded";
+                    /** Format: uuid */
+                    ownerKeyId: string | null;
+                    /**
+                     * Format: uuid
+                     * @description The agent that owns the consumer, if any
+                     */
+                    agentId: string | null;
+                    /** @description The consumer belongs to the instance's own agent: that agent gets each message on both paths */
+                    sameAgent: boolean;
+                }[];
+            }[];
         };
         Provider: {
             /**
@@ -20236,6 +20295,49 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: components["schemas"]["PairedAgentsStatus"];
+                    };
+                };
+            };
+            /** @description Needs system:read */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            /**
+                             * @description Error code
+                             * @example NOT_FOUND
+                             */
+                            code: string;
+                            /** @description Human-readable error message */
+                            message: string;
+                            /** @description Additional error details */
+                            details?: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    getTwoResponders: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Flagged instances */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["TwoResponders"];
                     };
                 };
             };

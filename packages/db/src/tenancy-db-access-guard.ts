@@ -2052,6 +2052,10 @@ export const REGISTERED_DB_ACCESS: readonly RegisteredDbAccess[] = [
   { file: 'packages/api/src/services/connectors.ts', table: 'automations', class: 'tenant-boundary' },
   { file: 'packages/api/src/lib/key-agent.ts', table: 'instances', class: 'tenant-boundary' },
   { file: 'packages/api/src/lib/key-agent.ts', table: 'agents', class: 'tenant-boundary' },
+  // Two-responder detector: reads instances and agents through `scopedHandle`, so a tenant scope sees only
+  // its own rows; durable consumers and api keys are global registries it filters in code.
+  { file: 'packages/api/src/services/two-responders.ts', table: 'instances', class: 'tenant-boundary' },
+  { file: 'packages/api/src/services/two-responders.ts', table: 'agents', class: 'tenant-boundary' },
   // Paired-agent grant writer (follow-up 1): `insertAgentSourceGrant` reads the
   // grant source's tenant through the handle its caller passes (`scopedHandle`
   // in the API), so under enforcement another tenant's source is invisible and

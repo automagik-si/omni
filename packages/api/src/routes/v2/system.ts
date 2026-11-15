@@ -1,6 +1,7 @@
 /**
  * This Omni's own version and the updates its owner confirms (system/update.ts).
  *
+ *   GET  /api/v2/system/two-responders   instances an Omni agent and an attached app may both answer
  *   GET  /api/v2/system/update   what runs, what the update channel publishes, and any update waiting or running
  *   POST /api/v2/system/update   ask for the published version; the owner confirms it on WhatsApp,
  *                                or, on a loopback-only Omni set up for it, the request starts it
@@ -8,11 +9,13 @@
 
 import { type Context, Hono } from 'hono';
 import { z } from 'zod';
+import { ACTIVE_CONSUMER_WINDOW_MS, findTwoResponders } from '../../services/two-responders';
 import { type SystemUpdater, UpdateVersionSchema } from '../../system/update';
 import { pairedAgentFlagState } from '../../tenancy/feature-flag';
 import type { AppVariables } from '../../types';
 
 const RequestSchema = z.object({ version: UpdateVersionSchema }).strict();
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 type Env = { Variables: AppVariables };
 
@@ -28,6 +31,15 @@ export const systemRoutes = new Hono<Env>();
 systemRoutes.get('/paired-agents', (c) => {
   const { flag, enabled, reason } = pairedAgentFlagState('consumers');
   return c.json({ data: { consumers: { flag, enabled, reason } } });
+});
+
+/** Instances an Omni agent and a durable consumer's reader may both answer (services/two-responders.ts). */
+systemRoutes.get('/two-responders', async (c) => {
+  const instances = await findTwoResponders(c.get('db'), {
+    tenantId: c.get('authContext')?.tenantId ?? null,
+    instanceIds: c.get('apiKey')?.instanceIds ?? null,
+  });
+  return c.json({ data: { activeWindowDays: ACTIVE_CONSUMER_WINDOW_MS / DAY_MS, instances } });
 });
 
 systemRoutes.get('/update', async (c) => c.json({ data: await updaterOf(c).status() }));

@@ -4976,6 +4976,16 @@ export function createOmniClient(config: OmniClientConfig) {
         throwIfError(response, error);
         return data ?? { status: 'unhealthy' };
       },
+
+      /**
+       * Instances an Omni agent and an attached app may both answer (read-only; needs system:read)
+       */
+      async twoResponders(): Promise<components['schemas']['TwoResponders']> {
+        const { data, error, response } = await client.GET('/system/two-responders');
+        throwIfError(response, error);
+        if (!data?.data) throw new OmniApiError('Empty two-responders response', 'INTERNAL_ERROR', undefined, 502);
+        return data.data;
+      },
     },
 
     /**
