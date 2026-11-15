@@ -168,3 +168,21 @@ export async function resolveChatIdParam(
   const chat = await resolveChatRow(c, raw, explicitInstanceId);
   return chat?.id ?? null;
 }
+
+/**
+ * Resolve a `:id` URL param to a chat's internal UUID.
+ *
+ * Like `resolveChatIdParam`, but a UUID's chat must also be on one of the key's
+ * legacy `instanceIds`. A native id already passes that check: it is looked up
+ * only on an instance the key reaches. A UUID is not looked up there, so its
+ * row is read here when the key has an `instanceIds` list. A missing chat and a
+ * chat on another instance both answer null (the route's 404), so the answer
+ * never tells that a chat exists elsewhere. A key without the list resolves
+ * exactly as `resolveChatIdParam` does, with no extra read.
+ */
+export async function resolveChatIdInKeyInstances(c: ChatContext, raw: string): Promise<string | null> {
+  const instanceIds = c.get('apiKey')?.instanceIds;
+  if (!Array.isArray(instanceIds) || !isChatUuid(raw)) return resolveChatIdParam(c, raw);
+  const chat = await resolveChatRow(c, raw);
+  return chat?.instanceId && ApiKeyService.instanceAllowed(instanceIds, chat.instanceId) ? chat.id : null;
+}
