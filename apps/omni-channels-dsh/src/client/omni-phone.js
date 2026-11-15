@@ -300,15 +300,17 @@ export function PhonePane({ params, sessionId, useRoster, visible = true }) {
   const loading = read.messages === null && read.error === null
   const name = threadName(thread)
   const cut = thread.connected === false && Boolean(thread.reason)
+  // The chat's row from the overview (its photo); without one, the thread's name and kind.
+  const chat = chatOf(overview, thread.chatId)
   return h('div', { className: 'op-pane', 'data-thread-id': thread.id, role: 'region', 'aria-label': t('Chat with {name}', { name }) },
-    h(ChatHead, { className: 'op-head', chat: chatOf(overview, thread.chatId), name, status: cut ? threadReason(thread) : channelOf(overview, thread.channelId)?.name ?? null, off: cut },
+    h(ChatHead, { className: 'op-head', chat, name, status: cut ? threadReason(thread) : channelOf(overview, thread.channelId)?.name ?? null, off: cut },
       h(SendSwitch, { thread })),
     h('div', { ref: scroller, className: 'oc-thread op-log', onScroll, role: 'log', 'aria-label': t('Conversation with {name}', { name }) },
       h('div', { className: 'oc-thread-in' },
         loading ? h('div', { className: 'oc-day' }, h('span', { className: 'oc-spinner', 'aria-hidden': true }), t('Loading messages…')) : null,
         read.error ? h('p', { className: 'op-note', role: 'alert' }, hostText(read.error)) : null,
         read.messages !== null && messages.length === 0 ? h('p', { className: 'op-note' }, t('No messages yet')) : null,
-        h(ChatMessages, { messages, onSized }))),
+        h(ChatMessages, { messages, onSized, chat: chat ?? { name, kind: thread.kind === 'group' ? 'group' : 'direct' } }))),
     h(PhoneComposer, { thread, sent }))
 }
 

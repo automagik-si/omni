@@ -12711,7 +12711,17 @@ function TickMark({ status }) {
     tick.marks.map((Mark, index) => (0, import_react5.createElement)(Mark, { key: index }))
   );
 }
-function ChatMessages({ messages, onSized }) {
+function SenderPhoto({ message, chat }) {
+  const group = chat?.kind === "group";
+  const name = (group ? message.author : chat?.name ?? message.author) || "?";
+  const photo = message.authorPhoto ?? (group ? null : chat?.avatarUrl ?? null);
+  return (0, import_react5.createElement)(
+    "span",
+    { className: "oc-msg-ava", "aria-hidden": true },
+    (0, import_react5.createElement)(ChatAvatar, { chat: { name, initials: !group && chat?.initials ? chat.initials : initialsOf(name), avatarUrl: photo }, size: 28 })
+  );
+}
+function ChatMessages({ messages, onSized, chat }) {
   return messages.map((message, index) => {
     const mine = message.from !== "them";
     const newDay = index === 0 || dayKey(messages[index - 1].at) !== dayKey(message.at);
@@ -12720,6 +12730,7 @@ function ChatMessages({ messages, onSized }) {
       "div",
       { className: `oc-msg oc-msg-${message.from}${first ? " oc-msg-first" : ""}` },
       first && !mine && message.author ? (0, import_react5.createElement)("span", { className: "oc-msg-author" }, message.author) : null,
+      first && !mine ? (0, import_react5.createElement)(SenderPhoto, { message, chat }) : null,
       first && message.from === "omni" ? (0, import_react5.createElement)("span", { className: "oc-msg-author oc-msg-omni" }, (0, import_react5.createElement)(OmniMark, { size: 12 }), "Omni") : null,
       (0, import_react5.createElement)(
         "div",
@@ -12895,7 +12906,7 @@ function ChatPage({ actions }) {
         "div",
         { className: "oc-thread-in" },
         loading ? (0, import_react5.createElement)("div", { className: "oc-day" }, (0, import_react5.createElement)("span", { className: "oc-spinner", "aria-hidden": true }), t("Loading messages…")) : null,
-        (0, import_react5.createElement)(ChatMessages, { messages, onSized })
+        (0, import_react5.createElement)(ChatMessages, { messages, onSized, chat })
       )
     ),
     (0, import_react5.createElement)(
@@ -13384,8 +13395,8 @@ body[data-ds-dark-theme] .oc-ava{background:hsl(var(--oc-hue) 30% 26%);color:hsl
    same header, log and bar from the DSH tokens alone. Light: white bubbles in from the person
    on a soft wallpaper, accent-tinted bubbles out; dark: the team's bubble surface in, its accent
    tint out. The wallpaper's pattern is two staggered dot grids of the ink. */
-.oc-chat,.op-pane{--oc-wall:color-mix(in srgb,var(--bt-ink) 4%,var(--bt-main));--oc-in:var(--bt-card);--oc-out:color-mix(in srgb,var(--bt-accent) 14%,var(--bt-card));--oc-dot:color-mix(in srgb,var(--bt-ink) 9%,transparent);--oc-shade:color-mix(in srgb,var(--bt-ink) 12%,transparent)}
-body[data-ds-dark-theme] :is(.oc-chat,.op-pane){--oc-wall:var(--bt-main);--oc-in:var(--bt-bubble);--oc-out:color-mix(in srgb,var(--bt-accent) 26%,var(--bt-bubble));--oc-dot:color-mix(in srgb,var(--bt-ink) 6%,transparent);--oc-shade:color-mix(in srgb,var(--bt-main) 70%,transparent)}
+.oc-chat,.op-pane{--oc-me:var(--bt-accent);--oc-them:var(--bt-magic-pink);--oc-wall:color-mix(in srgb,var(--bt-ink) 4%,var(--bt-main));--oc-in:color-mix(in srgb,var(--oc-them) 16%,var(--bt-card));--oc-out:color-mix(in srgb,var(--oc-me) 20%,var(--bt-card));--oc-dot:color-mix(in srgb,var(--bt-ink) 9%,transparent);--oc-shade:color-mix(in srgb,var(--bt-ink) 12%,transparent)}
+body[data-ds-dark-theme] :is(.oc-chat,.op-pane){--oc-wall:var(--bt-main);--oc-in:color-mix(in srgb,var(--oc-them) 26%,var(--bt-bubble));--oc-out:color-mix(in srgb,var(--oc-me) 34%,var(--bt-bubble));--oc-dot:color-mix(in srgb,var(--bt-ink) 6%,transparent);--oc-shade:color-mix(in srgb,var(--bt-main) 70%,transparent)}
 .oc-chat{container:oc-chat/inline-size}
 .oc-chat-empty{align-items:center;justify-content:center;gap:12px;color:var(--bt-ink-3)}
 .oc-chat-head{position:relative;z-index:1;flex:none;display:grid;grid-template-columns:auto minmax(0,1fr) auto;grid-template-rows:auto auto;column-gap:12px;align-items:center;min-height:60px;padding:8px 12px 8px 16px;box-sizing:border-box;border-bottom:.5px solid var(--bt-line-2);background:var(--bt-main)}
@@ -13410,7 +13421,9 @@ body[data-ds-dark-theme] :is(.oc-chat,.op-pane){--oc-wall:var(--bt-main);--oc-in
 .oc-msg{display:flex;flex-direction:column;max-width:min(80%,560px);animation:oc-msg-in .2s cubic-bezier(.2,0,0,1)}
 @keyframes oc-msg-in{from{opacity:0;transform:translateY(4px)}}
 .oc-msg-first{margin-top:8px}
-.oc-msg-them{align-self:flex-start;align-items:flex-start}
+.oc-msg-them{align-self:flex-start;align-items:flex-start;position:relative;box-sizing:border-box;padding-left:36px;max-width:min(calc(80% + 36px),596px)}
+.oc-msg-ava{position:absolute;left:0;top:0;display:flex}
+.oc-msg-author~.oc-msg-ava{top:18px}
 .oc-msg-omni,.oc-msg-you{align-self:flex-end;align-items:flex-end}
 .oc-msg-author{display:inline-flex;align-items:center;gap:4px;margin:0 10px 2px;font-size:12px;line-height:16px;font-weight:600;color:var(--bt-ink-2)}
 .oc-msg-omni .oc-msg-author{color:var(--bt-accent)}
@@ -13421,7 +13434,7 @@ body[data-ds-dark-theme] :is(.oc-chat,.op-pane){--oc-wall:var(--bt-main);--oc-in
 .oc-msg-them.oc-msg-first .oc-bubble::before{left:-7px;clip-path:polygon(0 0,100% 0,100% 100%)}
 :is(.oc-msg-omni,.oc-msg-you).oc-msg-first .oc-bubble{border-top-right-radius:0}
 :is(.oc-msg-omni,.oc-msg-you).oc-msg-first .oc-bubble::before{right:-7px;clip-path:polygon(0 0,100% 0,0 100%)}
-.oc-meta{float:right;position:relative;display:inline-flex;align-items:center;gap:3px;margin:6px -2px -5px 12px;font-size:11px;line-height:15px;white-space:nowrap;color:var(--bt-ink-2)}
+.oc-meta{float:right;position:relative;display:inline-flex;align-items:center;gap:3px;margin:6px -2px -5px 12px;font-size:11px;line-height:15px;white-space:nowrap;color:color-mix(in srgb,var(--bt-ink) 70%,transparent)}
 .oc-meta time{font-variant-numeric:tabular-nums}
 .oc-tick{display:inline-flex;align-items:center}
 .oc-tick svg{width:15px;height:15px}
@@ -15888,12 +15901,13 @@ function PhonePane({ params, sessionId, useRoster, visible = true }) {
   const loading = read.messages === null && read.error === null;
   const name = threadName(thread);
   const cut = thread.connected === false && Boolean(thread.reason);
+  const chat = chatOf(overview, thread.chatId);
   return (0, import_react12.createElement)(
     "div",
     { className: "op-pane", "data-thread-id": thread.id, role: "region", "aria-label": t("Chat with {name}", { name }) },
     (0, import_react12.createElement)(
       ChatHead,
-      { className: "op-head", chat: chatOf(overview, thread.chatId), name, status: cut ? threadReason(thread) : channelOf(overview, thread.channelId)?.name ?? null, off: cut },
+      { className: "op-head", chat, name, status: cut ? threadReason(thread) : channelOf(overview, thread.channelId)?.name ?? null, off: cut },
       (0, import_react12.createElement)(SendSwitch, { thread })
     ),
     (0, import_react12.createElement)(
@@ -15905,7 +15919,7 @@ function PhonePane({ params, sessionId, useRoster, visible = true }) {
         loading ? (0, import_react12.createElement)("div", { className: "oc-day" }, (0, import_react12.createElement)("span", { className: "oc-spinner", "aria-hidden": true }), t("Loading messages…")) : null,
         read.error ? (0, import_react12.createElement)("p", { className: "op-note", role: "alert" }, hostText(read.error)) : null,
         read.messages !== null && messages.length === 0 ? (0, import_react12.createElement)("p", { className: "op-note" }, t("No messages yet")) : null,
-        (0, import_react12.createElement)(ChatMessages, { messages, onSized })
+        (0, import_react12.createElement)(ChatMessages, { messages, onSized, chat: chat ?? { name, kind: thread.kind === "group" ? "group" : "direct" } })
       )
     ),
     (0, import_react12.createElement)(PhoneComposer, { thread, sent })

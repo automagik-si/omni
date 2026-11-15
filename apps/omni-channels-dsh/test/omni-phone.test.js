@@ -1058,3 +1058,42 @@ test('a send the host refuses takes the pane\'s message back (#1773)', async (t)
   assert.equal(boxOf(root).props.value, 'On my way')
   assert.equal(all(root, 'op-compose-fail').length, 1)
 })
+
+// #1775: the two sides apart in the theme's blue and pink, and who wrote each run of the
+// other side's messages beside it.
+test('the other side\'s runs carry the person\'s photo, else their initials; in a group each sender\'s own; staff\'s and Omni\'s side has none (#1775)', async (t) => {
+  reset()
+  const PHOTO = 'https://photos.example/person-one.png'
+  const SENDER = 'https://photos.example/person-two.png'
+  withOverview(t, { channels: [SUPPORT], chats: [
+    { id: CHAT_1, channelId: 'wa', name: 'Person One', initials: 'PO', kind: 'direct', at: 1, unread: 0, avatarUrl: PHOTO },
+    { id: CHAT_2, channelId: 'wa', name: 'Team room', initials: 'TR', kind: 'group', at: 1, unread: 0, avatarUrl: null },
+  ] })
+  const line = (id, from, said, at, extra = {}) => ({ id, from, fromMe: from !== 'them', text: said, caption: null, type: 'text', hasMedia: false, mime: null, mediaText: null, fileName: null, at, ...extra })
+  const photosOf = root => all(root, 'oc-msg').map((message) => {
+    const photo = all(message, 'oc-msg-ava')[0]
+    return photo === undefined ? null : ofType(photo, 'img')[0]?.props.src ?? text(one(photo, 'oc-ava-face'))
+  })
+  // A direct chat: the chat's photo beside the first of each of the person's runs.
+  answer = host([line('d1', 'them', 'Hello', AT), line('d2', 'them', 'Are you there?', AT + 1), line('d3', 'you', 'Yes', AT + 2), line('d4', 'them', 'Great', AT + 3)])
+  const direct = await drawn(pane({ params: { threadId: 't1', chatId: CHAT_1 }, sessionId: 's1', useRoster: useRosterOf(hooked([THREAD(1, CHAT_1, { title: 'Person One', kind: 'direct' })])) }, t))
+  assert.deepEqual(photosOf(direct), [PHOTO, null, null, PHOTO])
+  assert.equal(all(direct, 'oc-msg-ava')[0].props['aria-hidden'], true, 'the name says who; the photo is not read out')
+  // A group: each sender's own photo from Omni, else their initials; never the group's.
+  answer = host([
+    line('g1', 'them', 'Morning', AT, { author: 'Person Two', authorPhoto: SENDER }),
+    line('g2', 'them', 'Is it at ten?', AT + 1, { author: 'Person Two', authorPhoto: SENDER }),
+    line('g3', 'them', 'Yes', AT + 2, { author: 'Person Three' }),
+    line('g4', 'omni', 'Noted', AT + 3),
+    line('g5', 'you', 'See you there', AT + 4),
+  ])
+  const group = await drawn(pane({ params: { threadId: 't2', chatId: CHAT_2 }, sessionId: 's2', useRoster: useRosterOf(hooked([THREAD(2, CHAT_2, { title: 'Team room', kind: 'group' })])) }, t))
+  assert.deepEqual(photosOf(group), [SENDER, null, 'PT', null, null])
+  assert.deepEqual(all(group, 'oc-msg-author').map(text), ['Person Two', 'Person Three', 'Omni'])
+  // The two sides' tones are the theme's own tokens, mixed into its surfaces in both themes.
+  for (const rule of [
+    '--oc-me:var(--bt-accent);--oc-them:var(--bt-magic-pink)',
+    '--oc-in:color-mix(in srgb,var(--oc-them) 16%,var(--bt-card));--oc-out:color-mix(in srgb,var(--oc-me) 20%,var(--bt-card))',
+    '--oc-in:color-mix(in srgb,var(--oc-them) 26%,var(--bt-bubble));--oc-out:color-mix(in srgb,var(--oc-me) 34%,var(--bt-bubble))',
+  ]) assert.ok(ui.CHANNELS_CSS.includes(rule), rule)
+})
