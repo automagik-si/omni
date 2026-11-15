@@ -21,7 +21,7 @@ import { afterEach, describe, expect, mock, test } from 'bun:test';
 import { type Database, instances } from '@omni/db';
 import { Hono } from 'hono';
 import { errorHandler } from '../../../middleware/error';
-import { CreateConsumerSchema } from '../../../schemas/openapi/event-consumers';
+import { CreateConsumerSchema, SeekConsumerSchema } from '../../../schemas/openapi/event-consumers';
 import { EventConsumerService } from '../../../services/event-consumers';
 import { buildWorkerTenantContext } from '../../../tenancy/worker-tenant-context';
 import type { ApiKeyData, AppVariables } from '../../../types';
@@ -74,6 +74,7 @@ function mockService() {
     delete: mock(async () => undefined),
     pull: mock(async (name: string) => ({ consumer: name, items: [] })),
     ack: mock(async (name: string) => ({ name })),
+    seek: mock(async (name: string) => ({ data: { name }, from: 0, to: 3, by: null, when: new Date().toISOString() })),
   };
 }
 
@@ -90,6 +91,11 @@ async function hitEveryRoute(app: Hono<{ Variables: AppVariables }>): Promise<nu
     app.request('/events/consumers/legacy'),
     app.request('/events/consumers/legacy/pull?limit=5', { method: 'POST' }),
     app.request('/events/consumers/legacy/ack', { method: 'POST', headers: json, body: JSON.stringify({ cursor: 3 }) }),
+    app.request('/events/consumers/legacy/seek', {
+      method: 'POST',
+      headers: json,
+      body: JSON.stringify({ toSequence: 3 }),
+    }),
     app.request('/events/consumers/legacy', { method: 'DELETE' }),
   ]);
   return responses.map((r) => r.status);
@@ -118,7 +124,7 @@ describe('consumer routes forward the caller', () => {
     test(`${label}: every route reaches the service with the original arguments plus the caller`, async () => {
       const service = mockService();
       const statuses = await hitEveryRoute(mount(service, key));
-      expect(statuses).toEqual([200, 201, 200, 200, 200, 200]);
+      expect(statuses).toEqual([200, 201, 200, 200, 200, 200, 200]);
 
       expect(service.list).toHaveBeenCalledWith(expected);
       // The create body is passed through untouched: no scoped/instanceIds appear unless the client sent them
@@ -131,6 +137,7 @@ describe('consumer routes forward the caller', () => {
         expected,
       );
       expect(service.ack).toHaveBeenCalledWith('legacy', 3, undefined, expected);
+      expect(service.seek).toHaveBeenCalledWith('legacy', { toSequence: 3 }, expected);
       expect(service.delete).toHaveBeenCalledWith('legacy', expected);
     });
   }
@@ -366,4 +373,26 @@ test('multitenancy on without paired flag: tenant credential still refuses restr
       error: { code: 'FORBIDDEN', message: expect.stringContaining('Create a scoped consumer') },
     });
   }
+});
+
+describe('seek target schema (RFC-0002)', () => {
+  test('exactly one safe sequence or timestamp, with no unknown fields', () => {
+    for (const input of [
+      {},
+      { toSequence: 1, toTime: '2026-01-01T00:00:00Z' },
+      { toSequence: -1 },
+      { toSequence: 1.1 },
+      { toSequence: '1' },
+      { toSequence: Number.MAX_SAFE_INTEGER + 1 },
+      { toTime: 'yesterday' },
+      { toTime: '2026-01-01T00:00:00' },
+      { toSequence: 1, other: true },
+    ]) {
+      expect(SeekConsumerSchema.safeParse(input).success).toBe(false);
+    }
+    expect(SeekConsumerSchema.parse({ toSequence: 0 })).toEqual({ toSequence: 0 });
+    expect(SeekConsumerSchema.parse({ toTime: '2026-01-01T00:00:00-03:00' })).toEqual({
+      toTime: '2026-01-01T00:00:00-03:00',
+    });
+  });
 });

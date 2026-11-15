@@ -19,6 +19,12 @@ describe('config audit helpers', () => {
     expect(resolveTarget('DELETE', `/api/v2/instances/${ID}/routes/r1`)?.resource.type).toBe('route');
     expect(resolveTarget('PUT', '/api/v2/settings/foo')).toMatchObject({ targetId: 'foo', action: 'setting.update' });
     expect(resolveTarget('POST', '/api/v2/messages/send')).toBeNull();
+    expect(resolveTarget('POST', '/api/v2/events/consumers/replay/seek')).toMatchObject({
+      targetId: 'replay',
+      action: 'consumer.seek',
+    });
+    expect(resolveTarget('POST', '/api/v2/events/consumers/replay/ack')).toBeNull();
+    expect(resolveTarget('POST', '/api/v2/events/consumers/replay/pull')).toBeNull();
   });
 
   test('connector subscription mutations target the subscription row, not the connector', () => {
