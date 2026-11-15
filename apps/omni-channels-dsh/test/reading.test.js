@@ -23,7 +23,7 @@ import { ToolRuntime } from '@deepseek-ai/dsh-tools'
 import * as team from '@automagik/bots-dsh'
 import * as channels from '../index.js'
 import { LINK_FILE } from '../src/host/omni-link.js'
-import { ANSWER_CHILD_REFUSAL, BAD_CURSOR, CURSOR_WINDOW, LINE_TEXT_MAX, NOT_OPERATOR, NOT_READABLE, NOTES_FILE, PAGE_CHARS_MAX } from '../src/host/reading.js'
+import { ANSWER_CHILD_REFUSAL, BAD_CURSOR, CURSOR_WINDOW, NOT_OPERATOR, NOT_READABLE, NOTES_FILE, PAGE_CHARS_MAX } from '../src/host/reading.js'
 import { INSTANCE, OMNI, OTHER_INSTANCE, resetFetch, teamState } from './thread-fixture.js'
 
 const realFetch = globalThis.fetch
@@ -58,7 +58,7 @@ const MESSAGES = [
 // A chat with one row in a form no message has (its time a number).
 const ODD_MESSAGES = [{ ...message(2000, '2026-04-01T00:00:00.000Z', { textContent: 'fine' }), chatId: ODD }, { id: 'odd-row', chatId: ODD, platformTimestamp: 1_775_000_000 }]
 // 205 long messages of another chat, one a minute.
-const LONG = 'x'.repeat(LINE_TEXT_MAX + 100)
+const LONG = 'x'.repeat(700)
 const BIG_MESSAGES = Array.from({ length: 205 }, (_, n) => ({ ...message(1000 + n, new Date(Date.parse('2026-01-01T00:00:00.000Z') + n * 60_000).toISOString(), { textContent: LONG }), chatId: BIG }))
 const CHATS = {
   [CHAT]: { id: CHAT, name: 'Ana', instanceId: INSTANCE, externalId: '5511988880000@s.whatsapp.net', chatType: 'dm' },
@@ -213,25 +213,46 @@ test('read_history reads a chat over several pages with equal timestamps: each m
   // A cursor belongs to its chat and its window.
   assert.equal(await dsh.run('read_history', { chat: BIG, cursor: cursorOf(pages[0]) }), BAD_CURSOR)
   assert.equal(await dsh.run('read_history', { chat: CHAT, cursor: 'not-a-cursor' }), BAD_CURSOR)
-  assert.equal(await dsh.run('read_history', { chat: CHAT, cursor: cursorOf(pages[0]), size: 5 }), CURSOR_WINDOW)
+  assert.equal(await dsh.run('read_history', { chat: CHAT, cursor: cursorOf(pages[0]), from: '2026-01-01' }), CURSOR_WINDOW)
+  // A cursor takes another size: the page number counts the messages already read.
+  const wider = await dsh.run('read_history', { chat: CHAT, cursor: cursorOf(pages[0]), size: 5 })
+  assert.match(wider, /^Page 2 of about 2, newest pages first: 5 messages, /m)
+  assert.deepEqual(idsOf(wider), [id(1), id(2), id(3), id(4), id(5)])
 })
 
-test('read_history: a page of 200 keeps all 200 lines within what DSH keeps whole, cutting texts shorter with a mark; an odd row stays a line; a size over 200 is refused', async (t) => {
+test('read_history: a page of 200 keeps all 200 lines within what DSH keeps whole, cutting texts shorter with a mark and saying how to read them whole; an odd row stays a line; a size over 200 is refused', async (t) => {
   omniO1()
   const dsh = await start(t, homeWith(t))
+  const cutAt = text => Number(/^Texts on this page are cut at (\d+) characters to keep the page whole\. To read them whole, call read_history again for chat \S+ (?:with no cursor|with cursor \S+) and a smaller size: /m.exec(text)?.[1])
+  const whole = text => linesOf(text).every(line => line.includes(`: ${LONG} | id `))
   const page = await dsh.run('read_history', { chat: BIG, size: 200 })
   assert.equal(idsOf(page).length, 200)
   assert.ok(page.length <= PAGE_CHARS_MAX, `${page.length} characters`)
   assert.match(page, /^Page 1 of about 2, newest pages first: 200 messages, /m)
-  const limit = Number(/^Texts on this page are cut at (\d+) characters to keep the page whole; a smaller size keeps more of each\.$/m.exec(page)?.[1])
-  assert.ok(limit > 0 && limit < LINE_TEXT_MAX, String(limit))
+  const limit = cutAt(page)
+  assert.ok(limit > 0 && limit < LONG.length, String(limit))
+  assert.ok(page.includes(`call read_history again for chat ${BIG} with no cursor and a smaller size`))
   assert.ok(linesOf(page).every(line => line.includes(`: ${'x'.repeat(limit)}…[+${LONG.length - limit} chars] | id `)))
+  // As it says: the same page with fewer messages holds them whole.
+  const fewer = await dsh.run('read_history', { chat: BIG, size: 50 })
+  assert.doesNotMatch(fewer, /^Texts on this page are cut/m)
+  assert.ok(whole(fewer))
+  assert.deepEqual(idsOf(fewer), idsOf(page).slice(-50))
+  // The rest of the window fits: whole texts, no cut said.
   const rest = await dsh.run('read_history', { chat: BIG, cursor: cursorOf(page) })
-  assert.equal(idsOf(rest).length, 5)
+  assert.match(rest, /^Page 2 of about 2, newest pages first: 5 messages, /m)
+  assert.ok(whole(rest))
   assert.equal(new Set([...idsOf(page), ...idsOf(rest)]).size, 205)
-  // A page that fits keeps texts up to LINE_TEXT_MAX and says nothing of a cut.
-  assert.ok(linesOf(rest).every(line => line.includes(`${'x'.repeat(LINE_TEXT_MAX)}…[+100 chars]`)))
-  assert.doesNotMatch(rest, /^Texts on this page are cut/m)
+  assert.match(await dsh.run('read_history', { chat: BIG, cursor: cursorOf(page), size: 5 }), /^Page 41 of about 41, /m)
+  // A cut page reached by a cursor names that cursor to read it again with fewer messages.
+  const first = await dsh.run('read_history', { chat: BIG, size: 100 })
+  const second = await dsh.run('read_history', { chat: BIG, cursor: cursorOf(first) })
+  assert.ok(cutAt(second) > 0)
+  assert.ok(second.includes(`call read_history again for chat ${BIG} with cursor ${cursorOf(first)} and a smaller size`))
+  const again = await dsh.run('read_history', { chat: BIG, cursor: cursorOf(first), size: 50 })
+  assert.match(again, /^Page 3 of about 5, /m)
+  assert.ok(whole(again))
+  assert.deepEqual(idsOf(again), idsOf(second).slice(-50))
   // One row that is no message as Omni gives one does not keep the rest from being read.
   const odd = await dsh.run('read_history', { chat: ODD })
   assert.deepEqual(linesOf(odd).sort(), [`2026-04-01T00:00:00Z Ana: fine | id ${id(2000)}`, 'a row Omni gave in a form this tool cannot read | id odd-row'])
