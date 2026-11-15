@@ -49,6 +49,11 @@ function sanitizeFilename(name: string): string {
   return name.replaceAll(/[^a-zA-Z0-9._-]/g, '_');
 }
 
+function safeDownloadError(error: unknown, bot: TelegramBotLike): string {
+  const message = String(error);
+  return bot.token ? message.replaceAll(bot.token, '[redacted]') : message;
+}
+
 /**
  * Check if an error is a "file too large" error from Telegram.
  * These should not be retried — Telegram cannot serve files >20MB via Bot API.
@@ -90,7 +95,7 @@ export async function getFileWithRetry(bot: TelegramBotLike, fileId: string): Pr
     } catch (error) {
       // "File too large" — don't retry, immediate fallback
       if (isFileTooLargeError(error)) {
-        log.warn('File too large for Bot API download (no retry)', { fileId, error: String(error) });
+        log.warn('File too large for Bot API download (no retry)', { fileId, error: safeDownloadError(error, bot) });
         return null;
       }
 
@@ -102,7 +107,7 @@ export async function getFileWithRetry(bot: TelegramBotLike, fileId: string): Pr
           attempt: attempt + 1,
           maxRetries: MAX_RETRIES,
           retryDelayMs: delay,
-          error: String(error),
+          error: safeDownloadError(error, bot),
         });
         await new Promise((r) => setTimeout(r, delay));
         continue;
@@ -112,7 +117,7 @@ export async function getFileWithRetry(bot: TelegramBotLike, fileId: string): Pr
       log.warn('getFile failed after retries', {
         fileId,
         attempts: attempt + 1,
-        error: String(error),
+        error: safeDownloadError(error, bot),
       });
       return null;
     }
@@ -166,7 +171,6 @@ export async function tryDownloadTelegramMedia(
     // Check Content-Length before reading body to prevent memory exhaustion
     downloadGuard.checkResponse(res, log, {
       instanceId,
-      url,
       channel: 'telegram',
     });
 
@@ -201,7 +205,7 @@ export async function tryDownloadTelegramMedia(
       instanceId,
       externalId,
       fileId,
-      error: String(error),
+      error: safeDownloadError(error, bot),
     });
     return null;
   }
