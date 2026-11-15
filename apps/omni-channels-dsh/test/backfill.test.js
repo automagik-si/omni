@@ -294,16 +294,27 @@ test('rows move with Omni\'s sync.* events on the plugin\'s stream, read by rout
   assert.deepEqual(dsh.rowOf(ana).counts, { fetched: 50, stored: 40, duplicates: 10, mediaDownloaded: 5, mediaMissing: 1, reactions: 2, edits: 1, deletions: 1, unmatched: 0 })
   assert.equal(dsh.rowOf(ana).round, 1)
   assert.equal(dsh.rowOf(ana).coverage, null)
-  // Done: the last progress carries the coverage; sync.completed says nothing more (no chatId).
+  // Done: the last progress says done with the coverage, and the job's end (sync.completed, no
+  // chatId) ends the row.
   omni.progress(ana, { state: 'done', round: 2, stored: 80, coverage: coverage(1), outcome: 'Finished requesting chat history' })
+  await until(() => dsh.rowOf(ana).state === 'done')
+  assert.deepEqual([dsh.rowOf(ana).outcome, dsh.rowOf(ana).coverage], [null, null])
   omni.complete(ana)
   await until(() => dsh.rowOf(ana).outcome === 'done')
   assert.deepEqual(dsh.rowOf(ana).coverage, coverage(1))
-  // The phone did not answer: Omni completes the job, and the row says so, not "done".
-  omni.progress(bruno, { state: 'phone-did-not-answer', round: 1, coverage: coverage(2), outcome: 'Phone did not answer the chat history request' })
+  // The phone did not answer: Omni says so in a round while the job still runs; the coverage,
+  // then the job's end, come after. The row runs until then, and says so, not "done".
+  omni.progress(bruno, { state: 'phone-did-not-answer', round: 1, outcome: 'Phone did not answer the chat history request' })
+  await until(() => dsh.rowOf(bruno).state === 'phone-did-not-answer')
+  assert.deepEqual([dsh.rowOf(bruno).outcome, dsh.rowOf(bruno).coverage], [null, null])
+  assert.equal(dsh.live()[0].summary.running, 3)
+  omni.progress(bruno, { round: 2, coverage: coverage(2) })
+  await until(() => dsh.rowOf(bruno).round === 2)
+  assert.equal(dsh.rowOf(bruno).outcome, null)
   omni.complete(bruno)
   await until(() => dsh.rowOf(bruno).outcome === 'phone-did-not-answer')
   assert.equal(dsh.rowOf(bruno).state, 'phone-did-not-answer')
+  assert.deepEqual(dsh.rowOf(bruno).coverage, coverage(2))
   // Cancel from the card: the cancel route, and the row stops at once; a late round leaves it.
   omni.progress(carla, { state: 'fetching', round: 1, fetched: 10, stored: 10 })
   await until(() => dsh.rowOf(carla).state === 'fetching')
@@ -404,7 +415,11 @@ test('answer children are refused all three tools; a Bot that does not operate O
   assert.match(status, new RegExp(`^- Bruno \\(job ${bruno}\\): waiting for its turn; 0 stored of 0 fetched`, 'm'))
   assert.ok(!status.includes(PREVIEW))
   assert.ok(omni.jobReads().some(call => call.path.endsWith(`/backfill/${bruno}`)))
-  // The Bot's cancel, when the user asks: the same cancel route.
+  // The Bot's cancel, when the user asks: the same cancel route, also while a round says the
+  // phone did not answer (the job still runs then).
+  omni.progress(bruno, { state: 'phone-did-not-answer', round: 1 })
+  await until(() => dsh.rowOf(bruno).state === 'phone-did-not-answer')
+  assert.match(await dsh.run('backfill_status', { jobId: bruno }), /\(job \S+\): the phone has not answered yet; still running;/)
   assert.equal(await dsh.run('cancel_backfill', { jobId: bruno }), 'Stopped the backfill of Bruno: it ends after the round it is in.')
   assert.equal(omni.jobs.get(bruno).status, 'cancelled')
   assert.equal(await dsh.run('cancel_backfill', { jobId: ana }), 'The backfill of Ana had already ended: done.')

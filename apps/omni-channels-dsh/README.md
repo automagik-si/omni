@@ -302,9 +302,11 @@ The live rows are `omniBackfills` in every state answer, newest run first, the l
            startedAt, updatedAt }] }
 ```
 
-`outcome` is null while the job runs. `coverage` is what Omni holds of the chat once its job
-ends, and null before then and on a failure. `not-started` means Omni refused to queue that
-chat's job at Start.
+`outcome` is null while the job runs, and set only when it ends (Omni's sync.completed,
+sync.cancelled or sync.failed, or the job route's status). `state` can read
+`phone-did-not-answer` or `done` a little before that, while Omni reads the chat's coverage.
+`coverage` is what Omni holds of the chat once its job ends, and null before then and on a
+failure. `not-started` means Omni refused to queue that chat's job at Start.
 
 ## Existing channel settings
 

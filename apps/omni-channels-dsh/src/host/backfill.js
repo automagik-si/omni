@@ -37,10 +37,17 @@ export const NOT_READABLE = 'This chat is on a channel that belongs to another b
 
 const invalid = message => Object.assign(new Error(message), { code: 'bot/invalid' })
 
-// The job states Omni gives, and what each ended one says on its row.
+// The job states Omni gives, and what each says on its row once the job ends. A job may read
+// phone-did-not-answer, or done, while it still runs (its coverage comes after): only the end
+// of the job ends its row, a terminal event (sync.completed, sync.cancelled, sync.failed) or
+// the job route's status (completed, cancelled, failed).
 export const STATES = ['queued', 'fetching', 'done', 'phone-did-not-answer', 'cancelled', 'failed']
 const OUTCOMES = { done: 'done', 'phone-did-not-answer': 'phone-did-not-answer', cancelled: 'stopped', failed: 'failed' }
-const ended = row => Object.hasOwn(OUTCOMES, row.state)
+const ENDS = new Set(['completed', 'cancelled', 'failed'])
+const EVENT_ENDS = { 'sync.completed': 'completed', 'sync.cancelled': 'cancelled', 'sync.failed': 'failed' }
+const ended = row => row.outcome !== null
+// How a job ended, from the job route's answer: its status, or null while it runs.
+const endOf = data => (ENDS.has(data?.status) ? data.status : null)
 // A row's counts, and the progress field each one comes from.
 const COUNTS = { fetched: 'fetched', stored: 'stored', duplicates: 'duplicates', mediaDownloaded: 'mediaDownloaded', mediaMissing: 'mediaMissing', reactions: 'reactionsApplied', edits: 'editsApplied', deletions: 'deletionsApplied', unmatched: 'unmatched' }
 const zeroCounts = () => Object.fromEntries(Object.keys(COUNTS).map(key => [key, 0]))
@@ -97,22 +104,28 @@ export function summaryOf(rows) {
 
 /**
  * Takes a job's progress into its row: from a sync.* event or the job route, whichever comes
- * first. An ended row stays as it ended; progress older than the row's is left out. Returns
- * whether the row changed.
+ * first. `end` is how the job ended (completed, cancelled, failed), or null while it runs. An
+ * ended row stays as it ended; progress older than the row's is left out, though an end still
+ * ends the row. Returns whether the row changed.
  */
-export function applyProgress(row, progress, { failed = false } = {}) {
+export function applyProgress(row, progress, end = null) {
   if (ended(row)) return false
   const parsed = Progress.safeParse(progress ?? {})
-  if (!parsed.success && !failed) return false
   const next = parsed.success ? parsed.data : {}
   const at = Date.parse(next.lastProgressAt ?? '')
-  if (!failed && Number.isFinite(at) && Number.isFinite(row.progressAt) && at < row.progressAt) return false
-  row.state = failed ? 'failed' : next.state ?? row.state
-  for (const [key, field] of Object.entries(COUNTS)) if (next[field] !== undefined) row.counts[key] = next[field]
-  if (next.round !== undefined) row.round = next.round
-  if (next.oldestReached !== undefined) row.oldestReached = next.oldestReached
-  if (Number.isFinite(at)) row.progressAt = at
-  if (ended(row)) {
+  const fresh = parsed.success && !(Number.isFinite(at) && Number.isFinite(row.progressAt) && at < row.progressAt)
+  if (!fresh && end === null) return false
+  if (fresh) {
+    if (next.state !== undefined) row.state = next.state
+    for (const [key, field] of Object.entries(COUNTS)) if (next[field] !== undefined) row.counts[key] = next[field]
+    if (next.round !== undefined) row.round = next.round
+    if (next.oldestReached !== undefined) row.oldestReached = next.oldestReached
+    if (Number.isFinite(at)) row.progressAt = at
+  }
+  if (end !== null) {
+    // The label is the job's own last state; the end only decides when it holds.
+    if (end !== 'completed') row.state = end
+    else if (row.state !== 'done' && row.state !== 'phone-did-not-answer') row.state = 'done'
     row.outcome = OUTCOMES[row.state]
     row.coverage = row.state !== 'failed' && next.coverage ? next.coverage : null
   }
@@ -125,7 +138,8 @@ function lineOf(row) {
   const c = row.counts
   const counts = `${c.stored} stored of ${c.fetched} fetched, ${c.mediaDownloaded} media downloaded, ${c.mediaMissing} media missing, ${c.reactions} reactions, ${c.edits} edits and ${c.deletions} deletions applied`
   const state = {
-    queued: 'waiting for its turn', fetching: `fetching (round ${row.round})`, done: 'done', 'phone-did-not-answer': 'the phone did not answer',
+    queued: 'waiting for its turn', fetching: `fetching (round ${row.round})`, done: ended(row) ? 'done' : 'finishing',
+    'phone-did-not-answer': ended(row) ? 'the phone did not answer' : 'the phone has not answered yet; still running',
     cancelled: 'stopped', failed: row.outcome === 'not-started' ? 'not started: Omni refused it' : 'failed',
   }[row.state] ?? row.state
   const holds = row.coverage ? `; Omni now holds ${row.coverage.count} messages of this chat${row.coverage.oldest ? ` (${dayOf(row.coverage.oldest)} to ${dayOf(row.coverage.newest)})` : ''}, ${row.coverage.countInWindow} in the range` : ''
@@ -169,10 +183,10 @@ export function install(rt) {
   // The job route: the fallback read of one row. A job Omni no longer has ends the row.
   async function readJob(row) {
     const reply = await omni('GET', `/chats/${encodeURIComponent(row.chatId)}/backfill/${encodeURIComponent(row.jobId)}`)
-    if (reply.status === 404) return applyProgress(row, {}, { failed: true })
+    if (reply.status === 404) return applyProgress(row, {}, 'failed')
     if (!reply.ok) return false
     const data = reply.json?.data
-    return applyProgress(row, data, { failed: data?.status === 'failed' && data?.state === undefined })
+    return applyProgress(row, data, endOf(data))
   }
   // Every unfinished row read again; one that fails to read waits for its events.
   async function refresh(rows = unfinished()) {
@@ -193,7 +207,7 @@ export function install(rt) {
     const row = parsed.success ? rowOfJob(parsed.data.jobId) : undefined
     // Another sync of this Omni, or a job no Start here queued.
     if (row === undefined) return 'ignored'
-    const changed = applyProgress(row, parsed.data.progress, { failed: event.eventType === 'sync.failed' })
+    const changed = applyProgress(row, parsed.data.progress, EVENT_ENDS[event.eventType] ?? null)
     // The ack that follows saves the state with it.
     if (changed && !rt.backfillsUnfinished()) rt.syncOmniEvents?.()
     return changed ? 'applied' : 'ignored'
@@ -312,7 +326,7 @@ export function install(rt) {
     const reply = await omni('POST', `/chats/${encodeURIComponent(row.chatId)}/backfill/${encodeURIComponent(jobId)}/cancel`)
     if (!reply.ok) throw invalid(`omni answered ${reply.status} cancelling that backfill`)
     // The answer is the job as it is now: cancelled, or ended already.
-    applyProgress(row, reply.json?.data)
+    applyProgress(row, reply.json?.data, endOf(reply.json?.data))
     if (!ended(row)) await readJob(row).catch(() => false)
     await rt.save()
     if (!rt.backfillsUnfinished()) rt.syncOmniEvents?.()
