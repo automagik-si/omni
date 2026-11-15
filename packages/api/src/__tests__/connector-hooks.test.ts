@@ -130,3 +130,83 @@ test('a signed parser throw is unmatched unparsed 202, logged at warn with conne
     configureLogging(config);
   }
 });
+
+test('a signed acknowledge-only parse is 202 ignored, recorded unmatched under its name, never published', async () => {
+  const connectorId = crypto.randomUUID();
+  const fixture = createConnectorTestDb({
+    connectors: [{ id: connectorId, provider: 'gitlab', hookSecret: HOOK_SECRET, tenantId: null }],
+    connector_event_subscriptions: [
+      {
+        id: crypto.randomUUID(),
+        connectorId,
+        providerEventKey: 'connector.gitlab.*',
+        ingress: 'connector',
+        status: 'active',
+        targetAutomationId: null,
+        tenantId: null,
+        filters: {},
+        consecutiveFailures: 0,
+      },
+    ],
+  });
+  const transport = connectorHookBus();
+  const service = new ConnectorService(
+    fixture.db,
+    transport.bus,
+    new ConnectorRegistry([
+      { ...eventsOnlyConnector, parseDelivery: () => ({ eventKey: 'ping', acknowledgeOnly: true, data: {} }) },
+    ]),
+  );
+  const body = JSON.stringify({ id: crypto.randomUUID() });
+  // The glob would match `connector.gitlab.ping`; acknowledge-only must win over it.
+  expect(await service.receiveForConnector(connectorId, body, signHook(body))).toEqual({
+    status: 202,
+    body: { received: true, ignored: true },
+  });
+  expect(fixture.tables.connectors[0]?.lastUnmatchedEventType).toBe('connector.gitlab.ping');
+  expect(fixture.tables.connectors[0]?.lastUnmatchedAt).toBeInstanceOf(Date);
+  expect(fixture.tables.omni_events).toHaveLength(0);
+  expect(transport.events).toHaveLength(0);
+});
+
+test('per-subscription route: an acknowledge-only parse is 202 ignored even when its key matches, with no failure', async () => {
+  const connectorId = crypto.randomUUID();
+  const subscriptionId = crypto.randomUUID();
+  const fixture = createConnectorTestDb({
+    connectors: [{ id: connectorId, provider: 'gitlab', hookSecret: null, tenantId: null }],
+    connector_event_subscriptions: [
+      {
+        id: subscriptionId,
+        connectorId,
+        providerEventKey: 'merge_request.merged',
+        ingress: 'subscription',
+        status: 'active',
+        targetAutomationId: crypto.randomUUID(),
+        verificationSecret: HOOK_SECRET,
+        tenantId: null,
+        filters: {},
+        consecutiveFailures: 0,
+        lastError: null,
+      },
+    ],
+  });
+  const transport = connectorHookBus();
+  const service = new ConnectorService(
+    fixture.db,
+    transport.bus,
+    new ConnectorRegistry([
+      {
+        ...eventsOnlyConnector,
+        parseDelivery: () => ({ eventKey: 'merge_request.merged', acknowledgeOnly: true, data: {} }),
+      },
+    ]),
+  );
+  const body = JSON.stringify({ id: crypto.randomUUID() });
+  expect(await service.receive(subscriptionId, body, signHook(body))).toEqual({
+    status: 202,
+    body: { received: true, ignored: true },
+  });
+  expect(fixture.tables.omni_events).toHaveLength(0);
+  expect(transport.events).toHaveLength(0);
+  expect(fixture.tables.connector_event_subscriptions[0]).toMatchObject({ consecutiveFailures: 0, lastError: null });
+});
