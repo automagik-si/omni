@@ -933,7 +933,9 @@ export function install(rt) {
     await rt.syncOmniEvents?.()
     return { ...bot.answer }
   }), 'omni-channels: answer settings')
-  ctx.effect(() => rt.hooks.view(() => ({ omniAnswers: Object.fromEntries(Object.values(state.bots ?? {}).filter(bot => bot.kind === 'omni').map(bot => [bot.id, answerSettingsOf(bot)])) })), 'omni-channels: answer settings view')
+  // #1731: with each bot's waitlist site as staff read it (answer-waitlist.js): its URL and
+  // whether a secret is set, never the secret.
+  ctx.effect(() => rt.hooks.view(() => ({ omniAnswers: Object.fromEntries(Object.values(state.bots ?? {}).filter(bot => bot.kind === 'omni').map(bot => [bot.id, { ...answerSettingsOf(bot), waitlist: rt.waitlistSettingOf?.(bot.id) ?? { url: null, secretSet: false } }])) })), 'omni-channels: answer settings view')
 
   // Removing a thread: its Session is archived with its work stopped, then its key is cut (or
   // marked pending, for a drain to cut), then the record goes. A Session that cannot be

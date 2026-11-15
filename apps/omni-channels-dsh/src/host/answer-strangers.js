@@ -20,7 +20,8 @@
 // for the bot, with the ids they wrote from, their first text, and when and how often they wrote.
 // A kept message is noted once, at its 30 s check (answer-kept.js). A save that fails takes the
 // note back, the rows it pushed out too. A chat an invite code lets in has its row marked
-// `admitted` (answer-invites.js). Staff read the rows in the answer settings, through the
+// `admitted` (answer-invites.js); a chat whose message the waitlist site confirmed is noted and
+// marked `waitlist` (answer-waitlist.js), and gets no reply here. Staff read the rows in the answer settings, through the
 // omni-answer-requests route; no tool reads them, so no answer child or other Session can.
 import { z } from 'zod'
 import { answerSettingsOf } from './threads.js'
@@ -45,6 +46,22 @@ function sendersOf(row) {
 const firstTextOf = row => (typeof row.textContent === 'string' && row.textContent.trim() !== ''
   ? row.textContent : `(${row.contentType ?? 'message'})`).slice(0, REQUEST_TEXT_MAX)
 
+/**
+ * Sends `text` in the person's chat through Omni's send for that chat (its externalId), as bot
+ * `botId`; undefined when Omni took it, else why not. The waitlist reply (answer-waitlist.js)
+ * goes the same way.
+ */
+export async function sendInChat(rt, row, botId, text) {
+  try {
+    if (rt.canChannel?.(botId, row.instanceId, 'write') === false) return 'the channel is not this bot\'s'
+    const found = await rt.omniRequest('GET', `/chats/${encodeURIComponent(row.chatUuid)}`)
+    const chat = found?.ok ? ChatRow.safeParse(await found.json().catch(() => null)) : undefined
+    if (!chat?.success || chat.data.data.instanceId !== row.instanceId || chat.data.data.chatType !== 'dm') return `Omni answered ${found?.status ?? 'nothing'} for the chat`
+    const sent = await rt.omniRequest('POST', '/messages/send', { body: { instanceId: row.instanceId, to: chat.data.data.externalId, text } })
+    return sent?.ok ? undefined : `Omni answered ${sent?.status ?? 'nothing'} for the reply`
+  } catch (error) { return error?.message ?? String(error) }
+}
+
 // Keeps the newest `max` entries of a map by `at`; the [key, entry] pairs it took out.
 function bound(map, max, at) {
   const keys = Object.keys(map)
@@ -58,6 +75,8 @@ function bound(map, max, at) {
 
 export function install(rt) {
   const failing = new Set()
+  // #1731: kept messages whose row the waitlist mark made, so their 30 s check notes them once.
+  const notedByMark = new Set()
   const replied = () => (rt.state.omniStrangerReplies ??= {})
   const requestsOf = botId => ((rt.state.omniAnswerRequests ??= {})[botId] ??= {})
 
@@ -81,19 +100,7 @@ export function install(rt) {
 
   // True when Omni took the reply.
   async function send(row, botId, text) {
-    let why
-    try {
-      if (rt.canChannel?.(botId, row.instanceId, 'write') === false) why = 'the channel is not this bot\'s'
-      else {
-        const found = await rt.omniRequest('GET', `/chats/${encodeURIComponent(row.chatUuid)}`)
-        const chat = found?.ok ? ChatRow.safeParse(await found.json().catch(() => null)) : undefined
-        if (!chat?.success || chat.data.data.instanceId !== row.instanceId || chat.data.data.chatType !== 'dm') why = `Omni answered ${found?.status ?? 'nothing'} for the chat`
-        else {
-          const sent = await rt.omniRequest('POST', '/messages/send', { body: { instanceId: row.instanceId, to: chat.data.data.externalId, text } })
-          if (!sent?.ok) why = `Omni answered ${sent?.status ?? 'nothing'} for the reply`
-        }
-      }
-    } catch (error) { why = error?.message ?? String(error) }
+    const why = await sendInChat(rt, row, botId, text)
     const key = `${row.instanceId}:${row.chatUuid}`
     if (why === undefined) { failing.delete(key); return true }
     if (!failing.has(key)) {
@@ -109,12 +116,16 @@ export function install(rt) {
   // blocked: the message is taken (a request noted, and the reply sent unless the chat had it
   // within a day). With no reply text: the request noted (not again), nothing sent, and false, so
   // the message goes on as refused or kept. False otherwise, and nothing changed.
+  // #1731: a message with a waitlist code, on a bot whose waitlist site is on, is taken as if no
+  // reply text were set: noted, never answered here (answer-waitlist.js); a message the
+  // waitlist's mark noted already is not noted again.
   rt.answerStranger = async (row, botId, { blocked = false, again = false } = {}) => {
-    const { enabled, strangerReply: text } = answerSettingsOf(rt.botOf(botId))
+    const { enabled, strangerReply } = answerSettingsOf(rt.botOf(botId))
     if (blocked || !enabled || !row?.instanceId || !row.chatUuid || row.rawPayload?.isFromMe === true) return false
+    const text = rt.waitlistCodeIn?.(row, botId) ? null : strangerReply
     const now = Date.now()
     if (text === null) {
-      if (again) return false
+      if (again || notedByMark.has(row.id)) return false
       const undo = note(row, botId, now)
       await rt.save().catch((error) => {
         undo()
@@ -155,6 +166,28 @@ export function install(rt) {
     try { await rt.save() } catch (error) {
       if (request.admitted === admitted) delete request.admitted
       throw error
+    }
+  }
+
+  // #1731: a chat whose message the waitlist site confirmed (answer-waitlist.js): its row marked
+  // `waitlist`. A chat with no row yet (a kept message, noted only at its 30 s check) gets one
+  // now with this message noted, which that check then skips. A save that fails takes it all
+  // back and throws.
+  rt.answerRequestWaitlisted = async (row, botId) => {
+    if (!row?.instanceId || !row.chatUuid) return
+    const undo = requestsOf(botId)[row.chatUuid] ? undefined : note(row, botId, Date.now())
+    const request = requestsOf(botId)[row.chatUuid]
+    const marked = request.waitlist ? undefined : { at: Date.now() }
+    if (!marked && !undo) return
+    if (marked) request.waitlist = marked
+    try { await rt.save() } catch (error) {
+      if (marked && request.waitlist === marked) delete request.waitlist
+      undo?.()
+      throw error
+    }
+    if (undo) {
+      notedByMark.add(row.id)
+      while (notedByMark.size > REQUESTS_MAX) notedByMark.delete(notedByMark.values().next().value)
     }
   }
 

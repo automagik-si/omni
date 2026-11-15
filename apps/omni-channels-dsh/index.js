@@ -22,6 +22,7 @@ import * as omni from './src/host/omni.js'
 import * as omniEvents from './src/host/omni-events.js'
 import * as answerStrangers from './src/host/answer-strangers.js'
 import * as answerInvites from './src/host/answer-invites.js'
+import * as answerWaitlist from './src/host/answer-waitlist.js'
 import * as omniChannelActions from './src/host/omni-channel-actions.js'
 import * as threadKeys from './src/host/thread-keys.js'
 import * as threads from './src/host/threads.js'
@@ -48,10 +49,11 @@ export const inject = ['omniTeam', 'tools', 'sessions', 'sessionTitle', 'setting
 // standing-Session runs (automations that run each event in its chat's thread) after the
 // threads, whose removals they hear, and their restart recovery right after them, before the
 // events, which queue for them. The reply to a person no rule lets in, and letting in a
-// person by an invite code (with the code list staff upload), come right before the events,
-// which call them; the invite path marks the reply's request row.
+// person by an invite code (with the code list staff upload), then confirming a waitlist code
+// with the bot's site (it shares the invite path's per-chat limit), come right before the
+// events, which call them; both mark the reply's request row.
 // Changing channels from the Channels page comes last: it only calls omni through omni.js.
-const MODULES = [resumeHook, grants, subscriptions, asks, omniApi, omniLink, omniDiscover, omniLocal, omniTerminal, omniUpdate, omni, threadKeys, threads, threadTools, needsStaff, standingRuns, standingRecovery, answerStrangers, answerInvites, omniEvents, omniChannelActions]
+const MODULES = [resumeHook, grants, subscriptions, asks, omniApi, omniLink, omniDiscover, omniLocal, omniTerminal, omniUpdate, omni, threadKeys, threads, threadTools, needsStaff, standingRuns, standingRecovery, answerStrangers, answerInvites, answerWaitlist, omniEvents, omniChannelActions]
 
 export function apply(ctx, config = {}) {
   ctx.provide('omniChannels', createRuntime(ctx, ctx.omniTeam, config))

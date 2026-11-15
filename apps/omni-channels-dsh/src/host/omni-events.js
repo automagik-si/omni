@@ -265,6 +265,10 @@ export function install(rt) {
     // A valid invite code above is no refusal, so it gets none.
     else if (refusal?.why === 'denied' && answerSub) await rt.answerStranger?.(row, answerSub.answerBotId, refusal)
     else if (admitted !== false && 'person' in admitted && row.rawPayload?.isFromMe !== true) await kept.release(row.chatUuid, admitted)
+    // #1731: still refused so, after its note or keep, a waitlist code in it is confirmed with the
+    // bot's site, if it has one (answer-waitlist.js); the person stays not let in. Such a message
+    // got no stranger reply above.
+    if (answerSub && ['denied', 'unmatched'].includes(refusal?.why) && refusal.blocked !== true) await rt.answerWaitlist?.(row, answerSub.answerBotId)
     return dispatch(row, invited?.welcomed ? false : admitted, controller)
   }
 
@@ -458,6 +462,7 @@ export function install(rt) {
       stopped = true
       clearInterval(timer)
       kept.stop()
+      const waitlist = rt.stopAnswerWaitlist?.()
       for (const entry of loops.values()) entry.controller.abort()
       // Stop synchronously, but retain stopped tasks until every ingress await settles.
       // No sync can start another run after stopped, so this final census is complete.
@@ -466,6 +471,7 @@ export function install(rt) {
         await syncTail
         await Promise.all([...loops.values()].map(entry => entry.task))
         await kept.settled()
+        await waitlist
       })()
       return drain
     }

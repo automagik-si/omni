@@ -6,6 +6,7 @@ import { isOmniBot, omniActions, startLive, typeOf, unreadOf } from './omni-stor
 import { openPhone, requestPhone, threadName } from './omni-phone.js'
 import { call, hostText, icons, relativeShort, t } from './core.js'
 import { INVITE_CODES_CSS, InviteCodes } from './invite-codes.js'
+import { WAITLIST_CONFIRM_CSS, WaitlistConfirm } from './waitlist-confirm.js'
 const { ChevronRightIcon, CloseIcon, DotsIcon, PlusIcon, SparkIcon } = icons
 
 // Under the Omni Bot's sidebar row: one collapsible item per channel of the linked Omni, each
@@ -636,7 +637,9 @@ function StrangerRequests({ botId }) {
         h('span', { className: 'ot-request-text', title: request.text }, request.text),
         h('span', { className: 'ot-picker-at' }, `${relativeShort(request.lastAt)} · ${messages(request.count)}`),
         // #1716: a chat an invite code let in, so staff do not let them in again by hand.
-        request.admitted ? h('span', { className: 'ot-picker-tag' }, t('Let in by code')) : null))))
+        request.admitted ? h('span', { className: 'ot-picker-tag' }, t('Let in by code')) : null,
+        // #1731: a chat whose waitlist code the site confirmed; the person is still not let in.
+        request.waitlist ? h('span', { className: 'ot-picker-tag' }, t('Waitlist confirmed')) : null))))
 }
 
 // Owner-only endpoint; no model tool can enable answer mode or widen its tools.
@@ -740,6 +743,8 @@ export function AnswerSettings({ bot, value = {}, channels = [], threads = [] })
       h(Field, { label: 'Welcome after an invite code', note: 'Sent to a person once their invite code lets them in; their child answers from their next message. Empty: no welcome, and the child answers the code message.' },
         h('textarea', { className: 'bt-input bt-input-area ot-answer-welcome', maxLength: INVITE_WELCOME_MAX, value: inviteWelcome, onChange: event => setInviteWelcome(event.target.value) })),
       h(InviteCodes),
+      // #1731: a waitlist code from a person not let in is confirmed with this site (host answer-waitlist.js).
+      h(WaitlistConfirm, { botId: bot.id, value: value.waitlist }),
       h(Field, { label: 'Shared notes for collective children' },
         h('textarea', { className: 'bt-input bt-input-area', maxLength: SHARED_NOTES_MAX, value: sharedNotes, onChange: event => setSharedNotes(event.target.value) })),
       problem ? h('p', { className: 'ot-picker-problem', role: 'alert' }, hostText(problem)) : null,
@@ -997,4 +1002,4 @@ ${stackedRow('.ot-thread[data-answer]:has(.ot-thread-reason)')}
 @keyframes ot-in{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion:reduce){.ot-chats{transition:none}.ot-chats .ot-thread{animation:none}.ot-chevron{transition:none}.ot-thread-acts{transition:none}}
 body[data-omni-thread] .bt-voice,body[data-omni-thread] .bt-plus,body[data-omni-thread] .bt-composer-model,body[data-omni-thread] .bt-mw-dock,body[data-omni-thread] .bt-btw-dock{display:none!important}
-${INVITE_CODES_CSS}`
+${INVITE_CODES_CSS}${WAITLIST_CONFIRM_CSS}`

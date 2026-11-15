@@ -775,4 +775,11 @@ export const STRINGS = {
   'Omni did not answer, so this message may have gone out. Check the chat before sending it again.': 'Omni 没有回应，这条消息可能已经发出。再次发送前请先查看聊天。',
   'The Verify token is not your Graph API access token. Connection alone does not verify the webhook; Meta must be able to reach this HTTPS URL.': '验证令牌不是 Graph API 访问令牌。连接成功不代表 Webhook 已验证；Meta 必须能够访问此 HTTPS URL。',
   'Let in by code': '已凭邀请码加入',
+  'Waitlist confirmed': '候补名单已确认',
+  'Waitlist confirmation': '候补名单确认',
+  'A code in the message of someone not let in is checked with this site, and the site\'s reply is sent to them. On only when the URL and the secret are both set.': '未获准加入的人在消息中附带的代码会通过此网站核对，并把网站的回复发给对方。只有同时设置了 URL 和密钥时才会启用。',
+  'Site URL': '网站 URL',
+  'Secret': '密钥',
+  'Type to replace': '输入以替换',
+  'Secret cleared.': '密钥已清除。',
 }

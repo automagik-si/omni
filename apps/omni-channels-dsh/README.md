@@ -151,6 +151,32 @@ that fails, sends nothing: the message goes on as refused. Omni publishes no eve
 written, so the invite rules themselves are the count: allow rules whose `metadata.source` is
 `invite` (`GET /access/rules?type=allow`), by `metadata.project`.
 
+## Confirm a waitlist code with a site
+
+Under **Waitlist confirmation** in the answer settings, staff name a site for the bot whose
+channel is the number the site gives out: its URL (https only) and a secret. Both are saved on
+the `omni-waitlist-confirm` route (`{ botId, url?, secret? }`; null clears a field, a field left
+out is kept). The secret is written only: the route and the settings answer `{ url, secretSet }`,
+and the secret is never shown, logged or warned. Until both are set, nothing changes.
+
+When a sender that the allowlist refuses by default, or one Omni knows only by their lid, sends a
+message with a code of the waitlist shape (`AMG-` and 6 Crockford characters, read the forgiving
+way invite codes are), and no invite code in it let them in, the plugin posts Omni's own event
+for that message to the site: `{ id, type: 'message.received', timestamp, metadata, payload:
+{ externalId, chatId, from, senderName?, content: { text } } }`, with the raw text, a 10-second
+timeout, no redirects, `Authorization: Bearer <secret>`, `X-Omni-Event-Id` (the same on every
+try) and a new `X-Omni-Delivery-Id` each try. The site matches the code itself. Only an HTTP 200
+with a `reply` (at most 1000 characters) is an answer: the reply goes word for word to the
+person's chat, once per message id (the newest 5000 ids are saved), and the chat's row under
+**Requests** reads **Waitlist confirmed**. The person stays not let in; no rule is written.
+
+The event waits only for the first try. A timeout, a network error or a 503 is tried again twice
+in the background, after about 2 and 10 seconds; after 3 such failures in a row the site is not
+called for 5 minutes. Any other answer sends nothing. Whatever the answer, a message with such a
+code never gets the stranger reply; it is listed under **Requests**, and a sender known only by
+their lid is kept as before. The plugin makes at most 30 calls a minute, and a chat's calls share
+the invite codes' 5 an hour. A failure is warned once per bot, with its status only.
+
 ## Existing channel settings
 
 Open an existing channel to read its configuration groups, derived provider and assigned
