@@ -382,7 +382,6 @@ jobs:
             exit 1
           fi
 
-  # Dev image policy: ONE image per merged PR to dev, never per commit.
   publish-stable:
     name: Publish verified stable npm package
     # Read-only: republishes one already-verified stable version and never

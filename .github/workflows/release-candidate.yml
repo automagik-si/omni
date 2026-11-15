@@ -1,5 +1,5 @@
-# Automatic chain: bump -> candidate tag -> stable GitHub release -> stable npm
-# -> software pins on dev. Images are dispatched intentionally, never here.
+# Automatic chain: bump -> candidate tag -> stable GitHub release -> software
+# pins on dev and stable npm. Images are dispatched intentionally, never here.
 # Failed publication resumes the same tag-bound release-stable.yml run.
 name: Release Candidate
 
@@ -91,7 +91,7 @@ jobs:
           echo "Software release run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${run_id}" >> "${GITHUB_STEP_SUMMARY}"
           gh run watch "${run_id}" --repo "${GITHUB_REPOSITORY}" --exit-status
 
-      # The software pin follows a completed release and stable npm publication.
+      # The software pin follows a stable release, regardless of npm's outcome.
       # It verifies tag/release without an image. Cancelled runs pin nothing;
       # a mint that never released reports false.
       - name: Check whether the stable release exists at the tag
@@ -115,8 +115,8 @@ jobs:
   pin:
     name: Pin candidate on dev
     needs: mint
-    # Gated on the stable release, not on the mint's npm step; not always().
-    if: ${{ !cancelled() && needs.mint.result == 'success' && needs.mint.outputs.stable_released == 'true' }}
+    # A failed npm publication still permits the pin once the release exists.
+    if: ${{ !cancelled() && needs.mint.outputs.stable_released == 'true' }}
     uses: ./.github/workflows/pin-candidate.yml
     permissions:
       contents: read

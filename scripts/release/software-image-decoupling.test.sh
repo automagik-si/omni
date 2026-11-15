@@ -32,7 +32,7 @@ def run(script, work, **extra):
 
 with tempfile.TemporaryDirectory(prefix="software-image-split-") as scratch:
     base = Path(scratch)
-    for case in ("latest-tag", "explicit-tag", "branch", "wrong-sha", "pre-adoption"):
+    for case in ("latest-tag", "explicit-tag", "explicit-version", "branch", "wrong-sha", "pre-adoption"):
         work = base / case
         (work / "bin").mkdir(parents=True)
         gh = work / "bin/gh"
@@ -51,11 +51,11 @@ else:
 ''')
         gh.chmod(0o755)
         result = run(step(image, "Resolve version and exact source"), work,
-                     CASE=case, REQUESTED_VERSION="v1.2.3" if case == "explicit-tag" else "",
+                     CASE=case, REQUESTED_VERSION={"explicit-tag": "v1.2.3", "explicit-version": "1.2.3"}.get(case, ""),
                      GITHUB_EVENT_NAME="workflow_dispatch",
                      GITHUB_REF="refs/heads/dev" if case == "branch" else "refs/tags/v1.2.3",
                      GITHUB_SHA=("b" if case == "wrong-sha" else "a") * 40)
-        if case in ("latest-tag", "explicit-tag"):
+        if case in ("latest-tag", "explicit-tag", "explicit-version"):
             assert result.returncode == 0, result.stderr
             assert (work / "output").read_text() == f'version=1.2.3\nsha={"a" * 40}\n'
         else:

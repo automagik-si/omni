@@ -256,8 +256,8 @@ require(software, r"for attempt in 1 2 3; do[\s\S]{0,2000}grep -q 'npm_registry_
 require(software, r"gh workflow run version\.yml[\s\S]{0,200}--ref \"refs/tags/v\$\{VERSION\}\"[\s\S]{0,100}--field stable_publish_only=true", "stable npm is not dispatched at its candidate tag")
 require(software, r"gh run list[\s\S]{0,200}--event workflow_dispatch", "publisher run resolution does not use the API run list")
 require(software, r"gh workflow run pin-candidate\.yml", "software publication does not hand off its software pin")
-if not (0 <= software.find("- name: Write candidate receipt") < software.find("- name: Publish stable npm") < software.find("- name: Dispatch the candidate pin")):
-    errors.append("software pin must follow verified stable npm publication")
+if not (0 <= software.find("- name: Write candidate receipt") < software.find("- name: Dispatch the candidate pin") < software.find("- name: Install dependencies for stable npm verification")):
+    errors.append("software pin must follow the stable release receipt before any npm work")
 forbid(uncommented(software), r"oci://|imagetools|docker/|expected_digest|image-build\.yml", "software publication still depends on an image")
 if effective_job_permissions(software) != {"publish": {"contents": "read", "attestations": "read", "actions": "write"}}:
     errors.append("software publication permissions changed")
@@ -755,7 +755,7 @@ else:
     require(mint_job, r"stable_released: \$\{\{ steps\.release\.outputs\.stable_released \}\}", "candidate pipeline mint does not report whether the stable release exists")
     require(mint_job, r"- name: Check whether the stable release exists at the tag\n\s+id: release\n\s+if: \$\{\{ !cancelled\(\) \}\}", "candidate pipeline mint does not check the stable release after a failed mint without always()")
     require(mint_job, r"releases/tags/v\$\{VERSION\}[\s\S]{0,200}\[\[ \"\$\{state\}\" == \$'false\\tfalse' \]\][\s\S]{0,100}stable_released=true", "candidate pipeline mint does not require a public, non-prerelease stable release before reporting it")
-    require(pin_job, r"^    if: \$\{\{ !cancelled\(\) && needs\.mint\.result == 'success' && needs\.mint\.outputs\.stable_released == 'true' \}\}\n", "candidate pipeline pin is not gated on the stable release existing (independent of the npm step)")
+    require(pin_job, r"^    if: \$\{\{ !cancelled\(\) && needs\.mint\.outputs\.stable_released == 'true' \}\}\n", "candidate pipeline pin is not gated on the stable release existing (independent of the npm step)")
     forbid(uncommented(release_candidate), r"always\(\)", "candidate pipeline gates a job or step on always()")
     require(pin_job, r"^    uses: \./\.github/workflows/pin-candidate\.yml\n", "candidate pipeline does not call pin-candidate.yml")
     forbid(release_candidate, r"uses:\s*\./\.github/workflows/image-build\.yml", "candidate pipeline calls image-build.yml, which breaks the dispatched-orchestrator binding")

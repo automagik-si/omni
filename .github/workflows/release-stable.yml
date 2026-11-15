@@ -275,6 +275,19 @@ jobs:
           echo "CANDIDATE_SHA=${SOURCE_SHA}"
           echo "RELEASE_PUBLISHED_AT=${published_at}"
 
+      # Pin the verified stable release before npm work, which may fail.
+      - name: Dispatch the candidate pin to dev
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run pin-candidate.yml \
+            --repo "${GITHUB_REPOSITORY}" \
+            --ref dev \
+            --field version="${VERSION}" || {
+            echo "::warning::could not dispatch pin-candidate.yml (not on the default branch yet?); run: gh workflow run pin-candidate.yml --ref dev -f version=${VERSION}"
+          }
+
       # Idempotent re-run (#1209): verify an already published stable package
       # here with the same reconciler the publish job runs, in --verify-only
       # mode (this job has no id-token and no npm credential, so it cannot
@@ -365,16 +378,3 @@ jobs:
           done
           echo "::error::stable npm publication for ${tag} still failed on the registry after 3 attempts"
           exit 1
-
-
-      - name: Dispatch the candidate pin to dev
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          gh workflow run pin-candidate.yml \
-            --repo "${GITHUB_REPOSITORY}" \
-            --ref dev \
-            --field version="${VERSION}" || {
-            echo "::warning::could not dispatch pin-candidate.yml (not on the default branch yet?); run: gh workflow run pin-candidate.yml --ref dev -f version=${VERSION}"
-          }

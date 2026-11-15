@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version tag to build (v<version>); empty selects the newest stable candidate'
+        description: 'Version to build (with or without v); empty selects the newest stable candidate'
         required: false
         default: ''
         type: string
@@ -42,6 +42,7 @@ jobs:
           [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]] || exit 1
           newest=$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq .tag_name)
           tag="${REQUESTED_VERSION:-${newest}}"
+          tag="v${tag#v}"
           [[ "${GITHUB_REF}" == "refs/tags/${tag}" ]] || {
             echo "::error::Start this workflow at a tag: choose ${newest} in 'Use workflow from' (newest candidate), or the exact requested tag."
             exit 1
