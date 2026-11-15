@@ -281,4 +281,28 @@ postgresDescribe('audited consumer seek (RFC-0002)', () => {
       ),
     ).rejects.toThrow(/not found/i);
   });
+
+  test('time seek replays all matching journal positions when publisher timestamps arrive out of order', async () => {
+    const outOfOrder = await db
+      .insert(omniEvents)
+      .values(
+        ['10:02:00', '10:00:00', '10:03:00', '10:01:30'].map((time) => ({
+          channel: 'whatsapp-baileys' as const,
+          eventType: 'custom.seek-clock' as const,
+          receivedAt: new Date(`2026-01-01T${time}Z`),
+          instanceId: owner.instanceIds![0]!,
+        })),
+      )
+      .returning();
+    await service.create(
+      { name: 'seek-out-of-order', eventType: 'custom.seek-clock', startFrom: 'now', scoped: true },
+      caller(),
+    );
+    await service.seek('seek-out-of-order', { toTime: '2026-01-01T10:01:00Z' }, caller());
+    const page = await service.pull('seek-out-of-order', {}, caller());
+    // The late 10:01:30 row must not skip the earlier journaled 10:02/10:03
+    // rows. The intervening 10:00 row also replays under at-least-once delivery.
+    expect(page.items.map((row) => row.id)).toEqual(outOfOrder.map((row) => row.id));
+    expect(page.items[0]?.journalSeq).toBe(outOfOrder[0]!.journalSeq);
+  });
 });

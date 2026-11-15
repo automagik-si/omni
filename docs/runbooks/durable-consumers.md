@@ -105,10 +105,15 @@ omni events consumers seek deploy-tracker --to-time '2026-11-15T10:00:00Z'
 API: `POST /api/v2/events/consumers/:name/seek` with exactly one of
 `{"toSequence":120}` or `{"toTime":"2026-11-15T10:00:00Z"}`. The sequence is
 an exclusive cursor: the next pull starts **strictly after** it. A time resolves
-to the first row with `receivedAt` at or after that time, ordered by `receivedAt`
-then `journal_seq`; the cursor is set to the previous journal row's sequence
-(or 0 for the first row), so the resolved row is the first delivered.
-The publisher's clock may be out of journal order.
+to the **lowest `journal_seq`** whose `receivedAt` is at or after that time;
+the cursor is set to the previous journal row's sequence (or 0 for the first
+row), so the resolved row is the first delivered. The publisher's clock may
+be out of journal order. Later journal rows stamped before the target may
+also replay; no row stamped at or after the target is skipped, subject to the
+consumer's read filters.
+
+To replay the journal's oldest row itself, use `toTime` at the journal's oldest
+`receivedAt`. `toSequence` at the oldest sequence starts after that row.
 
 The bound is the journal's oldest sequence through its head, within the consumer's
 tenant when stamped. Time targets outside its oldest/newest `receivedAt` are

@@ -925,13 +925,14 @@ export class EventConsumerService {
     if (time < new Date(bounds.firstTime as string) || time > new Date(bounds.lastTime as string)) {
       throw new ValidationError('Seek time must be within the journal oldest timestamp and newest timestamp');
     }
+    // Publisher timestamps can arrive out of order. Start at the earliest
+    // journal position matching the time so later-arriving older stamps never
+    // move the cursor past matching rows already journaled before them.
     const [row] = await db
-      .select({ sequence: omniEvents.journalSeq })
+      .select({ sequence: sql<number | null>`min(${omniEvents.journalSeq})::bigint` })
       .from(omniEvents)
-      .where(and(tenant, gte(omniEvents.receivedAt, time)))
-      .orderBy(asc(omniEvents.receivedAt), asc(omniEvents.journalSeq))
-      .limit(1);
-    if (!row) throw new ValidationError('No journal row at or after the seek time');
+      .where(and(tenant, gte(omniEvents.receivedAt, time)));
+    if (row?.sequence == null) throw new ValidationError('No journal row at or after the seek time');
     const [previous] = await db
       .select({ sequence: sql<number>`coalesce(max(${omniEvents.journalSeq}), 0)::bigint` })
       .from(omniEvents)

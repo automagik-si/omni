@@ -456,8 +456,9 @@ export function registerEventConsumerSchemas(registry: OpenAPIRegistry): void {
     summary: 'Seek a durable consumer cursor backward or forward (audited)',
     description:
       'Exactly one target is required. Sequence positions must be within the tenant journal oldest row and head. ' +
-      'A time must be within the journal timestamp range and resolves to the first row at or after it ' +
-      '(timestamp order, journal_seq breaks ties) and positions just before it so that row is delivered. ' +
+      'A time must be within the journal timestamp range and resolves to the lowest journal_seq whose receivedAt ' +
+      'is at or after that time, positioning just before it so that row is delivered. Publisher timestamps can arrive ' +
+      'out of order, so later journal rows stamped before the target may also replay; matching rows are never skipped. ' +
       'Uses the same authorization as ack, including full-access keys, and preserves all read filters. ' +
       'Refused while any shared lease is outstanding, even expired leases awaiting redelivery. ' +
       'Writes a config audit entry and publishes custom.consumer.sought with from, to, by and when. ' +
