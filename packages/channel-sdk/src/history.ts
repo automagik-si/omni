@@ -47,7 +47,10 @@ export interface FetchHistoryOptions {
   /** Callback for progress updates */
   onProgress?: (fetched: number, total?: number) => void;
   /** Callback for each message synced */
-  onMessage?: (message: HistorySyncMessage) => void;
+  onMessage?: (message: HistorySyncMessage) => void | Promise<void>;
+  /** Explicit chat backfills only: cancellation and awaited round receipts. */
+  shouldCancel?: () => Promise<boolean>;
+  onRound?: (round: { round: number; received: number; oldestReached: string | null }) => Promise<void>;
 }
 
 /**

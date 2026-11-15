@@ -17,7 +17,7 @@ import {
   type SyncJobType,
   syncJobs,
 } from '@omni/db';
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { scopedHandle } from '../tenancy/tenant-scope';
 import { runTenantWorkDb } from '../tenancy/worker-tenant-context';
 
@@ -98,7 +98,23 @@ export class SyncJobService {
       type,
       status: 'pending',
       config,
-      progress: { fetched: 0, stored: 0, duplicates: 0, mediaDownloaded: 0 },
+      progress: {
+        fetched: 0,
+        stored: 0,
+        duplicates: 0,
+        mediaDownloaded: 0,
+        ...(config.backfill
+          ? {
+              state: 'queued' as const,
+              oldestReached: null,
+              mediaMissing: 0,
+              reactionsApplied: 0,
+              editsApplied: 0,
+              deletionsApplied: 0,
+              unmatched: 0,
+            }
+          : {}),
+      },
     };
 
     // `sync_jobs` derives its tenant from the REQUIRED `instance_id` parent, so
@@ -211,23 +227,61 @@ export class SyncJobService {
     };
   }
 
+  /** Claim the oldest pending chat backfill atomically across worker processes. */
+  async claimBackfill(id: string, trustedTenantId?: string | null): Promise<SyncJob | null> {
+    const job = await this.getById(id, trustedTenantId);
+    return this.workDb(trustedTenantId, () =>
+      this.db.transaction(async (tx) => {
+        // Short transaction only: no lock or connection is held across phone I/O.
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${job.instanceId}))`);
+        const active = await tx
+          .select()
+          .from(syncJobs)
+          .where(and(eq(syncJobs.instanceId, job.instanceId), inArray(syncJobs.status, ['pending', 'running'])));
+        const prior = active.some(
+          (other) =>
+            other.id !== id &&
+            (other.status === 'running' ||
+              !other.config.backfill ||
+              other.createdAt < job.createdAt ||
+              (other.createdAt.getTime() === job.createdAt.getTime() && other.id < id)),
+        );
+        if (prior) return null;
+        const [claimed] = await tx
+          .update(syncJobs)
+          .set({ status: 'running', startedAt: new Date() })
+          .where(and(eq(syncJobs.id, id), eq(syncJobs.status, 'pending')))
+          .returning();
+        return claimed ?? null;
+      }),
+    );
+  }
+
   /**
    * Start a sync job (set status to running)
    */
   async start(id: string, trustedTenantId?: string | null): Promise<SyncJob> {
+    const job = await this.getById(id, trustedTenantId);
     const [updated] = await this.workDb(trustedTenantId, () =>
-      this.db
-        .update(syncJobs)
-        .set({
-          status: 'running',
-          startedAt: new Date(),
-        })
-        .where(eq(syncJobs.id, id))
-        .returning(),
+      this.db.transaction(async (tx) => {
+        if (job.type === 'messages' || job.type === 'all') {
+          await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${job.instanceId}))`);
+          const active = await tx
+            .select()
+            .from(syncJobs)
+            .where(and(eq(syncJobs.instanceId, job.instanceId), eq(syncJobs.status, 'running')));
+          if (active.some((other) => other.id !== id && other.config.backfill)) return [];
+        }
+        return tx
+          .update(syncJobs)
+          .set({ status: 'running', startedAt: new Date() })
+          .where(and(eq(syncJobs.id, id), inArray(syncJobs.status, ['pending', 'running'])))
+          .returning();
+      }),
     );
 
     if (!updated) {
-      throw new NotFoundError('SyncJob', id);
+      return this.getById(id, trustedTenantId);
     }
 
     return updated;
@@ -256,12 +310,14 @@ export class SyncJobService {
     };
 
     const [updated] = await this.workDb(trustedTenantId, () =>
-      this.db.update(syncJobs).set({ progress: updatedProgress }).where(eq(syncJobs.id, id)).returning(),
+      this.db
+        .update(syncJobs)
+        .set({ progress: updatedProgress })
+        .where(and(eq(syncJobs.id, id), inArray(syncJobs.status, ['pending', 'running'])))
+        .returning(),
     );
 
-    if (!updated) {
-      throw new NotFoundError('SyncJob', id);
-    }
+    if (!updated) return this.getById(id, trustedTenantId);
 
     // Emit progress event with proper metadata for hierarchical subjects
     if (this.eventBus) {
@@ -272,6 +328,7 @@ export class SyncJobService {
           instanceId: job.instanceId,
           type: job.type,
           progress: updatedProgress,
+          ...(job.config.backfill ? { chatId: job.config.backfill.chatId } : {}),
         },
         { instanceId: job.instanceId, channelType: job.channel, tenantId: updated.tenantId ?? undefined },
       );
@@ -293,13 +350,11 @@ export class SyncJobService {
           status: 'completed',
           completedAt: new Date(),
         })
-        .where(eq(syncJobs.id, id))
+        .where(and(eq(syncJobs.id, id), inArray(syncJobs.status, ['pending', 'running'])))
         .returning(),
     );
 
-    if (!updated) {
-      throw new NotFoundError('SyncJob', id);
-    }
+    if (!updated) return this.getById(id, trustedTenantId);
 
     // Emit completed event with proper metadata for hierarchical subjects
     if (this.eventBus) {
@@ -330,15 +385,16 @@ export class SyncJobService {
         .set({
           status: 'failed',
           errorMessage,
+          ...(job.config.backfill
+            ? { progress: { ...job.progress, state: 'failed' as const, outcome: errorMessage } }
+            : {}),
           completedAt: new Date(),
         })
-        .where(eq(syncJobs.id, id))
+        .where(and(eq(syncJobs.id, id), inArray(syncJobs.status, ['pending', 'running'])))
         .returning(),
     );
 
-    if (!updated) {
-      throw new NotFoundError('SyncJob', id);
-    }
+    if (!updated) return this.getById(id, trustedTenantId);
 
     // Emit failed event with proper metadata for hierarchical subjects
     if (this.eventBus) {
@@ -361,21 +417,36 @@ export class SyncJobService {
    * Cancel a sync job
    */
   async cancel(id: string, trustedTenantId?: string | null): Promise<SyncJob> {
+    const job = await this.getById(id, trustedTenantId);
     const [updated] = await this.workDb(trustedTenantId, () =>
       this.db
         .update(syncJobs)
         .set({
           status: 'cancelled',
+          ...(job.config.backfill
+            ? { progress: { ...job.progress, state: 'cancelled' as const, outcome: 'Cancelled by person' } }
+            : {}),
           completedAt: new Date(),
         })
-        .where(eq(syncJobs.id, id))
+        .where(and(eq(syncJobs.id, id), inArray(syncJobs.status, ['pending', 'running'])))
         .returning(),
     );
 
-    if (!updated) {
-      throw new NotFoundError('SyncJob', id);
-    }
+    if (!updated) return this.getById(id, trustedTenantId);
 
+    if (this.eventBus) {
+      await this.eventBus.publish(
+        'sync.cancelled',
+        {
+          jobId: id,
+          instanceId: updated.instanceId,
+          type: updated.type,
+          progress: updated.progress,
+          ...(updated.config.backfill ? { chatId: updated.config.backfill.chatId } : {}),
+        },
+        { instanceId: updated.instanceId, channelType: updated.channel, tenantId: updated.tenantId ?? undefined },
+      );
+    }
     return updated;
   }
 

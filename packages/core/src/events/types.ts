@@ -66,6 +66,7 @@ export const CORE_EVENT_TYPES = [
   'sync.progress',
   'sync.completed',
   'sync.failed',
+  'sync.cancelled',
   'profile.synced',
   // Reaction lifecycle
   'reaction.received',
@@ -677,7 +678,21 @@ export interface AccessKeyUpdatedPayload {
 /**
  * Sync event payloads
  */
+export type ChatBackfillState = 'queued' | 'fetching' | 'done' | 'phone-did-not-answer' | 'cancelled' | 'failed';
+
+export interface ChatCoverage {
+  oldest: string | null;
+  newest: string | null;
+  count: number;
+  countInWindow: number;
+  mediaMissing: number;
+  lastInbound: string | null;
+  lastOutbound: string | null;
+}
+
 export interface SyncJobConfig {
+  /** Only the explicit per-chat backfill routes set this; legacy syncs keep their behavior. */
+  backfill?: { chatId: string; chatJid: string; from: string; to: string };
   depth?: '7d' | '30d' | '90d' | '1y' | 'all';
   channelId?: string;
   downloadMedia?: boolean;
@@ -711,6 +726,17 @@ export interface SyncJobProgress {
   duplicates: number;
   mediaDownloaded: number;
   totalEstimated?: number;
+  lastProgressAt?: string;
+  state?: ChatBackfillState;
+  oldestReached?: string | null;
+  mediaMissing?: number;
+  reactionsApplied?: number;
+  editsApplied?: number;
+  deletionsApplied?: number;
+  unmatched?: number;
+  round?: number;
+  outcome?: string;
+  coverage?: ChatCoverage;
 }
 
 export type SyncJobType = 'profile' | 'messages' | 'contacts' | 'groups' | 'all' | 'history-push';
@@ -723,6 +749,7 @@ export interface SyncStartedPayload {
 }
 
 export interface SyncProgressPayload {
+  chatId?: string;
   jobId: string;
   instanceId: string;
   type: SyncJobType;
@@ -1308,6 +1335,7 @@ export interface EventPayloadMap {
   'sync.progress': SyncProgressPayload;
   'sync.completed': SyncCompletedPayload;
   'sync.failed': SyncFailedPayload;
+  'sync.cancelled': SyncCompletedPayload & { chatId?: string };
   'profile.synced': ProfileSyncedPayload;
   'reaction.received': ReactionReceivedPayload;
   'reaction.removed': ReactionRemovedPayload;

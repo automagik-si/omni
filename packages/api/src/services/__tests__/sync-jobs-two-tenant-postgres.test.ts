@@ -223,4 +223,42 @@ postgresDescribe('two-tenant sync-job containment (real PostgreSQL)', () => {
     expect(done.status).toBe('completed');
     expect((done.progress as { fetched: number }).fetched).toBe(7);
   });
+  test('chat backfill rows serialize per line and cancellation cannot be overwritten', async () => {
+    const makeJob = () =>
+      service.create({
+        instanceId: INSTANCE_B,
+        channelType: 'whatsapp-baileys',
+        type: 'messages',
+        tenantId: TENANT_B,
+        config: {
+          backfill: {
+            chatId: '33333333-3333-4333-8333-333333333333',
+            chatJid: 'chat@s.whatsapp.net',
+            from: '2026-01-01T00:00:00Z',
+            to: '2026-02-01T00:00:00Z',
+          },
+        },
+      });
+    const first = await makeJob();
+    const second = await makeJob();
+    expect(first.progress.state).toBe('queued');
+    expect(await service.claimBackfill(second.id, TENANT_B)).toBeNull();
+    expect((await service.claimBackfill(first.id, TENANT_B))?.status).toBe('running');
+    expect(await service.claimBackfill(second.id, TENANT_B)).toBeNull();
+    expect(await service.claimBackfill(first.id, TENANT_B)).toBeNull();
+    await service.cancel(first.id, TENANT_B);
+    published.length = 0;
+    await Promise.all([
+      service.complete(first.id, TENANT_B),
+      service.fail(first.id, 'late', TENANT_B),
+      service.start(first.id, TENANT_B),
+      service.updateProgress(first.id, { state: 'done' }, TENANT_B),
+    ]);
+    const cancelled = await service.getById(first.id, TENANT_B);
+    expect(cancelled.status).toBe('cancelled');
+    expect(cancelled.progress.state).toBe('cancelled');
+    expect(published).toHaveLength(0);
+    expect((await service.claimBackfill(second.id, TENANT_B))?.status).toBe('running');
+    await service.complete(second.id, TENANT_B);
+  });
 });

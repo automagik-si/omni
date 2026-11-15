@@ -32,8 +32,9 @@ import type {
   PasskeyPublicKeyCredentialRequestOptions,
   WAMessage,
   WASocket,
-  proto,
 } from 'baileys';
+import { proto } from 'baileys';
+import { type BackfillRoundTracker, fetchChatBackfillRounds } from './history-backfill';
 
 import { clearAuthState, createReadOnlyAuthState, createStorageAuthState } from './auth';
 import { WHATSAPP_CAPABILITIES } from './capabilities';
@@ -337,13 +338,20 @@ export class WhatsAppPlugin extends BaseChannelPlugin {
       since?: Date;
       until?: Date;
       onProgress?: (fetched: number, progress?: number) => void;
-      onMessage?: (message: HistorySyncMessage) => void;
+      onMessage?: (message: HistorySyncMessage) => void | Promise<void>;
+      chatJid?: string;
+      shouldCancel?: () => Promise<boolean>;
+      roundTracker?: BackfillRoundTracker;
+      pending?: Set<Promise<void>>;
       onComplete?: (totalFetched: number) => void;
       totalFetched: number;
       downloadMedia?: boolean;
       skippedBeforeSince?: number;
     }
   >();
+
+  /** Late replies to an explicit request must never fall into passive message emission. */
+  private backfillChats = new Map<string, Set<string>>();
 
   /** Tracks total messages fetched during initial history push (no explicit sync job) per instance */
   private historyPushFetchCount = new Map<string, number>();
@@ -2873,13 +2881,19 @@ export class WhatsAppPlugin extends BaseChannelPlugin {
     const messages: HistorySyncMessage[] = [];
     const count = options.count ?? 50;
 
+    const pending = new Set<Promise<void>>();
+    const roundTracker: BackfillRoundTracker = { received: 0, lastActivity: Date.now() };
     const syncState = {
+      chatJid: options.onRound ? options.anchors?.[0]?.chatJid : undefined,
+      shouldCancel: options.shouldCancel,
+      roundTracker: options.onRound ? roundTracker : undefined,
+      pending,
       since: options.since,
       until: options.until ?? new Date(),
       onProgress: options.onProgress,
-      onMessage: (msg: HistorySyncMessage) => {
+      onMessage: async (msg: HistorySyncMessage) => {
         messages.push(msg);
-        options.onMessage?.(msg);
+        await options.onMessage?.(msg);
       },
       onComplete: options.onProgress ? () => options.onProgress?.(messages.length, 100) : undefined,
       totalFetched: 0,
@@ -2890,7 +2904,23 @@ export class WhatsAppPlugin extends BaseChannelPlugin {
     this.historySyncCallbacks.set(instanceId, syncState);
 
     try {
-      if (options.anchors?.length) {
+      const anchor = options.anchors?.[0];
+      if (options.onRound && options.shouldCancel && options.since && anchor) {
+        const chats = this.backfillChats.get(instanceId) ?? new Set<string>();
+        chats.add(anchor.chatJid);
+        this.backfillChats.set(instanceId, chats);
+        await fetchChatBackfillRounds({
+          anchor,
+          since: options.since,
+          tracker: roundTracker,
+          request: (next) => sock.fetchMessageHistory(count, next.messageKey, next.timestamp).then(() => undefined),
+          drain: async () => {
+            while (pending.size) await Promise.all([...pending]);
+          },
+          shouldCancel: options.shouldCancel,
+          onRound: options.onRound,
+        });
+      } else if (options.anchors?.length) {
         await this.fetchAnchorsHistory(sock, instanceId, options.anchors, count);
       } else {
         await this.waitForPassiveSync(instanceId);
@@ -4440,8 +4470,12 @@ export class WhatsAppPlugin extends BaseChannelPlugin {
       syncType?: proto.HistorySync.HistorySyncType | null;
     },
   ): Promise<void> {
-    const { contacts, messages, progress, isLatest, syncType } = history;
+    const { contacts, messages: incomingMessages, progress, isLatest, syncType } = history;
     const syncState = this.historySyncCallbacks.get(instanceId);
+    const messages =
+      !syncState && syncType === proto.HistorySync.HistorySyncType.ON_DEMAND
+        ? incomingMessages.filter((msg) => !this.backfillChats.get(instanceId)?.has(msg.key.remoteJid ?? ''))
+        : incomingMessages;
 
     this.logger.debug('Processing history sync batch', {
       instanceId,
@@ -4469,7 +4503,15 @@ export class WhatsAppPlugin extends BaseChannelPlugin {
     const skippedBefore = syncState?.skippedBeforeSince ?? 0;
     for (let i = 0; i < messages.length; i += BATCH_SIZE) {
       const batch = messages.slice(i, i + BATCH_SIZE);
-      await Promise.all(batch.map((msg) => this.processHistoryMessage(instanceId, msg, syncState)));
+      const work = Promise.all(batch.map((msg) => this.processHistoryMessage(instanceId, msg, syncState))).then(
+        () => undefined,
+      );
+      syncState?.pending?.add(work);
+      try {
+        await work;
+      } finally {
+        syncState?.pending?.delete(work);
+      }
     }
     const skippedBeforeSince = (syncState?.skippedBeforeSince ?? 0) - skippedBefore;
     if (skippedBeforeSince > 0) {
@@ -4542,6 +4584,28 @@ export class WhatsAppPlugin extends BaseChannelPlugin {
     return this.instances.get(instanceId)?.config.options?.downloadMediaOnSync === true;
   }
 
+  private async acceptBackfillHistoryMessage(
+    msg: WAMessage,
+    timestamp: Date | null,
+    syncState: typeof this.historySyncCallbacks extends Map<string, infer V> ? V | undefined : never,
+  ): Promise<boolean> {
+    if (syncState?.chatJid && msg.key.remoteJid !== syncState.chatJid) return false;
+    if (await syncState?.shouldCancel?.()) return false;
+    if (timestamp && syncState?.roundTracker && msg.key.remoteJid && msg.key.id) {
+      const tracker = syncState.roundTracker;
+      tracker.received++;
+      tracker.lastActivity = Date.now();
+      if (!tracker.oldest || timestamp.getTime() < tracker.oldest.timestamp) {
+        tracker.oldest = {
+          chatJid: msg.key.remoteJid,
+          messageKey: { remoteJid: msg.key.remoteJid, id: msg.key.id, fromMe: msg.key.fromMe ?? false },
+          timestamp: timestamp.getTime(),
+        };
+      }
+    }
+    return true;
+  }
+
   private async processHistoryMessage(
     instanceId: string,
     msg: WAMessage,
@@ -4553,6 +4617,7 @@ export class WhatsAppPlugin extends BaseChannelPlugin {
     }
 
     const timestamp = this.getMessageTimestamp(msg);
+    if (!(await this.acceptBackfillHistoryMessage(msg, timestamp, syncState))) return;
 
     // Messages without a timestamp cannot be reliably ordered or filtered.
     // Skip them instead of fabricating a misleading ingest-time timestamp.
@@ -4609,7 +4674,7 @@ export class WhatsAppPlugin extends BaseChannelPlugin {
 
     // If we have an active sync callback, use it
     if (syncState?.onMessage) {
-      syncState.onMessage(historyMessage);
+      await syncState.onMessage(historyMessage);
       syncState.totalFetched++;
     } else {
       // No active sync job - this is initial connection history sync

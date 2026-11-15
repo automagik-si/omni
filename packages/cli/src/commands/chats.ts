@@ -606,6 +606,28 @@ function buildListParams(
 export function createChatsCommand(): Command {
   const chats = new Command('chats').description('Manage chats');
 
+  chats
+    .command('backfill <id>')
+    .description('Queue history for one chat')
+    .requiredOption('--from <date>', 'Start of range (ISO timestamp)')
+    .requiredOption('--to <date>', 'End of range (ISO timestamp)')
+    .action(async (id: string, options: { from: string; to: string }) => {
+      const client = getClient();
+      output.data(await client.chats.backfill(await resolveChatId(id), options));
+    });
+  chats
+    .command('backfill-status <id> <job-id>')
+    .description('Read chat backfill progress')
+    .action(async (id: string, jobId: string) => {
+      output.data(await getClient().chats.backfillStatus(await resolveChatId(id), jobId));
+    });
+  chats
+    .command('backfill-cancel <id> <job-id>')
+    .description('Cancel a chat backfill')
+    .action(async (id: string, jobId: string) => {
+      output.data(await getClient().chats.cancelBackfill(await resolveChatId(id), jobId));
+    });
+
   // omni chats list
   chats
     .command('list')
