@@ -933,7 +933,9 @@ export function install(rt) {
     await rt.syncOmniEvents?.()
     return { ...bot.answer }
   }), 'omni-channels: answer settings')
-  ctx.effect(() => rt.hooks.view(() => ({ omniAnswers: Object.fromEntries(Object.values(state.bots ?? {}).filter(bot => bot.kind === 'omni').map(bot => [bot.id, answerSettingsOf(bot)])) })), 'omni-channels: answer settings view')
+  // #1742: with each bot's outside check as staff read it (answer-outside-check.js): everything
+  // but the secret, of which only whether one is set.
+  ctx.effect(() => rt.hooks.view(() => ({ omniAnswers: Object.fromEntries(Object.values(state.bots ?? {}).filter(bot => bot.kind === 'omni').map(bot => [bot.id, { ...answerSettingsOf(bot), outsideCheck: rt.outsideCheckSettingOf?.(bot.id) ?? null }])) })), 'omni-channels: answer settings view')
 
   // Removing a thread: its Session is archived with its work stopped, then its key is cut (or
   // marked pending, for a drain to cut), then the record goes. A Session that cannot be

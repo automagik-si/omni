@@ -67,6 +67,8 @@ export function install(rt) {
     while (calls.size > RATE_CHATS_MAX) calls.delete(calls.keys().next().value)
     return true
   }
+  // #1742: the outside check's calls (answer-outside-check.js) share the chat's limit.
+  rt.takeAnswerChatCall = key => take(key)
 
   // Once per chat and kind until it works there again.
   function warn(kind, row, why) {
