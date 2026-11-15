@@ -132,13 +132,15 @@ describe('Consumer startFrom Configuration', () => {
     // forward-only, and a 'first' durable would replay the entire CUSTOM
     // stream retention as journal rows that can never carry a causation
     // parent.
-    // The connector liveness (#1063) and dead-letter (#1163) journal consumers follow the same rule.
+    // The connector liveness (#1063) and dead-letter (#1163) journal consumers follow the same rule,
+    // as does the sync job journal (a chat backfill's progress, read by durable consumers).
     const forwardOnly = [
       'event-persistence-custom',
       'event-persistence-connector',
       'event-persistence-dead-letter',
       'event-persistence-agent-run-completed',
       'event-persistence-connector-events',
+      'event-persistence-sync',
     ];
     for (const context of forwardOnly) {
       const entry = values.find((v) => v.context === context);
