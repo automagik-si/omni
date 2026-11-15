@@ -21,9 +21,9 @@ function mountChatsRoutes(calls: CallArgs[]): Hono<{ Variables: AppVariables }> 
   app.use('*', async (c, next) => {
     c.set('services', {
       messages: {
-        getChatMessages: mock(async (chatId: string, options: Record<string, unknown>) => {
+        pageChatMessages: mock(async (chatId: string, options: Record<string, unknown>) => {
           calls.push({ chatId, options });
-          return [];
+          return { items: [], hasMore: false, cursor: null };
         }),
       },
     } as never);

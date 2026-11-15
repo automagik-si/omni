@@ -737,6 +737,7 @@ const TENANT_SCOPED_ROUTES: readonly RouteKey[] = [
   'GET /api/v2/channels/whatsapp-business/kapso/numbers',
   'GET /api/v2/chats',
   'GET /api/v2/chats/:id',
+  'GET /api/v2/chats/:id/coverage',
   'GET /api/v2/chats/:id/messages',
   'GET /api/v2/chats/:id/participants',
   'GET /api/v2/chats/by-external',
