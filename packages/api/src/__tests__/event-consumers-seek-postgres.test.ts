@@ -230,10 +230,17 @@ postgresDescribe('audited consumer seek (RFC-0002)', () => {
   });
 
   test('back-seek preserves instance visibility and access-verdict filters', async () => {
-    await service.create(
-      { name: 'seek-visibility', eventType: 'custom.seek', scoped: true, access: 'allowed' },
-      caller(),
-    );
+    const savedAccessDecision = process.env.OMNI_JOURNAL_ACCESS_DECISION;
+    try {
+      process.env.OMNI_JOURNAL_ACCESS_DECISION = 'true';
+      await service.create(
+        { name: 'seek-visibility', eventType: 'custom.seek', scoped: true, access: 'allowed' },
+        caller(),
+      );
+    } finally {
+      if (savedAccessDecision === undefined) Reflect.deleteProperty(process.env, 'OMNI_JOURNAL_ACCESS_DECISION');
+      else process.env.OMNI_JOURNAL_ACCESS_DECISION = savedAccessDecision;
+    }
     await service.seek('seek-visibility', { toTime: '2026-01-01T00:00:00Z' }, caller());
     const page = await service.pull('seek-visibility', {}, caller());
     expect(page.items.map((row) => row.id)).toEqual([rows[0]!.id, rows[3]!.id]);
@@ -251,10 +258,17 @@ postgresDescribe('audited consumer seek (RFC-0002)', () => {
     const tenantCaller = { keyId: null, instanceIds: null, tenantId: tenantRows[0]!.id };
     await service.create({ name: 'seek-empty-tenant', eventType: 'custom.seek' }, tenantCaller);
     await expect(service.seek('seek-empty-tenant', { toSequence: seq(0) }, tenantCaller)).rejects.toThrow(/empty/);
+    // Journal ownership is derived by the insert trigger from owning parents;
+    // a tenantId supplied directly on an event is deliberately discarded.
+    const [tenantInstance] = await db
+      .insert(instances)
+      .values({ name: 'seek-tenant-instance', channel: 'whatsapp-baileys', tenantId: tenantRows[0]!.id })
+      .returning();
     const [event] = await db
       .insert(omniEvents)
-      .values({ tenantId: tenantRows[0]!.id, channel: 'whatsapp-baileys', eventType: 'custom.seek' })
+      .values({ instanceId: tenantInstance!.id, channel: 'whatsapp-baileys', eventType: 'custom.seek' })
       .returning();
+    expect(event!.tenantId).toBe(tenantRows[0]!.id);
     await expect(service.seek('seek-empty-tenant', { toSequence: seq(3) }, tenantCaller)).rejects.toThrow(/within/);
     expect(
       (await service.seek('seek-empty-tenant', { toSequence: Number(event!.journalSeq) }, tenantCaller)).data.cursor,
