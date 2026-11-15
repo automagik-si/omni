@@ -161,12 +161,14 @@ record changes, `chat.archived`, and `instance.updated` retain normal visibility
 restricted key never receives sensitive events or new-family no-instance rows, even when an event
 belongs to an allowed instance. Existing grant-authorized custom/connector no-instance delivery
 for agent-owned consumers remains unchanged. The same filter governs pull, shared leases, SSE pages,
-readiness checks and head calculation, as well as REST list/search/trace/timelines,
+readiness/caught-up checks, as well as REST list/search/trace/timelines,
 analytics/type inventory/metrics, payload access and journal-backed automation tests.
 An unavailable or forbidden payload parent is a 404; processing does not continue.
 SSE retains the existing maximum lifetime and re-authenticates on reconnect.
 
-The cursor remains the journal's global sequence: gaps and head-minus-cursor lag are not
-counts of visible or matching events. These record notifications cannot be replayed through
-generic event-ops replay; custom/connector replay is unchanged, and agent replay still reads
+The cursor and head remain tenant-wide journal sequence watermarks. Head is not filtered
+by key instance or event-type visibility: `startFrom: now` skips every pre-existing sequence,
+and head-minus-cursor lag may remain positive while `caughtUp` is true because the rows
+past the cursor are hidden or do not match. Neither gaps nor lag count visible events.
+These record notifications cannot be replayed through generic event-ops replay; custom/connector replay is unchanged, and agent replay still reads
 only stored messages. There is no historical backfill.

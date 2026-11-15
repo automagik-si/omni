@@ -672,14 +672,16 @@ export class EventConsumerService {
     private readonly eventBus: EventBus | null = null,
   ) {}
 
-  /** Highest journal_seq in the journal, 0 when empty. Cheap (backward index scan). */
-  async head(tenantId?: string | null, caller?: ConsumerCaller): Promise<number> {
+  /**
+   * Tenant-wide sequence watermark, 0 when empty. Instance/type visibility belongs
+   * on delivery scans, not this watermark: lag is head-minus-cursor even when
+   * caughtUp is true, and startFrom 'now' must skip every pre-existing sequence.
+   */
+  async head(tenantId?: string | null): Promise<number> {
     const query = this.db
       .select({ head: sql<number>`coalesce(max(${omniEvents.journalSeq}), 0)::bigint` })
       .from(omniEvents);
-    const [row] = await query.where(
-      and(tenantId ? eq(omniEvents.tenantId, tenantId) : undefined, consumerJournalClause(caller)),
-    );
+    const [row] = await query.where(tenantId ? eq(omniEvents.tenantId, tenantId) : undefined);
     return Number(row?.head ?? 0);
   }
 
@@ -691,7 +693,7 @@ export class EventConsumerService {
         .from(durableConsumers)
         .where(caller?.tenantId ? eq(durableConsumers.tenantId, caller.tenantId) : undefined)
         .orderBy(asc(durableConsumers.name)),
-      this.head(caller?.tenantId, caller),
+      this.head(caller?.tenantId),
     ]);
     const visible = rows.filter((row) => canAccessConsumer(row, caller));
     return Promise.all(visible.map((row) => this.withLag(row, head, caller)));
@@ -713,7 +715,7 @@ export class EventConsumerService {
   /** getByName plus live head/lag — the `inspect` surface. */
   async inspect(name: string, caller?: ConsumerCaller): Promise<ConsumerWithLag> {
     const row = await this.getVisible(name, caller);
-    return this.withLag(row, await this.head(row.tenantId, caller), caller);
+    return this.withLag(row, await this.head(row.tenantId), caller);
   }
 
   /** Delivery and mutations fail closed for restricted callers on unscoped consumers. */
@@ -763,7 +765,7 @@ export class EventConsumerService {
     const scope = resolveConsumerScope(input, caller);
     if (scope.scoped) await this.assertInstancesResolve(scope.instanceIds);
     const tenantId = caller?.tenantId ?? null;
-    const head = await this.head(tenantId, caller);
+    const head = await this.head(tenantId);
     const cursor = resolveInitialCursor(input.startFrom ?? 'now', head);
 
     const values = consumerInsertValues(input, { tenantId, agentId, cursor, scope });
@@ -890,7 +892,7 @@ export class EventConsumerService {
           and(eq(durableConsumers.id, consumer.id), lte(durableConsumers.cursor, cursor), consumerAccessClause(caller)),
         );
     }
-    const head = await this.head(consumer.tenantId, caller);
+    const head = await this.head(consumer.tenantId);
     const hasMore = scanned.length === limit;
     return {
       consumer: consumer.name,
@@ -940,7 +942,7 @@ export class EventConsumerService {
       );
     }
 
-    return this.withLag(updated, await this.head(updated.tenantId, caller), caller);
+    return this.withLag(updated, await this.head(updated.tenantId), caller);
   }
 
   /**
@@ -1038,7 +1040,7 @@ export class EventConsumerService {
       consumer: consumer.name,
       items,
       cursor: lease?.to ?? consumer.cursor,
-      head: await this.head(consumer.tenantId, caller),
+      head: await this.head(consumer.tenantId),
       hasMore,
       scanExhausted: hasMore && items.length === 0,
       ...(lease && items.length > 0 ? { leaseId: lease.id } : {}),
@@ -1114,7 +1116,7 @@ export class EventConsumerService {
         );
       }
       const updated = await this.casLeaseState(consumer, released.state, Math.max(consumer.cursor, released.cursor));
-      if (updated) return this.withLag(updated, await this.head(updated.tenantId, caller), caller);
+      if (updated) return this.withLag(updated, await this.head(updated.tenantId), caller);
     }
     throw new ConflictError('DurableConsumer', `too much contention acking '${name}', retry`, { name });
   }
