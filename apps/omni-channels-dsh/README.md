@@ -96,10 +96,13 @@ number's own messages get nothing. A failed send takes the day's mark back, so t
 message tries again; nothing tries on a timer, and the failure is warned once per chat until a
 send there works.
 
-Each sender who gets the reply is listed under **Requests** in the answer settings: one row per
-chat, with the ids they wrote from, their first text (500 characters), when they last wrote and
-how many messages they sent. The list keeps the newest 500 rows per bot, and the day's marks keep
-the newest 5000 chats. Both are saved, so they outlive a restart. Only staff read the list, on the
+Each such sender is listed under **Requests** in the answer settings, whether or not a reply is
+set: one row per chat, with the ids they wrote from, their first text (500 characters), when they
+last wrote and how many messages they sent. With no reply set, nothing is sent and a sender known
+only by their lid stays kept as before; their message is listed once, at the 30-second check. A
+row whose chat a code from a list later lets in is marked `admitted`. A save that fails takes the
+row's change back. The list keeps the newest 500 rows per bot, and the day's marks keep the
+newest 5000 chats. Both are saved, so they outlive a restart. Only staff read the list, on the
 `omni-answer-requests` route; no tool reads it.
 
 ## When a person needs someone from the team
@@ -118,6 +121,49 @@ The staff chat can never be a chat an answer child answers. The mark is saved, s
 restart; calls while it is set tell no one again. It clears when staff answer in that chat from
 their own phone, or when they press **Dismiss**. DeepSeek Harness has no app notification a plugin
 can raise, so the sidebar row is the app's own sign.
+
+## Let a person in by a code from a list
+
+Staff can let people in with single-use codes they hand out, for example in a link that opens the
+chat with a message typed. Under **Code lists** in the answer settings, staff fill a list:
+
+- a **name**;
+- its **code pattern**: an optional prefix, the letters and digits a code may have after it, and
+  how many (4 to 64). Case never matters. With **Read look-alike characters as one** on, a
+  character the set lacks is read as its twin in the set (O and 0; I, L and 1), after the prefix
+  only. A code stands alone in the text: the character before it and the one after are not
+  letters, digits or `_`. The plugin scans for codes itself and never turns staff text into a
+  regular expression;
+- its **rule details**: a key/value map (`key = value` lines, or a JSON object) copied into the
+  allow rule of each person a code from the list lets in;
+- its codes, one a line, `code, expires YYYY-MM-DD`, or a JSON array of
+  `{ code, expiresAt, inviteId? }`.
+
+A list's pattern is set when it is first filled; codes added later must fit it. The rule details
+of a later upload replace the list's, and an upload that leaves them out keeps them. The lists
+are the install's and saved: at most 50 lists and the newest 5000 codes over all of them; a list
+whose codes all go is removed. Each code is used once, before its expiry: the same code again from
+the same sender (any id they share) admits them again, and from anyone else it is used. The used
+mark is saved before the person is let in. With no list there is no pattern, and nothing in a
+message is read as a code. Only staff read or add codes, on the `omni-code-lists` and
+`omni-code-lists-add` routes; no tool reaches them, and no code appears in a warning.
+
+When a sender that the allowlist refuses by default, or one Omni knows only by their lid, sends a
+message with an open code, the plugin writes one allow rule for the sender's primary id (their lid
+when Omni knows only that) and admits the message in the same pass, as if that rule had matched.
+The rule has `reason: invite` and `metadata: { ...rule details, source: 'invite', inviteId }`; the
+rule details cannot set `source` or `inviteId`. Person binding reads `context` and `capability`
+from the rule details like any other rule. A sender that a rule of its own refuses, and an admitted
+sender, are never checked. At most 2 codes are read from a message, over all lists (a code a list
+holds first), and a chat gets at most 5 code checks an hour. With no prefix, any word of the
+pattern's length is read as a code, so each such word counts as a check.
+
+With **Message when a code admits someone** set (`codeWelcome`, at most 1000 characters), the
+person gets it in their chat once the code lets them in, and the child answers from their next
+message. Unset, the child answers the code message. A code that is unknown, used or expired, or a
+check that fails, sends nothing: the message goes on as refused. Omni publishes no event when a
+rule is written, so the rules themselves are the count: allow rules whose `metadata.source` is
+`invite` (`GET /access/rules?type=allow`).
 
 ## Existing channel settings
 
