@@ -5,17 +5,21 @@ import type { Services } from '../services';
 
 type WorkScope = <T>(fn: () => Promise<T>) => Promise<T>;
 
-/** The O1 seam. Kept in one place until the coverage branch is merged. */
+/** Serialize the shared coverage read for persisted job progress and events. */
 export async function readBackfillCoverage(
   services: Services,
   chatId: string,
   from: string,
   to: string,
 ): Promise<ChatCoverage> {
-  const messages = services.messages as typeof services.messages & {
-    getChatCoverage: (chatId: string, options: { from: Date; to: Date }) => Promise<ChatCoverage>;
+  const coverage = await services.messages.getChatCoverage(chatId, { from: new Date(from), to: new Date(to) });
+  return {
+    ...coverage,
+    oldest: coverage.oldest?.toISOString() ?? null,
+    newest: coverage.newest?.toISOString() ?? null,
+    lastInbound: coverage.lastInbound?.toISOString() ?? null,
+    lastOutbound: coverage.lastOutbound?.toISOString() ?? null,
   };
-  return messages.getChatCoverage(chatId, { from: new Date(from), to: new Date(to) });
 }
 
 /** Persistent pending rows determine order; this helper never owns a DB transaction while waiting. */
