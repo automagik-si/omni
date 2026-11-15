@@ -280,7 +280,7 @@ export function install(rt) {
   }
   // Omni's answer for a chat it does not have, or that this link may not read (a key held to
   // some channels gets it for a chat elsewhere); an Omni without a route says otherwise.
-  const chatMissing = reply => reply.status === 404 && /^Chat not found/.test(String(reply.json?.error?.message ?? ''))
+  const chatMissing = reply => reply.status === 404 && String(reply.json?.error?.message ?? '').startsWith('Chat not found')
   async function chatOf(chatId) {
     const reply = await omni('GET', `/chats/${encodeURIComponent(chatId)}`)
     const parsed = Chat.safeParse(reply.json)
