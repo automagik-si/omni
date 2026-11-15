@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test';
+import type { WAMessage } from 'baileys';
+import { extractHistoryMutation } from '../history-backfill';
 import { type BackfillAnchor, type BackfillRoundTracker, fetchChatBackfillRounds } from '../history-backfill';
 
 const anchor: BackfillAnchor = {
@@ -73,5 +75,51 @@ describe('chat backfill round driver', () => {
       },
     });
     expect(rounds).toEqual([0]);
+  });
+});
+
+describe('historical state extraction', () => {
+  const at = new Date('2026-01-15');
+  const base = { key: { id: 'operation', remoteJid: 'chat@jid' }, messageTimestamp: at.getTime() / 1000 };
+  test('reaction, empty removal, edit (including empty text) and deletion have target identities', () => {
+    const messages = [
+      { reactionMessage: { key: { id: 'target' }, text: '👍' } },
+      { reactionMessage: { key: { id: 'target' }, text: '' } },
+      { protocolMessage: { type: 14, key: { id: 'target' }, editedMessage: { conversation: '' } } },
+      { protocolMessage: { type: 0, key: { id: 'target' } } },
+    ];
+    const mutations = messages.map((message) =>
+      extractHistoryMutation({ ...base, message } as WAMessage, at, 'person'),
+    );
+    expect(mutations.map((m) => m?.kind)).toEqual(['reaction', 'reaction', 'edit', 'deletion']);
+    expect(mutations.map((m) => m?.targetExternalId)).toEqual(['target', 'target', 'target', 'target']);
+    expect(mutations[2]).toMatchObject({ text: '' });
+  });
+  test('unwraps own-device protocol edits and uses the operation timestamp', () => {
+    const message = {
+      deviceSentMessage: {
+        message: {
+          protocolMessage: {
+            type: 14,
+            key: { id: 'target' },
+            timestampMs: at.getTime(),
+            editedMessage: { extendedTextMessage: { text: 'edited' } },
+          },
+        },
+      },
+    };
+    expect(extractHistoryMutation({ ...base, message } as WAMessage, new Date(), 'person')).toMatchObject({
+      kind: 'edit',
+      text: 'edited',
+      at,
+    });
+  });
+  test('malformed targets and normal messages are not mutations', () => {
+    expect(
+      extractHistoryMutation({ ...base, message: { reactionMessage: { text: '👍' } } } as WAMessage, at, 'person'),
+    ).toBeNull();
+    expect(
+      extractHistoryMutation({ ...base, message: { conversation: 'text' } } as WAMessage, at, 'person'),
+    ).toBeNull();
   });
 });

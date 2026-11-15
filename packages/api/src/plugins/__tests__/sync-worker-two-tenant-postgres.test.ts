@@ -32,6 +32,7 @@ import {
 import { assertPgTestRole, driverRejection, pgRoleUrl, provisionMigratedDatabase } from '@omni/db/pg-migrated-template';
 import { dropDatabaseOrThrow } from '@omni/db/pg-testing';
 import { eq } from 'drizzle-orm';
+import { MessageService } from '../../services/messages';
 import { scopedHandle } from '../../tenancy/tenant-scope';
 import { runInWorkerTenantScope } from '../../tenancy/worker-tenant-context';
 import { __test__ as syncWorkerTest } from '../sync-worker';
@@ -211,5 +212,44 @@ postgresDescribe('two-tenant sync-worker containment (real PostgreSQL)', () => {
       syncWorkerTest.buildWhatsAppAnchors(runtimeDb, INSTANCE_B),
     );
     expect(bAnchors.map((a) => a.messageKey.id)).toEqual(['wamid.B']);
+  });
+  test('historical mutations and replay receipts stay atomic and tenant scoped (real PostgreSQL)', async () => {
+    const service = new MessageService(runtimeDb, null);
+    const base = {
+      id: 'history-operation',
+      chatId: JID_A,
+      targetExternalId: 'wamid.A',
+      actor: 'person',
+      at: new Date('2026-01-15T00:00:00Z'),
+    };
+    const mutations = [
+      { ...base, kind: 'edit' as const, text: 'historical edit' },
+      { ...base, kind: 'reaction' as const, emoji: '👍' },
+      { ...base, kind: 'deletion' as const },
+    ];
+    for (const mutation of mutations) {
+      expect(
+        await runInWorkerTenantScope(runtimeDb, TENANT_A, () =>
+          service.applyHistoryMutation(CHAT_A, mutation, 'whatsapp-baileys'),
+        ),
+      ).toBe('applied');
+      expect(
+        await runInWorkerTenantScope(runtimeDb, TENANT_A, () =>
+          service.applyHistoryMutation(CHAT_A, mutation, 'whatsapp-baileys'),
+        ),
+      ).toBe('duplicate');
+      expect(
+        await runInWorkerTenantScope(runtimeDb, TENANT_B, () =>
+          service.applyHistoryMutation(CHAT_A, mutation, 'whatsapp-baileys'),
+        ),
+      ).toBe('unmatched');
+    }
+    const row = await runInWorkerTenantScope(runtimeDb, TENANT_A, () => service.getById(MESSAGE_A));
+    expect(row.source).toBe('sync');
+    expect(row.editCount).toBe(1);
+    expect(row.editHistory).toHaveLength(1);
+    expect(row.reactionCounts).toEqual({ '👍': 1 });
+    expect(row.deletedAt).toEqual(base.at);
+    expect(row.rawPayload?.historyMutationIds).toHaveLength(3);
   });
 });

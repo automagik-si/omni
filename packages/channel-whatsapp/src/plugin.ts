@@ -16,6 +16,7 @@ import type {
   GroupParticipantUpdateResult,
   GroupSetting,
   HistorySyncMessage,
+  HistorySyncMutation,
   InboundSubStageTimings,
   InstanceConfig,
   OutgoingMessage,
@@ -34,7 +35,7 @@ import type {
   WASocket,
 } from 'baileys';
 import { proto } from 'baileys';
-import { type BackfillRoundTracker, fetchChatBackfillRounds } from './history-backfill';
+import { type BackfillRoundTracker, extractHistoryMutation, fetchChatBackfillRounds } from './history-backfill';
 
 import { clearAuthState, createReadOnlyAuthState, createStorageAuthState } from './auth';
 import { WHATSAPP_CAPABILITIES } from './capabilities';
@@ -339,6 +340,7 @@ export class WhatsAppPlugin extends BaseChannelPlugin {
       until?: Date;
       onProgress?: (fetched: number, progress?: number) => void;
       onMessage?: (message: HistorySyncMessage) => void | Promise<void>;
+      onMutation?: (mutation: HistorySyncMutation) => Promise<void>;
       chatJid?: string;
       shouldCancel?: () => Promise<boolean>;
       roundTracker?: BackfillRoundTracker;
@@ -2884,6 +2886,7 @@ export class WhatsAppPlugin extends BaseChannelPlugin {
     const pending = new Set<Promise<void>>();
     const roundTracker: BackfillRoundTracker = { received: 0, lastActivity: Date.now() };
     const syncState = {
+      onMutation: options.onMutation,
       chatJid: options.onRound ? options.anchors?.[0]?.chatJid : undefined,
       shouldCancel: options.shouldCancel,
       roundTracker: options.onRound ? roundTracker : undefined,
@@ -4610,6 +4613,38 @@ export class WhatsAppPlugin extends BaseChannelPlugin {
     return true;
   }
 
+  private async processHistoryMutation(
+    msg: WAMessage,
+    timestamp: Date,
+    syncState: typeof this.historySyncCallbacks extends Map<string, infer V> ? V | undefined : never,
+    instanceId: string,
+  ): Promise<boolean> {
+    if (!syncState?.onMutation) return false;
+    const ownerJid = this.sockets.get(instanceId)?.user?.id;
+    const { id: actor } = fromJid(
+      msg.key.participant || (msg.key.fromMe ? ownerJid : undefined) || msg.key.remoteJid || '',
+    );
+    const mutation = extractHistoryMutation(msg, timestamp, actor);
+    if (!mutation) return false;
+    await syncState.onMutation(mutation);
+    return true;
+  }
+
+  private async enrichHistoryMedia(
+    instanceId: string,
+    msg: WAMessage,
+    content: HistorySyncMessage['content'],
+    syncState: typeof this.historySyncCallbacks extends Map<string, infer V> ? V | undefined : never,
+  ): Promise<void> {
+    if (!this.shouldDownloadHistoryMedia(instanceId, syncState)) return;
+    const result = await tryDownloadMedia(msg, instanceId, msg.key.id ?? '', this.config.apiBaseUrl);
+    if (result) {
+      content.mediaUrl = result.mediaUrl;
+      content.localPath = result.mediaLocalPath;
+      content.mimeType = result.mimeType;
+    }
+  }
+
   private async processHistoryMessage(
     instanceId: string,
     msg: WAMessage,
@@ -4639,6 +4674,8 @@ export class WhatsAppPlugin extends BaseChannelPlugin {
       return;
     }
 
+    if (await this.processHistoryMutation(msg, timestamp, syncState, instanceId)) return;
+
     // Extract basic content info
     const content = this.extractHistoryMessageContent(msg);
     if (!content) {
@@ -4651,16 +4688,7 @@ export class WhatsAppPlugin extends BaseChannelPlugin {
       return;
     }
 
-    // Download media only when the sync job allows it (#1127). When skipped, content keeps
-    // type/mimeType metadata so the row is still marked as media for later backfill.
-    const mediaResult = this.shouldDownloadHistoryMedia(instanceId, syncState)
-      ? await tryDownloadMedia(msg, instanceId, msg.key.id, this.config.apiBaseUrl)
-      : null;
-    if (mediaResult) {
-      content.mediaUrl = mediaResult.mediaUrl;
-      content.localPath = mediaResult.mediaLocalPath;
-      content.mimeType = mediaResult.mimeType;
-    }
+    await this.enrichHistoryMedia(instanceId, msg, content, syncState);
 
     const chatId = msg.key.remoteJid;
     const { id: senderId } = fromJid(msg.key.fromMe ? chatId : msg.key.participant || chatId);

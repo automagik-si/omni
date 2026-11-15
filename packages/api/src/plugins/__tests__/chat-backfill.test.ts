@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { ChannelRegistry, FetchHistoryOptions } from '@omni/channel-sdk';
+import type { ChannelRegistry, FetchHistoryOptions, HistorySyncMutation } from '@omni/channel-sdk';
 import type { ChatCoverage } from '@omni/core/events';
 import type { SyncJob, SyncJobProgress } from '@omni/db';
 import type { Services } from '../../services';
@@ -163,6 +163,63 @@ describe('chat backfill worker', () => {
     ]);
     expect(f.job.progress.mediaDownloaded).toBe(1);
     expect(f.job.progress.mediaMissing ?? 0).toBe(0);
+  });
+  test('defers out-of-order mutations, counts unmatched, and never stores them as messages', async () => {
+    const changes: HistorySyncMutation[] = [];
+    const f = fixture(async (_id, options) => {
+      const base = { chatId: 'chat@jid', actor: 'person', at: new Date('2026-01-15'), targetExternalId: 'one' };
+      await options.onMutation?.({ ...base, id: 'edit', kind: 'edit', text: 'edited' });
+      await options.onMutation?.({ ...base, id: 'reaction', kind: 'reaction', emoji: '👍' });
+      await options.onMutation?.({ ...base, id: 'deletion', kind: 'deletion' });
+      await options.onMutation?.({
+        ...base,
+        id: 'unmatched',
+        targetExternalId: 'absent',
+        kind: 'edit',
+        text: 'missing',
+      });
+      // Duplicate delivery is only one mutation; another chat and range are ignored.
+      await options.onMutation?.({ ...base, id: 'edit', kind: 'edit', text: 'edited' });
+      await options.onMutation?.({ ...base, id: 'other-chat', chatId: 'other', kind: 'deletion' });
+      await options.onMutation?.({ ...base, id: 'other-range', at: new Date('2025-01-01'), kind: 'deletion' });
+      expect(changes).toEqual([]);
+      await options.onMessage?.({
+        externalId: 'one',
+        chatId: 'chat@jid',
+        from: 'person',
+        timestamp: new Date('2026-01-15'),
+        content: { type: 'text', text: 'original' },
+        isFromMe: false,
+        rawPayload: {},
+      });
+      await options.onRound?.({ round: 1, received: 5, oldestReached: base.at.toISOString() });
+    });
+    f.options.services.messages.applyHistoryMutation = async (_chatId, mutation) => {
+      expect(f.stored).toHaveLength(1);
+      changes.push(mutation);
+      return mutation.targetExternalId === 'absent' ? 'unmatched' : 'applied';
+    };
+    await processChatBackfill(f.options);
+    expect(changes).toHaveLength(4);
+    expect(f.stored).toHaveLength(1);
+    expect(f.job.progress).toMatchObject({ editsApplied: 1, reactionsApplied: 1, deletionsApplied: 1, unmatched: 1 });
+  });
+  test('replayed mutation receipts do not increment application counters', async () => {
+    const f = fixture(async (_id, options) => {
+      await options.onMutation?.({
+        id: 'already-applied',
+        chatId: 'chat@jid',
+        targetExternalId: 'target',
+        actor: 'person',
+        at: new Date('2026-01-15'),
+        kind: 'edit',
+        text: 'edited',
+      });
+    });
+    f.options.services.messages.applyHistoryMutation = async () => 'duplicate';
+    await processChatBackfill(f.options);
+    expect(f.job.progress.editsApplied ?? 0).toBe(0);
+    expect(f.job.progress.unmatched ?? 0).toBe(0);
   });
   test('a channel without history ends immediately with a plain outcome', async () => {
     const f = fixture(async () => {

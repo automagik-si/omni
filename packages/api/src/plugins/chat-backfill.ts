@@ -1,4 +1,4 @@
-import type { ChannelRegistry, HistorySyncMessage } from '@omni/channel-sdk';
+import type { ChannelRegistry, HistorySyncMessage, HistorySyncMutation } from '@omni/channel-sdk';
 import type { ChatCoverage } from '@omni/core/events';
 import type { SyncJob, SyncJobProgress } from '@omni/db';
 import type { Services } from '../services';
@@ -84,6 +84,30 @@ async function storeBackfillMessage(
   progress.stored++;
 }
 
+function incrementMutationCount(progress: SyncJobProgress, kind: HistorySyncMutation['kind']): void {
+  if (kind === 'reaction') progress.reactionsApplied = (progress.reactionsApplied ?? 0) + 1;
+  else if (kind === 'edit') progress.editsApplied = (progress.editsApplied ?? 0) + 1;
+  else progress.deletionsApplied = (progress.deletionsApplied ?? 0) + 1;
+}
+
+async function applyBackfillMutations(
+  mutations: Map<string, HistorySyncMutation>,
+  services: Services,
+  scope: WorkScope,
+  chatId: string,
+  channel: SyncJob['channel'],
+  progress: SyncJobProgress,
+  cancelled: () => Promise<boolean>,
+): Promise<void> {
+  // Resolve after all message rows exist, oldest operation first. Missing targets never create rows.
+  for (const mutation of [...mutations.values()].sort((a, b) => a.at.getTime() - b.at.getTime())) {
+    if (await cancelled()) return;
+    const result = await scope(() => services.messages.applyHistoryMutation(chatId, mutation, channel));
+    if (result === 'unmatched') progress.unmatched = (progress.unmatched ?? 0) + 1;
+    if (result === 'applied') incrementMutationCount(progress, mutation.kind);
+  }
+}
+
 export async function processChatBackfill(options: {
   jobId: string;
   tenantId: string | null;
@@ -121,6 +145,7 @@ export async function processChatBackfill(options: {
         limit: 1,
       }),
     );
+    const mutations = new Map<string, HistorySyncMutation>();
     const seen = new Set<string>();
     const onMessage = async (message: HistorySyncMessage) => {
       if (message.chatId !== config.chatJid || (await cancelled())) return;
@@ -149,6 +174,11 @@ export async function processChatBackfill(options: {
       ],
       shouldCancel: cancelled,
       onMessage,
+      onMutation: async (mutation: HistorySyncMutation) => {
+        if (mutation.chatId !== config.chatJid || (await cancelled())) return;
+        if (mutation.at < new Date(config.from) || mutation.at > new Date(config.to)) return;
+        mutations.set(`${mutation.kind}:${mutation.id}:${mutation.actor}:${mutation.at.toISOString()}`, mutation);
+      },
       onRound: async (round: { round: number; received: number; oldestReached: string | null }) => {
         progress.round = round.round;
         progress.oldestReached = round.oldestReached ?? progress.oldestReached;
@@ -161,6 +191,7 @@ export async function processChatBackfill(options: {
     };
     await plugin.fetchHistory(job.instanceId, fetchOptions);
     if (await cancelled()) return;
+    await applyBackfillMutations(mutations, services, scope, config.chatId, job.channel, progress, cancelled);
     if (progress.state !== 'phone-did-not-answer') {
       progress.state = 'done';
       progress.outcome = 'Finished requesting chat history';

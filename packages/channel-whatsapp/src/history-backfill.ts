@@ -1,3 +1,51 @@
+import { type HistorySyncMutation, HistorySyncMutationSchema } from '@omni/channel-sdk';
+import type { WAMessage } from 'baileys';
+import { unwrapEnvelopes } from './utils/message';
+
+/** Extract only state mutations. They never become HistorySyncMessage rows. */
+export function extractHistoryMutation(msg: WAMessage, at: Date, actor: string): HistorySyncMutation | null {
+  if (!msg.message) return null;
+  const content = unwrapEnvelopes(msg.message);
+  const operationTimestamp = Number(content.reactionMessage?.senderTimestampMs ?? content.protocolMessage?.timestampMs);
+  const operationAt = Number.isFinite(operationTimestamp) && operationTimestamp > 0 ? new Date(operationTimestamp) : at;
+  const base = { id: msg.key.id, chatId: msg.key.remoteJid, at: operationAt, actor };
+  const reaction = content.reactionMessage;
+  if (reaction) {
+    const parsed = HistorySyncMutationSchema.safeParse({
+      ...base,
+      kind: 'reaction',
+      targetExternalId: reaction.key?.id,
+      emoji: reaction.text ?? '',
+    });
+    return parsed.success ? parsed.data : null;
+  }
+  const protocol = content.protocolMessage;
+  if (!protocol) return null;
+  if (protocol.type === 0) {
+    const parsed = HistorySyncMutationSchema.safeParse({
+      ...base,
+      kind: 'deletion',
+      targetExternalId: protocol.key?.id,
+    });
+    return parsed.success ? parsed.data : null;
+  }
+  if (protocol.type !== 14 && !protocol.editedMessage) return null;
+  const edited = protocol.editedMessage ? unwrapEnvelopes(protocol.editedMessage) : undefined;
+  const text =
+    edited?.conversation ??
+    edited?.extendedTextMessage?.text ??
+    edited?.imageMessage?.caption ??
+    edited?.videoMessage?.caption ??
+    edited?.documentMessage?.caption;
+  const parsed = HistorySyncMutationSchema.safeParse({
+    ...base,
+    kind: 'edit',
+    targetExternalId: protocol.key?.id,
+    text,
+  });
+  return parsed.success ? parsed.data : null;
+}
+
 /** Round driver for explicit chat backfills; passive and legacy sync paths do not use it. */
 export interface BackfillAnchor {
   chatJid: string;
