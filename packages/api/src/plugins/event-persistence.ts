@@ -44,6 +44,7 @@ import { resolveKeyAgent } from '../lib/key-agent';
 import { AccessService, accessFallbackCandidates, runAccessFallbackChain } from '../services/access';
 import { ChatService } from '../services/chats';
 import { DEAD_LETTER_RETRY_SOURCES } from '../services/dead-letter-sources';
+import { CHANGE_JOURNAL_FAMILIES, changeJournalVisibility } from '../services/journal-visibility';
 import { isMultitenancyEnabled, pairedAgentFlagState } from '../tenancy/feature-flag';
 import { scopedHandle } from '../tenancy/tenant-scope';
 import { runConsumerInTenantContext, runTenantWorkDb, trustedEnvelopeTenant } from '../tenancy/worker-tenant-context';
@@ -755,7 +756,22 @@ export async function setupEventPersistence(eventBus: EventBus, db: Database): P
       startFrom: 'new',
     });
 
-    log.info('Event persistence initialized - listening for message events');
+    for (const family of CHANGE_JOURNAL_FAMILIES) {
+      await eventBus.subscribePattern(
+        `${family}.>`,
+        async (event) => {
+          if (changeJournalVisibility(event.type) === 'never') return;
+          await journalInternalEvent(db, event);
+        },
+        {
+          ...CONSUMER_OPTIONS,
+          durable: `event-persistence-${family}`,
+          startFrom: 'new',
+        },
+      );
+    }
+
+    log.info('Event persistence initialized - listening for journal families');
   } catch (error) {
     log.error('Failed to set up event persistence', { error: String(error) });
     throw error;
@@ -767,6 +783,10 @@ export async function setupEventPersistence(eventBus: EventBus, db: Database): P
  * system.connector.>, system.dead_letter) as a minimal `omni_events` row: identity, causality,
  * payload. Shared by the pattern subscribers in `setupEventPersistence`.
  */
+function journalChatUuid(type: string, payload: Record<string, unknown>): unknown {
+  return payload.chatUuid ?? (type.startsWith('chat.') ? payload.chatId : undefined);
+}
+
 async function journalInternalEvent(db: Database, event: OmniEvent): Promise<void> {
   const metadata = event.metadata;
   try {
@@ -798,7 +818,7 @@ async function journalInternalEvent(db: Database, event: OmniEvent): Promise<voi
       // message subscribers do.
       const personId =
         (await resolvePersonId(sdb, metadata.personId)) ?? (await resolvePersonId(sdb, payload.personId));
-      const chatUuid = await resolveChatUuidById(sdb, payload.chatUuid);
+      const chatUuid = await resolveChatUuidById(sdb, journalChatUuid(event.type, payload));
       const chatLink = chatUuid
         ? { chatUuid, canonicalChatId: null }
         : await resolveChatLink(sdb, instanceId ?? undefined, payloadChatId);

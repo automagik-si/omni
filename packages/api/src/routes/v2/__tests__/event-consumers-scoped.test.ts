@@ -221,7 +221,7 @@ describe('POST /events/consumers resolves scoped instance ids (fake database)', 
             calls.instanceReads++;
             return { where: async () => known.map((id) => ({ id })) };
           }
-          return Promise.resolve([{ head: 0 }]);
+          return { where: async () => [{ head: 0 }] };
         },
       }),
       insert: () => ({

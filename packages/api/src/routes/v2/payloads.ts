@@ -10,7 +10,7 @@ import { zValidator } from '@hono/zod-validator';
 import { PAYLOAD_STAGES } from '@omni/core';
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { ApiKeyService } from '../../services/api-keys';
+import { journalReader } from '../../services/journal-visibility';
 import type { AppVariables } from '../../types';
 
 const payloadsRoutes = new Hono<{ Variables: AppVariables }>();
@@ -41,17 +41,7 @@ payloadsRoutes.get('/events/:eventId/payloads', async (c) => {
   const services = c.get('services');
   const apiKey = c.get('apiKey');
 
-  // Check instance access via the parent event
-  if (apiKey?.instanceIds) {
-    try {
-      const event = await services.events.getById(eventId);
-      if (event.instanceId && !ApiKeyService.instanceAllowed(apiKey.instanceIds, event.instanceId)) {
-        return c.json({ error: { code: 'FORBIDDEN', message: 'API key does not have access to this instance' } }, 403);
-      }
-    } catch {
-      // Event not found — let the payload service handle it
-    }
-  }
+  await services.events.getById(eventId, journalReader(apiKey));
 
   const payloads = await services.payloadStore.getByEventId(eventId);
 
@@ -73,17 +63,7 @@ payloadsRoutes.get('/events/:eventId/payloads/:stage', async (c) => {
   const services = c.get('services');
   const apiKey = c.get('apiKey');
 
-  // Check instance access via the parent event
-  if (apiKey?.instanceIds) {
-    try {
-      const event = await services.events.getById(eventId);
-      if (event.instanceId && !ApiKeyService.instanceAllowed(apiKey.instanceIds, event.instanceId)) {
-        return c.json({ error: { code: 'FORBIDDEN', message: 'API key does not have access to this instance' } }, 403);
-      }
-    } catch {
-      // Event not found — let the payload service handle it
-    }
-  }
+  await services.events.getById(eventId, journalReader(apiKey));
 
   // Validate stage
   const stageResult = stageSchema.safeParse(stage);
@@ -109,17 +89,7 @@ payloadsRoutes.delete('/events/:eventId/payloads', zValidator('json', deleteBody
   const services = c.get('services');
   const apiKey = c.get('apiKey');
 
-  // Check instance access via the parent event
-  if (apiKey?.instanceIds) {
-    try {
-      const event = await services.events.getById(eventId);
-      if (event.instanceId && !ApiKeyService.instanceAllowed(apiKey.instanceIds, event.instanceId)) {
-        return c.json({ error: { code: 'FORBIDDEN', message: 'API key does not have access to this instance' } }, 403);
-      }
-    } catch {
-      // Event not found — let the payload service handle it
-    }
-  }
+  await services.events.getById(eventId, journalReader(apiKey));
 
   // TODO: Get current user from auth context
   const deletedBy = 'api-user';

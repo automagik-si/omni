@@ -73,6 +73,7 @@ import { pairedAgentFlagState } from '../tenancy/feature-flag';
 import { runDetachedFromTenantScope, scopedHandle } from '../tenancy/tenant-scope';
 import { runTenantWorkDb } from '../tenancy/worker-tenant-context';
 import { eventTypeFilterClause } from './events';
+import { changeJournalReplayExclusion, journalVisibilityClause } from './journal-visibility';
 
 type NewDurableConsumer = typeof durableConsumers.$inferInsert;
 
@@ -276,6 +277,18 @@ export interface StreamAccess {
    * instance, the `GET /events` rule) restrict every page.
    */
   caller: ConsumerCaller;
+}
+
+/** Instance and sensitive-type restrictions for a caller's journal scan. */
+function consumerJournalClause(caller?: ConsumerCaller): SQL | undefined {
+  return journalVisibilityClause(
+    caller
+      ? {
+          instanceIds: caller.instanceIds,
+          fullAccess: (caller.keyId === null || caller.admin === true) && caller.instanceIds === null,
+        }
+      : undefined,
+  );
 }
 
 /**
@@ -661,12 +674,16 @@ export class EventConsumerService {
     private readonly eventBus: EventBus | null = null,
   ) {}
 
-  /** Highest journal_seq in the journal, 0 when empty. Cheap (backward index scan). */
+  /**
+   * Tenant-wide sequence watermark, 0 when empty. Instance/type visibility belongs
+   * on delivery scans, not this watermark: lag is head-minus-cursor even when
+   * caughtUp is true, and startFrom 'now' must skip every pre-existing sequence.
+   */
   async head(tenantId?: string | null): Promise<number> {
     const query = this.db
       .select({ head: sql<number>`coalesce(max(${omniEvents.journalSeq}), 0)::bigint` })
       .from(omniEvents);
-    const [row] = await (tenantId ? query.where(eq(omniEvents.tenantId, tenantId)) : query);
+    const [row] = await query.where(tenantId ? eq(omniEvents.tenantId, tenantId) : undefined);
     return Number(row?.head ?? 0);
   }
 
@@ -720,15 +737,8 @@ export class EventConsumerService {
   private async withLag(row: DurableConsumer, head: number, caller?: ConsumerCaller): Promise<ConsumerWithLag> {
     const caughtUp =
       row.cursor >= head ||
-      (
-        await this.scan(
-          narrowToCaller(row, caller),
-          1,
-          undefined,
-          undefined,
-          streamInstanceClause(caller?.instanceIds ?? null),
-        )
-      ).length === 0;
+      (await this.scan(narrowToCaller(row, caller), 1, undefined, undefined, consumerJournalClause(caller))).length ===
+        0;
     return { ...row, head, lag: computeLag(head, row.cursor), caughtUp };
   }
 
@@ -861,7 +871,7 @@ export class EventConsumerService {
     const deadline = Date.now() + waitMs;
     // Readiness gate (opt-in): a page cut to empty keeps long-polling.
     const settleMs = consumer.waitForReady ? resolveConsumerSettleMs() : 0;
-    const keyInstances = streamInstanceClause(caller?.instanceIds ?? null);
+    const keyInstances = consumerJournalClause(caller);
     const scan = async (): Promise<OmniEvent[]> => {
       const page = await this.scan(consumer, limit, undefined, undefined, keyInstances);
       return consumer.waitForReady ? truncateAtUnready(page, true, settleMs, Date.now()) : page;
@@ -1077,7 +1087,7 @@ export class EventConsumerService {
     return runDetachedFromTenantScope(() =>
       runTenantWorkDb(this.pool, access.tenantId, async () => {
         const consumer = { ...(await this.getStreamable(name, access.caller)), waitForReady: true };
-        const keyInstances = streamInstanceClause(access.caller.instanceIds);
+        const keyInstances = consumerJournalClause(access.caller);
         const page = await this.scan(consumer, limit, after, undefined, keyInstances);
         const rows = truncateAtUnready(page, true, resolveConsumerSettleMs(), Date.now());
         const held = rows.length < page.length;
@@ -1101,7 +1111,7 @@ export class EventConsumerService {
     caller?: ConsumerCaller,
   ): Promise<PullResult> {
     const deadline = Date.now() + waitMs;
-    const keyInstances = streamInstanceClause(caller?.instanceIds ?? null);
+    const keyInstances = consumerJournalClause(caller);
     let claim = await this.claimShared(initial, limit, leaseMs, keyInstances, caller);
     while (!claim.lease && Date.now() < deadline) {
       await new Promise<void>((resolve) => setTimeout(resolve, PULL_POLL_INTERVAL_MS));
@@ -1266,6 +1276,9 @@ export class EventConsumerService {
       eventTypeFilterClause([consumer.eventType], consumer.excludeTypes ?? undefined),
       consumer.tenantId ? eq(omniEvents.tenantId, consumer.tenantId) : undefined,
       accessFilterClause(consumer.accessFilter, consumer.waitForReady),
+      // Existing custom/connector grants still admit instance-less rows. New
+      // journal families must satisfy the caller policy on every grant branch.
+      extra ? or(changeJournalReplayExclusion(), extra) : undefined,
     );
     const page = (branch: SQL | undefined) =>
       this.db.select().from(omniEvents).where(and(common, branch)).orderBy(asc(omniEvents.journalSeq)).limit(limit);

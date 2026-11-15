@@ -19,6 +19,7 @@ import type { Database } from '@omni/db';
 import { type AccessMode, type AccessRule, type NewAccessRule, type RuleType, accessRules, instances } from '@omni/db';
 import { type SQL, and, count, desc, eq, gt, isNull, ne, or, sql } from 'drizzle-orm';
 import { CacheKeys, CacheTTL, authCacheTtlMs } from '../cache/cache-keys';
+import { changedRecordKeys, publishRecordChange } from '../lib/record-change-events';
 import { scopedHandle } from '../tenancy/tenant-scope';
 import { runTenantWorkDb } from '../tenancy/worker-tenant-context';
 
@@ -194,6 +195,12 @@ export class AccessService {
     // Invalidate access cache on rule mutation
     await this.cache?.clear();
 
+    publishRecordChange(
+      this.eventBus,
+      'access.rule_created',
+      { ruleId: created.id, instanceId: created.instanceId, changedKeys: changedRecordKeys(data) },
+      created.instanceId,
+    );
     return created;
   }
 
@@ -214,6 +221,12 @@ export class AccessService {
     // Invalidate access cache on rule mutation
     await this.cache?.clear();
 
+    publishRecordChange(
+      this.eventBus,
+      'access.rule_updated',
+      { ruleId: updated.id, instanceId: updated.instanceId, changedKeys: changedRecordKeys(data) },
+      updated.instanceId,
+    );
     return updated;
   }
 
@@ -229,6 +242,14 @@ export class AccessService {
 
     // Invalidate access cache on rule mutation
     await this.cache?.clear();
+    const deleted = result[0];
+    if (deleted)
+      publishRecordChange(
+        this.eventBus,
+        'access.rule_deleted',
+        { ruleId: deleted.id, instanceId: deleted.instanceId, changedKeys: [] },
+        deleted.instanceId,
+      );
   }
 
   /**

@@ -9,6 +9,7 @@ import { z } from 'zod';
 import { optionalDateParam } from '../../schemas/date-query';
 import { ApiKeyService } from '../../services/api-keys';
 import { consumerAccessClause } from '../../services/event-consumers';
+import { type JournalReader, journalReader } from '../../services/journal-visibility';
 import type { ApiKeyData, AppVariables } from '../../types';
 import { consumerCaller, isOwnOnlyConsumerKey } from './event-consumers';
 
@@ -34,17 +35,18 @@ function scopeInstanceFilter(apiKey: ApiKeyData | undefined, requestedInstanceId
 function applyInstanceAccess<T extends { instanceId?: string; instanceIds?: string[] }>(
   query: T,
   apiKey: ApiKeyData | undefined,
-): T {
-  if (!apiKey?.instanceIds) return query; // full access
+): T & { reader: JournalReader } {
+  const visibleQuery = { ...query, reader: journalReader(apiKey) };
+  if (!apiKey?.instanceIds) return visibleQuery; // full access
   if (query.instanceId) {
     // Specific instance requested — check access
     if (!ApiKeyService.instanceAllowed(apiKey.instanceIds, query.instanceId)) {
-      return { ...query, instanceId: '__denied__' }; // will match nothing
+      return { ...visibleQuery, instanceId: '__denied__' }; // will match nothing
     }
-    return query;
+    return visibleQuery;
   }
   // No instance filter — restrict to allowed instances
-  return { ...query, instanceIds: apiKey.instanceIds };
+  return { ...visibleQuery, instanceIds: apiKey.instanceIds };
 }
 
 // List events query schema
@@ -159,6 +161,7 @@ eventsRoutes.get('/analytics', zValidator('query', analyticsQuerySchema), async 
     until: effectiveUntil,
     instanceId: scopedInstanceId,
     granularity,
+    reader: journalReader(apiKey),
   });
 
   return c.json(analytics);
@@ -181,6 +184,7 @@ eventsRoutes.get('/types', zValidator('query', z.object({ since: optionalDatePar
     automations,
     tenantId: c.get('authContext')?.tenantId,
     ...consumerAccess,
+    reader: journalReader(c.get('apiKey')),
   });
   return c.json({ items, meta: { since: since?.toISOString() ?? null } });
 });
@@ -194,6 +198,7 @@ eventsRoutes.get('/timeline/:personId', zValidator('query', timelineQuerySchema)
   const services = c.get('services');
 
   const result = await services.events.getTimeline(personId, {
+    reader: journalReader(c.get('apiKey')),
     channels: query.channels,
     since: query.since,
     until: query.until,
@@ -287,7 +292,7 @@ eventsRoutes.get('/:id', async (c) => {
   const services = c.get('services');
   const apiKey = c.get('apiKey');
 
-  const event = await services.events.getById(id);
+  const event = await services.events.getById(id, journalReader(apiKey));
 
   if (event.instanceId && apiKey && !ApiKeyService.instanceAllowed(apiKey.instanceIds, event.instanceId)) {
     return c.json({ error: { code: 'FORBIDDEN', message: 'API key does not have access to this instance' } }, 403);
@@ -308,7 +313,7 @@ eventsRoutes.get('/:id/trace', async (c) => {
   const services = c.get('services');
   const apiKey = c.get('apiKey');
 
-  const trace = await services.events.trace(id);
+  const trace = await services.events.trace(id, journalReader(apiKey));
 
   if (trace.event.instanceId && apiKey && !ApiKeyService.instanceAllowed(apiKey.instanceIds, trace.event.instanceId)) {
     return c.json({ error: { code: 'FORBIDDEN', message: 'API key does not have access to this instance' } }, 403);
