@@ -177,17 +177,30 @@ OCI attestation signed by `image-build.yml`.
    read-only. No workflow, test, or document pins a version, SHA, or digest by
    hand.
 
-Stranded mint recovery: if `finalize` fails after `build-push` succeeded (the
+The release build uses native `ubuntu-latest` (amd64) and `ubuntu-24.04-arm`
+(arm64) runners, with no BuildKit cache imports or exports. Each platform is
+pushed by digest; `merge` re-checks that the version alias does not exist,
+creates the single version index, and attests that index. `finalize` independently
+verifies its digest, both platforms and provenance before publication.
+
+The path-filtered `image-native-check.yml` PR guard builds the same Dockerfile
+and platforms on native runners, exporting only local OCI archives. It has no
+registry login, secrets or attestation. Build-input parity is contract-tested.
+This proves the native builds when CI passes; digest pushes, index assembly,
+attestation and stable publication remain pending the first real candidate.
+Rollback is to revert the native-runner PR; never rebuild an existing alias.
+
+Stranded mint recovery: if `finalize` fails after `merge` succeeded (the
 ruleset check, a run-resolution timeout, a concurrent dispatch, or a failed
 `release.yml` run), a fresh `image-build.yml` dispatch is refused by design
 because the `vX` alias now exists. Recover with "Re-run failed jobs" on the
 SAME run: it keeps `GITHUB_RUN_ID` (the `orchestrator_run_id` the stable
-publishers re-verify), the `build-push` outputs, and the `in_progress` state
+publishers re-verify), the `merge` outputs, and the `in_progress` state
 those publishers require.
 
-Both `image-build.yml` jobs run in the `release` environment. The `release`
+All `image-build.yml` jobs run in the `release` environment. The `release`
 environment must be configured with required reviewers before the first mint,
-and its deployment tag policy must allow `v*` tags (both jobs are dispatched
+and its deployment tag policy must allow `v*` tags (all jobs are dispatched
 on a tag ref). The active `v*` tag ruleset must keep its `update` and
 `deletion` rules with no bypass actors; do not add a `creation` rule, because
 `scripts/release/verify-tag-ruleset.py` rejects bypass actors and
