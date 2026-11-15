@@ -591,20 +591,11 @@ export class TelegramPlugin extends BaseChannelPlugin {
     if (!bot) throw new TelegramError(TelegramErrorCode.NOT_CONNECTED, `No bot for instance ${instanceId}`);
 
     const me = await bot.api.getMe();
-    let avatarUrl: string | undefined;
-    try {
-      const photos = await bot.api.getUserProfilePhotos(me.id, { limit: 1 });
-      if (photos.total_count > 0 && photos.photos[0]?.[0]) {
-        const file = await bot.api.getFile(photos.photos[0][0].file_id);
-        avatarUrl = file.file_path ? `https://api.telegram.org/file/bot${bot.token}/${file.file_path}` : undefined;
-      }
-    } catch {
-      // Avatar fetch is best-effort
-    }
 
     return {
       name: [me.first_name, me.last_name].filter(Boolean).join(' '),
-      avatarUrl,
+      // Telegram pictures are omitted to protect the channel credential (#1747).
+      avatarUrl: undefined,
       bio: undefined, // Bots don't have bios accessible via API
       ownerIdentifier: me.username ? `@${me.username}` : String(me.id),
       platformMetadata: {
@@ -635,15 +626,6 @@ export class TelegramPlugin extends BaseChannelPlugin {
     if (!bot) throw new TelegramError(TelegramErrorCode.NOT_CONNECTED, `No bot for instance ${instanceId}`);
 
     const chat = await bot.api.getChat(userId);
-    let avatarUrl: string | undefined;
-    if ('photo' in chat && chat.photo) {
-      try {
-        const file = await bot.api.getFile(chat.photo.big_file_id);
-        avatarUrl = file.file_path ? `https://api.telegram.org/file/bot${bot.token}/${file.file_path}` : undefined;
-      } catch {
-        // Avatar fetch is best-effort
-      }
-    }
 
     const displayName =
       'first_name' in chat
@@ -654,7 +636,7 @@ export class TelegramPlugin extends BaseChannelPlugin {
 
     return {
       displayName,
-      avatarUrl,
+      avatarUrl: undefined,
       bio: 'bio' in chat ? (chat.bio as string) : undefined,
       platformData: {
         id: chat.id,
