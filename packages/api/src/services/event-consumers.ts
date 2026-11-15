@@ -278,11 +278,7 @@ export interface StreamAccess {
   caller: ConsumerCaller;
 }
 
-/**
- * The caller's instance restriction for a pull or stream page: none for a full-access key,
- * otherwise `instance_id IN (...)` (rows with no instance excluded, as in
- * `GET /events`), and a match-nothing predicate for an empty allow-list.
- */
+/** Instance and sensitive-type restrictions for a caller's journal scan. */
 function consumerJournalClause(caller?: ConsumerCaller): SQL | undefined {
   return journalVisibilityClause(
     caller
@@ -294,6 +290,11 @@ function consumerJournalClause(caller?: ConsumerCaller): SQL | undefined {
   );
 }
 
+/**
+ * The caller's instance restriction for a pull or stream page: none for a full-access key,
+ * otherwise `instance_id IN (...)` (rows with no instance excluded, as in
+ * `GET /events`), and a match-nothing predicate for an empty allow-list.
+ */
 export function streamInstanceClause(instanceIds: readonly string[] | null): SQL | undefined {
   if (instanceIds === null) return undefined;
   return instanceIds.length === 0 ? sql`false` : inArray(omniEvents.instanceId, [...instanceIds]);

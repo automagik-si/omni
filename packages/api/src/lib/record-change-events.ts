@@ -1,5 +1,6 @@
 import { type CoreEventType, type EventBus, type EventPayloadMap, createLogger } from '@omni/core';
-import { runAfterTenantCommit } from '../tenancy/tenant-scope';
+import { isMultitenancyEnabled } from '../tenancy/feature-flag';
+import { currentTenantScope, runAfterTenantCommit } from '../tenancy/tenant-scope';
 
 const log = createLogger('record-change-events');
 type RecordChangeType = Extract<
@@ -22,9 +23,17 @@ export function publishRecordChange<T extends RecordChangeType>(
   instanceId?: string | null,
 ): void {
   if (!bus) return;
+  // The callback runs outside the committing scope; snapshot its trusted owner.
+  // Explicit tenant metadata is always honored by the factory; leave flag-off metadata unchanged.
+  const tenantId = isMultitenancyEnabled() ? currentTenantScope()?.tenantId : undefined;
+  const metadata = tenantId
+    ? { ...(instanceId ? { instanceId } : {}), tenantId }
+    : instanceId
+      ? { instanceId }
+      : undefined;
   runAfterTenantCommit(() => {
     bus
-      .publish(type, payload, instanceId ? { instanceId } : undefined)
+      .publish(type, payload, metadata)
       .catch((error) => log.warn('Failed to publish record change', { eventType: type, error: String(error) }));
   });
 }
