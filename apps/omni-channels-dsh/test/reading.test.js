@@ -23,7 +23,7 @@ import { ToolRuntime } from '@deepseek-ai/dsh-tools'
 import * as team from '@automagik/bots-dsh'
 import * as channels from '../index.js'
 import { LINK_FILE } from '../src/host/omni-link.js'
-import { ANSWER_CHILD_REFUSAL, BAD_CURSOR, CURSOR_WINDOW, NOT_OPERATOR, NOT_READABLE, NOTES_FILE, PAGE_CHARS_MAX } from '../src/host/reading.js'
+import { ANSWER_CHILD_REFUSAL, BAD_CURSOR, CURSOR_WINDOW, NO_CHAT, NOT_OPERATOR, NOT_READABLE, NOTE_MAX, NOTES_FILE, PAGE_CHARS_MAX } from '../src/host/reading.js'
 import { INSTANCE, OMNI, OTHER_INSTANCE, resetFetch, teamState } from './thread-fixture.js'
 
 const realFetch = globalThis.fetch
@@ -38,6 +38,9 @@ const CHAT = '7a1c0d2e-3b4f-4c5d-8e6f-0a1b2c3d4e01'
 const BIG = '7a1c0d2e-3b4f-4c5d-8e6f-0a1b2c3d4e02'
 const ELSEWHERE = '7a1c0d2e-3b4f-4c5d-8e6f-0a1b2c3d4e03'
 const ODD = '7a1c0d2e-3b4f-4c5d-8e6f-0a1b2c3d4e04'
+const HEAVY = '7a1c0d2e-3b4f-4c5d-8e6f-0a1b2c3d4e05'
+// A chat id Omni does not know.
+const UNKNOWN = '7a1c0d2e-3b4f-4c5d-8e6f-0a1b2c3d4e99'
 const id = n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
 const SAME = '2026-05-10T12:00:00.000Z'
 const message = (n, platformTimestamp, extra = {}) => ({
@@ -57,6 +60,16 @@ const MESSAGES = [
 ]
 // A chat with one row in a form no message has (its time a number).
 const ODD_MESSAGES = [{ ...message(2000, '2026-04-01T00:00:00.000Z', { textContent: 'fine' }), chatId: ODD }, { id: 'odd-row', chatId: ODD, platformTimestamp: 1_775_000_000 }]
+// The review's worst case: 200 rows each with a long sender name, a long text, a document with a
+// long extraction, many named reactions and every mark.
+const HEAVY_MESSAGES = Array.from({ length: 200 }, (_, n) => ({
+  ...message(3000 + n, new Date(Date.parse('2026-02-01T00:00:00.000Z') + n * 60_000).toISOString(), {
+    senderDisplayName: 's'.repeat(80), textContent: 't'.repeat(700), messageType: 'document', hasMedia: true, documentExtraction: 'd'.repeat(700),
+    reactions: Array.from({ length: 12 }, (_, r) => ({ emoji: '👍', platformUserId: `u${r}`, displayName: `Reactor ${r}`, at: SAME })),
+    status: 'edited', editCount: 2, editedAt: SAME, deletedAt: SAME, source: 'sync',
+  }),
+  chatId: HEAVY,
+}))
 // 205 long messages of another chat, one a minute.
 const LONG = 'x'.repeat(700)
 const BIG_MESSAGES = Array.from({ length: 205 }, (_, n) => ({ ...message(1000 + n, new Date(Date.parse('2026-01-01T00:00:00.000Z') + n * 60_000).toISOString(), { textContent: LONG }), chatId: BIG }))
@@ -65,6 +78,7 @@ const CHATS = {
   [BIG]: { id: BIG, name: 'Supplier', instanceId: INSTANCE, externalId: '5511977770000@s.whatsapp.net', chatType: 'dm' },
   [ELSEWHERE]: { id: ELSEWHERE, name: 'Elsewhere', instanceId: OTHER_INSTANCE, externalId: '5511966660000@s.whatsapp.net', chatType: 'dm' },
   [ODD]: { id: ODD, name: 'Odd', instanceId: INSTANCE, externalId: '5511955550000@s.whatsapp.net', chatType: 'dm' },
+  [HEAVY]: { id: HEAVY, name: 'Heavy', instanceId: INSTANCE, externalId: '5511944440000@s.whatsapp.net', chatType: 'group' },
 }
 
 // O1's contract: GET /chats/:id/messages pages back by (platformTimestamp desc, id desc) from an
@@ -72,7 +86,7 @@ const CHATS = {
 // GET /chats/:id/coverage answers { data } with from/to bounding countInWindow only.
 function omniO1() {
   const asked = []
-  const rows = [...MESSAGES, ...BIG_MESSAGES, ...ODD_MESSAGES]
+  const rows = [...MESSAGES, ...BIG_MESSAGES, ...ODD_MESSAGES, ...HEAVY_MESSAGES]
   const json = (status, body) => new Response(JSON.stringify(body), { status })
   const later = (a, b) => (a.platformTimestamp === b.platformTimestamp ? (a.id > b.id ? -1 : 1) : (a.platformTimestamp > b.platformTimestamp ? -1 : 1))
   globalThis.fetch = async (address, init = {}) => {
@@ -348,6 +362,64 @@ test('the reading note survives a restart: saved in its own 0600 file, shown on 
   })
   assert.equal((await second.endpoint('omni-reading-note', { chat: BIG })).note, null)
   await assert.rejects(second.endpoint('omni-reading-note', { chat: 'not-a-chat' }))
+})
+
+test('a page that does not fit even at the shortest cut is read again from the same cursor with fewer messages: never over the limit, nothing skipped (200 heavy rows under an 8,000-character note)', async (t) => {
+  const omni = omniO1()
+  const dsh = await start(t, homeWith(t))
+  assert.match(await dsh.run('save_reading_note', { chat: HEAVY, note: 'n'.repeat(NOTE_MAX), readThrough: '2026-02-01' }), /^Reading note saved/)
+  const seen = []
+  const asked = []
+  let cursor
+  for (let round = 0; round < 20; round += 1) {
+    const before = omni.reads().length
+    const text = await dsh.run('read_history', { chat: HEAVY, size: 200, ...(cursor ? { cursor } : {}) })
+    assert.ok(text.length <= PAGE_CHARS_MAX, `page ${round + 1}: ${text.length} characters`)
+    const shown = idsOf(text)
+    const fewer = /^Fewer messages than asked, to fit: (\d+) of 200, as 200 did not fit even with their texts cut; the next page asks for 200 again\.$/m.exec(text)
+    if (shown.length < 200 && cursorOf(text)) assert.ok(fewer, text.split('\n\n')[0])
+    if (fewer) assert.equal(Number(fewer[1]), shown.length)
+    seen.push(...shown)
+    // Every read of one page asks Omni from the same cursor and window, halving the size.
+    const tries = omni.reads().slice(before).filter(call => call.path.endsWith('/messages'))
+    assert.equal(new Set(tries.map(call => call.query.cursor ?? '')).size, 1)
+    asked.push(tries.map(call => Number(call.query.limit)))
+    cursor = cursorOf(text)
+    if (!cursor) break
+  }
+  assert.equal(seen.length, 200)
+  assert.equal(new Set(seen).size, 200)
+  // The first page, under the whole note, halved more than the later ones; each starts at 200.
+  assert.ok(asked[0].length > 1, JSON.stringify(asked))
+  for (const sizes of asked) assert.deepEqual(sizes, sizes.map((_, index) => Math.max(1, Math.floor(200 / 2 ** index))))
+})
+
+test('the kit\'s endpoint gives a note and coverage only for a chat Omni finds and some Bot that operates Omni may read; else only its id', async (t) => {
+  const omni = omniO1()
+  // The default bot is a Bot that does not operate Omni and owns the other channel, so no
+  // operating Bot may read a chat there; the Main Bot owns the first.
+  const state = teamState({
+    bots: { ...teamState().bots, w1: { id: 'w1', name: 'Dev', role: '', instructions: '', createdAt: 3 } },
+    omniOwnership: { defaultBotId: 'w1', channels: { [INSTANCE]: 'm1', [OTHER_INSTANCE]: 'w1' } },
+  })
+  const home = homeWith(t, state)
+  // Notes kept from before: one for a chat no operating Bot may read now, one for a chat Omni no longer has.
+  const kept = { note: 'kept from before', readThrough: '2026-11-01T00:00:00.000Z', updatedAt: '2026-11-02T00:00:00.000Z' }
+  writeFileSync(join(home, NOTES_FILE), JSON.stringify({ version: 1, chats: { [ELSEWHERE]: kept, [UNKNOWN]: kept } }), { mode: 0o600 })
+  const dsh = await start(t, home)
+  // Unreadable: the tools refuse it, and the card gets its id alone.
+  assert.equal(await dsh.run('read_history', { chat: ELSEWHERE }), NOT_READABLE)
+  const coverageReads = () => omni.reads().filter(call => call.path.endsWith('/coverage')).length
+  const before = coverageReads()
+  assert.deepEqual(await dsh.endpoint('omni-reading-note', { chat: ELSEWHERE }), { chat: { id: ELSEWHERE }, note: null, coverage: null })
+  // A failed lookup: Omni has no such chat; said plainly by the tool, closed for the card.
+  assert.equal(await dsh.run('read_history', { chat: UNKNOWN }), NO_CHAT)
+  assert.deepEqual(await dsh.endpoint('omni-reading-note', { chat: UNKNOWN }), { chat: { id: UNKNOWN }, note: null, coverage: null })
+  assert.equal(coverageReads(), before)
+  // Readable: the note and the coverage.
+  assert.match(await dsh.run('save_reading_note', { chat: CHAT, note: 'open order', readThrough: '2026-11-01' }), /^Reading note saved/)
+  const card = await dsh.endpoint('omni-reading-note', { chat: CHAT })
+  assert.deepEqual([card.chat, card.note.text, card.coverage.count], [{ id: CHAT, name: 'Ana', channelId: INSTANCE }, 'open order', 8])
 })
 
 test('the reading note never reaches state.json, a log, the team view or any other file', async (t) => {

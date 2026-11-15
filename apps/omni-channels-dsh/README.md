@@ -258,7 +258,11 @@ messages never start an answer.
   first. A page stays under the size DSH keeps whole in a tool result (about 46,000
   characters): a page that fits keeps every text whole; one that does not cuts its texts
   shorter, never its lines, and its header says to read it again (same cursor, none on a first
-  page) with a smaller size to have them whole.
+  page) with a smaller size to have them whole. A page that does not fit even at the shortest
+  cut is never returned: the same cursor and window are read again with half as many messages
+  (at most 8 times), the header says "fewer messages than asked, to fit", and the next cursor
+  is Omni's own after the last message shown. A chat Omni does not have, or that this link may
+  not read, is said plainly.
 - `save_reading_note { chat, note, readThrough }` keeps the note (at most 8,000 characters: who
   the person is to the user, what is open, the last contact, how the user talks to them), the
   newest message time it covers (`readThrough`, where a later reading of what is new starts),
@@ -283,8 +287,11 @@ response: {
 }
 ```
 
-`note` is null until a Bot saves one; `coverage` is null when the Omni cannot give it; `chat`
-holds only its id when the Omni cannot read the chat. Times are ISO strings.
+The note and the coverage come back only when the Omni finds the chat and some Bot that
+operates Omni may read its channel (`rt.canChannel(bot, channel, 'read')`, as the tools decide).
+Otherwise the answer is `{ chat: { id }, note: null, coverage: null }`, never a saved note.
+`note` is null until a Bot saves one; `coverage` is null when the Omni cannot give it. Times are
+ISO strings.
 
 ## Existing channel settings
 
