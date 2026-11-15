@@ -58,7 +58,7 @@ export function OutsideCheck({ botId, value }) {
       refusalTexts: texts.refusalTexts, ...(secret === '' ? {} : { secret }),
     }, t('Saved.'))
   }
-  const clear = () => send({ secret: null }, t('Secret cleared.'))
+  const clear = () => send({ secret: null }, t('The secret is cleared.'))
   const label = t('Outside code check')
   return h('div', { className: 'ot-outside', role: 'group', 'aria-label': label },
     h('span', { className: 'bt-field-label' }, label),
@@ -72,7 +72,7 @@ export function OutsideCheck({ botId, value }) {
         h('span', { className: 'ot-picker-tag ot-outside-state', 'data-set': secretSet }, secretSet ? t('Set') : t('Not set'))),
       h('input', {
         className: 'bt-input ot-outside-secret', type: 'password', value: secret, spellCheck: false, autoComplete: 'new-password',
-        placeholder: secretSet ? t('Type to replace') : '', onChange: event => setSecret(event.target.value),
+        placeholder: secretSet ? t('Type a new one to replace it') : '', onChange: event => setSecret(event.target.value),
       })),
     h(PatternFields, { value: fields.pattern, onChange: next => set('pattern', next) }),
     h('div', { className: 'bt-field ot-answer-field' },

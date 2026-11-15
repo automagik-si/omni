@@ -257,7 +257,7 @@ test('outside check reply: two replies marked at once, the first save failing, k
   await until(() => b.service.calls.length === 4 && b.omniState.sends.length === 1)
   await until(() => saved(b.home).omniOutsideCheckReplied?.includes('WA-stranger-2'))
   assert.deepEqual(b.channels.state.omniOutsideCheckReplied, ['WA-stranger-2'])
-  assert.deepEqual(b.warned.filter(args => /outside check reply was not sent/.test(args[0])).map(args => args.slice(1)), [[ANSWER_MASTER, 'its mark was not saved']])
+  assert.deepEqual(b.warned.filter(args => /outside check reply was not sent/.test(args[0])).map(args => args.slice(1)), [[ANSWER_MASTER, 'the reply mark was not saved']])
   b.channels.save = save
   // The second message again: marked, so nothing is called or posted.
   await b.deliver(stranger(2, CODE))

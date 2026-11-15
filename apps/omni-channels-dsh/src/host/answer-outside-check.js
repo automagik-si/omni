@@ -45,8 +45,8 @@ export const OUTSIDE_REPLIED_MAX = 5_000
 export const OUTSIDE_LABEL_MAX = 60
 export const OUTSIDE_TIER_MAX = 60
 export const OUTSIDE_TEXTS_MAX = 10
-export const OUTSIDE_URL_REFUSAL = 'The check URL must be an https address.'
-export const OUTSIDE_SECRET_REFUSAL = 'The secret must be letters, digits and symbols, with no spaces.'
+export const OUTSIDE_URL_REFUSAL = 'Use an https:// address for the outside check.'
+export const OUTSIDE_SECRET_REFUSAL = 'Use printable characters for the secret, and no spaces.'
 const FUTURE_MAX_MS = 2 * 60_000
 const FROM_MAX = 256
 const MINUTE_MS = 60_000
@@ -217,7 +217,7 @@ export function install(rt) {
   async function post(row, botId, text) {
     const marked = await mark(row.externalId)
     if (marked === 'already') return false
-    if (marked === 'failed') { warn('the outside check reply was not sent', botId, 'its mark was not saved'); return false }
+    if (marked === 'failed') { warn('the outside check reply was not sent', botId, 'the reply mark was not saved'); return false }
     const why = await sendInChat(rt, row, botId, text)
     if (why !== undefined) { warn('the outside check reply was not sent', botId, why); return false }
     worked('the outside check reply was not sent', botId)

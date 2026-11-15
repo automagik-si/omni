@@ -62,7 +62,7 @@ test('outside check section: the setting comes with the answer settings; opening
   const unset = settings(t, {})
   await unset.open()
   assert.deepEqual([unset.field('Check URL').props.value, unset.field('Secret').props.value, unset.state(), unset.button('Clear').props.disabled], ['', '', 'Not set', true])
-  for (const key of ['Outside code check', 'Check URL', 'Secret', 'Set', 'Not set', 'Type to replace', 'Secret cleared.', 'Label on a confirmed row', 'Tier name', 'Texts on refusal']) assert.ok(Object.hasOwn(STRINGS, key), key)
+  for (const key of ['Outside code check', 'Check URL', 'Secret', 'Set', 'Not set', 'Type a new one to replace it', 'The secret is cleared.', 'Label on a confirmed row', 'Tier name', 'Texts on refusal']) assert.ok(Object.hasOwn(STRINGS, key), key)
 })
 
 test('outside check section: Save sends every field and a typed secret; the field is emptied and never shows the secret back; Clear sends null', async t => {
@@ -108,11 +108,11 @@ test('outside check section: Save sends every field and a typed secret; the fiel
   assert.deepEqual(calls.at(-1), ['omni-outside-check', { botId: 'dedicated', secret: null }])
   assert.equal(s.state(), 'Not set')
   // A refusal is shown as the host words it.
-  answer = () => Object.assign(new Error('The check URL must be an https address.'), { code: 'bot/refused' })
+  answer = () => Object.assign(new Error('Use an https:// address for the outside check.'), { code: 'bot/refused' })
   s.type('Check URL', 'http://example.test/x')
   s.button('Save').props.onClick()
   await settle()
-  assert.match(text(nodes(s.group()).find(node => node.props?.role === 'alert')), /https address/)
+  assert.match(text(nodes(s.group()).find(node => node.props?.role === 'alert')), /https:\/\/ address/)
 })
 
 test('a request row the outside check confirmed shows the label staff set; with no label set it shows none', async t => {

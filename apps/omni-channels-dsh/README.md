@@ -177,8 +177,9 @@ kept):
   shown, logged or warned;
 - a **code pattern**, the same shape as a code list's. There is no default: until the URL, the
   secret and the pattern are all set, nothing changes. With no prefix, nearly any word of the
-  pattern's length is a candidate, so most refused messages would be sent to the service; give the
-  pattern a prefix unless that is what you want;
+  pattern's length is a candidate, so most refused messages would be sent to the service, and
+  those messages would lose the stranger reply; give the pattern a prefix unless that is what you
+  want;
 - optional steps, each skipped when empty: the **label** staff see on a request row the service
   confirmed, a **tier** name written on that row, and **texts on refusal**, one per 4xx status,
   that the person gets when the service answers with that status.
