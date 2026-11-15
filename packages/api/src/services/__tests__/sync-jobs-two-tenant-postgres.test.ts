@@ -261,4 +261,34 @@ postgresDescribe('two-tenant sync-job containment (real PostgreSQL)', () => {
     expect((await service.claimBackfill(second.id, TENANT_B))?.status).toBe('running');
     await service.complete(second.id, TENANT_B);
   });
+  for (const [firstType, secondType] of [
+    ['messages', 'messages'],
+    ['messages', 'all'],
+    ['all', 'messages'],
+    ['all', 'all'],
+  ] as const) {
+    test(`legacy ${firstType}/${secondType} jobs cannot both run on one line`, async () => {
+      const first = await service.create({
+        instanceId: INSTANCE_B,
+        channelType: 'whatsapp-baileys',
+        type: firstType,
+        tenantId: TENANT_B,
+      });
+      const second = await service.create({
+        instanceId: INSTANCE_B,
+        channelType: 'whatsapp-baileys',
+        type: secondType,
+        tenantId: TENANT_B,
+      });
+      const attempts = await Promise.all([service.start(first.id, TENANT_B), service.start(second.id, TENANT_B)]);
+      expect(attempts.map((job) => job.status).sort()).toEqual(['pending', 'running']);
+      const active = await service.getActiveForInstance(INSTANCE_B, TENANT_B);
+      expect(active.filter((job) => job.status === 'running')).toHaveLength(1);
+      const running = attempts.find((job) => job.status === 'running')!;
+      const waiting = attempts.find((job) => job.status === 'pending')!;
+      await service.complete(running.id, TENANT_B);
+      expect((await service.start(waiting.id, TENANT_B)).status).toBe('running');
+      await service.complete(waiting.id, TENANT_B);
+    });
+  }
 });

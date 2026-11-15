@@ -744,7 +744,7 @@ export const chatBackfillParams = z.object({ id: z.string().min(1), jobId: z.str
 /** POST /chats/:id/backfill - Queue one chat history backfill for the chosen range */
 chatsRoutes.post('/:id/backfill', zValidator('json', chatBackfillSchema), async (c) => {
   const raw = c.req.param('id');
-  const chatId = await resolveChatIdParam(c, raw);
+  const chatId = await resolveChatIdInKeyInstances(c, raw);
   if (chatId === null) return chatNotFoundResponse(c, raw);
   const services = c.get('services');
   const chat = await chatForRoute(c, raw, chatId);
@@ -764,7 +764,7 @@ chatsRoutes.post('/:id/backfill', zValidator('json', chatBackfillSchema), async 
 /** GET /chats/:id/backfill/:jobId - Read chat backfill progress and coverage */
 chatsRoutes.get('/:id/backfill/:jobId', zValidator('param', chatBackfillParams), async (c) => {
   const { id: raw, jobId } = c.req.valid('param');
-  const chatId = await resolveChatIdParam(c, raw);
+  const chatId = await resolveChatIdInKeyInstances(c, raw);
   if (chatId === null) return chatNotFoundResponse(c, raw);
   const services = c.get('services');
   const chat = await chatForRoute(c, raw, chatId);
@@ -782,7 +782,7 @@ chatsRoutes.get('/:id/backfill/:jobId', zValidator('param', chatBackfillParams),
 /** POST /chats/:id/backfill/:jobId/cancel - Cancel a queued or fetching chat backfill */
 chatsRoutes.post('/:id/backfill/:jobId/cancel', zValidator('param', chatBackfillParams), async (c) => {
   const { id: raw, jobId } = c.req.valid('param');
-  const chatId = await resolveChatIdParam(c, raw);
+  const chatId = await resolveChatIdInKeyInstances(c, raw);
   if (chatId === null) return chatNotFoundResponse(c, raw);
   const services = c.get('services');
   const chat = await chatForRoute(c, raw, chatId);
