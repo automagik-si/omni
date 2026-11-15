@@ -19,6 +19,9 @@ and needs it; the canvas plugin (`@automagik/omni-canvas-dsh`) sits on this one.
   API. Each call is drawn in the chat as a card. With an Omni named, a Main Bot's Sessions
   lose DSH's shell and file tools and the team's `start_task`: Omni has no computer, and
   says what such work needs so the user can give it to a Bot that has one.
+- **Reading a chat's history**: `read_history` and `save_reading_note`, for a Bot that operates
+  Omni: it reads one chat's whole history a page at a time and keeps a reading note of that chat
+  as it reads (see below).
 - **Automations**: `find_chats`, `list_automations`, `save_automation`, `pause_automation`
   and `delete_automation`; Omni's event streams start a run for each match. The board is a
   tab of DSH's right sidebar beside Omni's chat, and the account menu opens the Automations
@@ -233,6 +236,49 @@ reply; it is listed under **Requests**, and a sender known only by their lid is 
 The plugin makes at most 30 calls a minute, and a chat's calls share the code lists' 5 an hour. A
 blocked or admitted sender is never checked. A failure is warned once per bot, with its status
 only.
+
+## Reading a chat's history
+
+A Bot that operates Omni (a Main Bot or an Omni Bot) reads one chat's history, page by page,
+within an optional date window, and keeps what it learns in a reading note of that chat. Answer
+children never use these tools; they keep `thread_history`. A Bot reads, and keeps a note of,
+only a chat on a channel it may read (`rt.canChannel(bot, channel, 'read')`), so a dedicated
+channel bot stays on its own lines. Reading only reads: nothing is sent, no child wakes, and old
+messages never start an answer.
+
+- `read_history { chat, from?, to?, cursor?, size? }` (size 1-200, default 50) calls
+  `GET /chats/:id/messages` with Omni's page cursor and `includeDeleted=true`, and
+  `GET /chats/:id/coverage`. Pages go back from the newest; each page reads oldest first, one
+  line per message: platform time, sender, text, the media kind with its transcript or
+  description, reactions, and `edited`, `deleted` and `history` (rows Omni took from the
+  channel's history) marks. The header gives the coverage (oldest, newest, count, count in the
+  window, deleted, media without a file), the last contact each way, "page N of about M", the
+  next cursor (which keeps its window and size) and the chat's reading note. When Omni holds
+  nothing for the window, it says to ask the user for a backfill first.
+- `save_reading_note { chat, note, readThrough }` keeps the note (at most 8,000 characters: who
+  the person is to the user, what is open, the last contact, how the user talks to them), the
+  time it reads through, and when it was updated.
+
+The notes live in `omni-reading-notes.json` beside `omni.json` (0600), keyed by Omni chat id:
+never in `state.json`, a log or the roster view. Each save rewrites the file through a
+temporary file and a rename, one at a time in this host; there is no lock across hosts, and a
+host that only reads the team does not save. The tools need an Omni with the page cursor and
+the coverage read, so `engines.omni` names the release this change is cut in.
+
+The shared kit's person card reads one chat's note and coverage through the endpoint
+`omni-reading-note` (a read, so a host that only reads the team serves it too):
+
+```text
+request:  { chat: "<Omni chat id>" }
+response: {
+  chat: { id, name?, channelId? },
+  note: { text, readThrough, updatedAt } | null,
+  coverage: { oldest, newest, count, mediaMissing, deletedCount, lastInbound, lastOutbound } | null
+}
+```
+
+`note` is null until a Bot saves one; `coverage` is null when the Omni cannot give it; `chat`
+holds only its id when the Omni cannot read the chat. Times are ISO strings.
 
 ## Existing channel settings
 
