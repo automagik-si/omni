@@ -30,6 +30,7 @@
         "@omni/channel-slack": "workspace:*",
         "@omni/channel-whatsapp-business": "workspace:*",
         "@omni/connector-clickup": "workspace:*",
+        "@omni/connector-github": "workspace:*",
         "@omni/connector-sdk": "workspace:*",
         "@omni/core": "workspace:*",
         "@omni/db": "workspace:*",
@@ -385,6 +386,18 @@
     },
     "packages/connector-clickup": {
       "name": "@omni/connector-clickup",
+      "version": "2.261114.6",
+      "dependencies": {
+        "@omni/connector-sdk": "workspace:*",
+        "zod": "^3.25.76",
+      },
+      "devDependencies": {
+        "@types/bun": "1.4.4",
+        "typescript": "^5.7.3",
+      },
+    },
+    "packages/connector-github": {
+      "name": "@omni/connector-github",
       "version": "2.261114.6",
       "dependencies": {
         "@omni/connector-sdk": "workspace:*",
@@ -837,6 +850,8 @@
     "@omni/connect": ["@omni/connect@workspace:packages/connect"],
 
     "@omni/connector-clickup": ["@omni/connector-clickup@workspace:packages/connector-clickup"],
+
+    "@omni/connector-github": ["@omni/connector-github@workspace:packages/connector-github"],
 
     "@omni/connector-sdk": ["@omni/connector-sdk@workspace:packages/connector-sdk"],
 
