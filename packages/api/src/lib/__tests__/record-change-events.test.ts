@@ -4,6 +4,7 @@ import {
   type EventMetadata,
   classifyEnvelope,
   createOmniEvent,
+  setEnvelopeInstanceTenantResolver,
   setEnvelopeTenantResolver,
 } from '@omni/core';
 import type { Database } from '@omni/db';
@@ -66,6 +67,7 @@ describe('record notifications follow commit (#1738)', () => {
     test(`post-commit family envelopes reach the correct handler context, multitenancy=${enabled}`, async () => {
       const priorFlag = process.env.OMNI_MULTITENANCY_ENABLED;
       process.env.OMNI_MULTITENANCY_ENABLED = String(enabled);
+      setEnvelopeInstanceTenantResolver(null);
       setEnvelopeTenantResolver(() => currentTenantScope()?.tenantId);
       const instanceId = crypto.randomUUID();
       const delivered: Array<{ type: string; world: string; tenantId: string | null }> = [];
