@@ -92,7 +92,8 @@ async function attach(t, run, omni) {
   return Object.assign(run, { omniState: omni })
 }
 // The site: each call takes the next answer (the last one repeats). An answer is a status, a
-// status with a body, 'timeout' or 'network'.
+// status with a body, 'timeout' or 'network' (before any answer), or 'body-timeout' or
+// 'body-network' (a 200 whose body then fails to arrive).
 function siteFor(b, answers) {
   const site = { calls: [], answers: [...answers] }
   b.channels.waitlistFetch = async (url, init) => {
@@ -100,6 +101,10 @@ function siteFor(b, answers) {
     const next = site.answers.length > 1 ? site.answers.shift() : site.answers[0]
     if (next === 'timeout') throw Object.assign(new Error('The operation was aborted due to timeout'), { name: 'TimeoutError' })
     if (next === 'network') throw new TypeError('fetch failed')
+    if (next === 'body-timeout' || next === 'body-network') {
+      const failure = next === 'body-timeout' ? Object.assign(new Error('The operation was aborted due to timeout'), { name: 'TimeoutError' }) : new TypeError('terminated')
+      return { status: 200, text: async () => { throw failure }, body: { cancel: async () => {} } }
+    }
     const { status, body } = typeof next === 'number' ? { status: next, body: {} } : next
     return { status, text: async () => (typeof body === 'string' ? body : JSON.stringify(body)), body: { cancel: async () => {} } }
   }
@@ -223,6 +228,59 @@ test('waitlist retry: a 503 and a network error are tried again at about 2 s and
   t.mock.timers.tick(1)
   await until(() => b.omniState.sends.length === 1)
   assert.deepEqual([b.site.calls.length, new Set(b.site.calls.map(call => call.body.payload.externalId)).size], [3, 1])
+})
+
+test('waitlist reply: two replies marked at once, the first save failing, keep the second\'s mark: its replay posts nothing', async t => {
+  const b = await bench(t, { site: ['timeout', 'timeout', OK] })
+  await b.deliver(stranger(1, CODE))
+  await b.deliver(stranger(2, CODE))
+  // The first mark's save fails, a few turns later; the second reply settles meanwhile.
+  const save = b.channels.save
+  let failing = true
+  b.channels.save = async () => {
+    if (failing && b.channels.state.omniWaitlistReplied?.includes('WA-stranger-1')) {
+      failing = false
+      for (let turn = 0; turn < 5; turn += 1) await new Promise(resolve => setImmediate(resolve))
+      throw new Error('disk full')
+    }
+    return save()
+  }
+  t.mock.timers.tick(2_000)
+  await until(() => b.site.calls.length === 4 && b.omniState.sends.length === 1)
+  await until(() => saved(b.home).omniWaitlistReplied?.includes('WA-stranger-2'))
+  assert.deepEqual(b.channels.state.omniWaitlistReplied, ['WA-stranger-2'])
+  assert.deepEqual(b.warned.filter(args => /waitlist reply was not sent/.test(args[0])).map(args => args.slice(1)), [[ANSWER_MASTER, 'its mark was not saved']])
+  b.channels.save = save
+  // The second message again: marked, so nothing is called or posted.
+  await b.deliver(stranger(2, CODE))
+  assert.deepEqual([b.site.calls.length, b.omniState.sends.length], [4, 1])
+})
+
+test('waitlist retry: a 200 whose body times out or breaks is a network error, tried again and counted toward the pause; a body read in full but invalid is not', async t => {
+  const b = await bench(t, { site: ['body-timeout', OK] })
+  await b.deliver(stranger(1, CODE))
+  assert.deepEqual([b.site.calls.length, b.omniState.sends.length], [1, 0])
+  t.mock.timers.tick(2_000)
+  await until(() => b.omniState.sends.length === 1)
+  assert.equal(b.site.calls.length, 2)
+  // Three in a row pause the site, warned once.
+  b.site.answers = ['body-network']
+  await b.deliver(stranger(2, CODE))
+  t.mock.timers.tick(2_000)
+  await until(() => b.site.calls.length === 4)
+  t.mock.timers.tick(10_000)
+  await until(() => b.warned.some(args => /not called for 5 minutes/.test(args[0])))
+  assert.deepEqual(b.warned.filter(args => /waitlist/.test(args[0])).map(args => args.slice(1)), [[ANSWER_MASTER, 'no answer']])
+  await b.deliver(stranger(3, CODE))
+  assert.deepEqual([b.site.calls.length, b.omniState.sends.length], [5, 1])
+  // Five minutes on: a body read in full that is no answer is a bad reply, not tried again.
+  t.mock.timers.setTime(Date.now() + 5 * MIN)
+  b.site.answers = [{ status: 200, body: 'not json' }]
+  await b.deliver(stranger(4, CODE))
+  t.mock.timers.tick(2_000)
+  t.mock.timers.tick(10_000)
+  await signal(t, b)
+  assert.deepEqual([b.site.calls.length, b.omniState.sends.length], [6, 1])
 })
 
 test('waitlist refusal: each non-200, a redirect and a bad body send nothing; the message goes on as refused, noted, with no stranger reply', async t => {

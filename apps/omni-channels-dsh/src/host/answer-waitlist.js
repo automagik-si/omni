@@ -81,7 +81,7 @@ export function install(rt) {
   const sites = () => (rt.state.omniWaitlistConfirm ??= {})
   const replied = () => (rt.state.omniWaitlistReplied ??= [])
   const inFlight = new Set(), warned = new Set(), tasks = new Set()
-  let calls = [], failures = 0, pausedUntil = 0, stop = new AbortController()
+  let calls = [], failures = 0, pausedUntil = 0, stop = new AbortController(), marking = Promise.resolve()
 
   const siteOf = (botId) => {
     const site = rt.state.omniWaitlistConfirm?.[botId]
@@ -117,7 +117,8 @@ export function install(rt) {
 
   // One attempt: `{ reply }` on a 200 with one, else `{ status, again }`, the status or a word
   // naming what went wrong, and whether it is tried again (a timeout, a network error, a 503).
-  // Those count toward the pause; any answer of the site's ends the run of failures.
+  // Those count toward the pause, a 200 whose body fails to arrive too; any complete answer of
+  // the site's ends the run of failures.
   async function attempt(site, eventId, body, botId, signal) {
     let response
     try {
@@ -134,17 +135,23 @@ export function install(rt) {
       await response.body?.cancel?.().catch(() => {})
       return failed(botId, '503')
     }
+    let text
+    if (response.status === 200) {
+      // A body that times out or breaks on the way is the network's failure, not a bad reply.
+      try { text = await response.text() } catch (error) {
+        if (signal.aborted) return { status: 'stopped', again: false }
+        return failed(botId, error?.name === 'TimeoutError' || error?.name === 'AbortError' ? 'a timeout' : 'no answer')
+      }
+    }
     failures = 0
     worked('the waitlist site failed 3 times in a row, so it is not called for 5 minutes', botId)
     if (response.status !== 200) {
       await response.body?.cancel?.().catch(() => {})
       return { status: String(response.status), again: false }
     }
+    // Read in full but not an answer: a bad reply, not tried again.
     let parsed
-    try {
-      const text = await response.text()
-      parsed = text.length > ANSWER_MAX_CHARS ? undefined : Answer.safeParse(JSON.parse(text))
-    } catch { parsed = undefined }
+    try { parsed = text.length > ANSWER_MAX_CHARS ? undefined : Answer.safeParse(JSON.parse(text)) } catch { parsed = undefined }
     return parsed?.success ? { reply: parsed.data.reply } : { status: 'a bad reply', again: false }
   }
   function failed(botId, status) {
@@ -174,14 +181,25 @@ export function install(rt) {
     return Buffer.byteLength(body) > WAITLIST_BODY_MAX_BYTES ? undefined : body
   }
 
-  // Marks the message id answered, the newest WAITLIST_REPLIED_MAX kept; true when saved.
-  async function mark(externalId) {
-    const before = replied().slice()
-    rt.state.omniWaitlistReplied = [...before.filter(id => id !== externalId), externalId].slice(-WAITLIST_REPLIED_MAX)
-    try { await rt.save(); return true } catch {
-      rt.state.omniWaitlistReplied = before
-      return false
-    }
+  // Marks the message id answered, the newest WAITLIST_REPLIED_MAX kept: 'marked' once saved,
+  // 'already' when it was marked before, 'failed' when the save failed. One mark at a time, so
+  // a failed save takes back only its own id (and the ids the bound pushed out for it), never
+  // a mark another reply made meanwhile.
+  function mark(externalId) {
+    const run = marking.then(async () => {
+      if (replied().includes(externalId)) return 'already'
+      const before = replied()
+      const next = [...before, externalId].slice(-WAITLIST_REPLIED_MAX)
+      const evicted = before.filter(id => !next.includes(id))
+      rt.state.omniWaitlistReplied = next
+      try { await rt.save(); return 'marked' } catch {
+        const now = replied().filter(id => id !== externalId)
+        rt.state.omniWaitlistReplied = [...evicted.filter(id => !now.includes(id)), ...now]
+        return 'failed'
+      }
+    })
+    marking = run.catch(() => {})
+    return run
   }
 
   // What an attempt's outcome does: a reply is posted once per message id (marked and saved
@@ -193,8 +211,9 @@ export function install(rt) {
       return
     }
     worked('the waitlist site did not confirm', botId)
-    if (replied().includes(row.externalId)) return
-    if (!await mark(row.externalId)) return warn('the waitlist reply was not sent', botId, 'its mark was not saved')
+    const marked = await mark(row.externalId)
+    if (marked === 'already') return
+    if (marked === 'failed') return warn('the waitlist reply was not sent', botId, 'its mark was not saved')
     const why = await sendInChat(rt, row, botId, outcome.reply)
     if (why !== undefined) return warn('the waitlist reply was not sent', botId, why)
     worked('the waitlist reply was not sent', botId)
