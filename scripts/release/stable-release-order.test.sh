@@ -242,13 +242,13 @@ for name, workflow in workflows.items():
             )
 
 candidate_check = image.find("verify-promotion-candidate.sh")
-oci_check = image.find("verify-oci-release.sh")
-provenance_check = image.find("gh attestation verify")
 asset_check = image.find("verify-release-assets.py")
-if min(candidate_check, oci_check, provenance_check, asset_check) < 0:
-    errors.append("promotion verification stages are incomplete")
-elif not candidate_check < oci_check < provenance_check < asset_check:
-    errors.append("promotion does not verify final build inputs, OCI identity, provenance, then release assets in order")
+provenance_check = image.find("gh attestation verify")
+if min(candidate_check, asset_check, provenance_check) < 0:
+    errors.append("software promotion verification stages are incomplete")
+elif not candidate_check < asset_check < provenance_check:
+    errors.append("software promotion must bind source, verify release inventory, then provenance")
+forbid(image, r"oci://|imagetools|verify-oci-release", "software promotion requires an optional image")
 
 for token, message in (
     ("docker/build-push-action", "promotion rebuilds an image"),
@@ -266,7 +266,6 @@ for path in ("deploy/Dockerfile", "package.json", "bun.lock", "packages", "apps"
 require(source_text, r"git merge-base --is-ancestor", "candidate source is not required to be an ancestor of the final main tree")
 require(source_text, r"refs/tags/v\$\{version\}\^\{commit\}", "candidate verifier does not bind the immutable version tag")
 require(image, r"name:\s*Checkout immutable candidate source[\s\S]{0,500}ref:\s*\$\{\{\s*env\.CANDIDATE_SHA\s*\}\}[\s\S]{0,200}path:\s*release-candidate", "promotion does not create a separate immutable candidate checkout")
-require(image, r"verify-oci-release\.sh[\s\S]{0,300}--source-dir\s+\"\$\{GITHUB_WORKSPACE\}/release-candidate\"", "OCI verifier does not run against the separate candidate checkout")
 
 require(release, r"authorize:[\s\S]{0,200}timeout-minutes:", "release authorization network calls have no timeout")
 forbid(release, r"Bare tag pushes fall\s+through to stable", "release documentation still claims bare tags publish stable")

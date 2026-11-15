@@ -135,15 +135,10 @@ require(image, r"timeout-minutes:\s*[0-9]+", "promotion verification has no fini
 forbid(image, r"^\s+CANDIDATE_(?:VERSION|SHA|DIGEST):\s*\S", "promotion workflow hand-pins a candidate version, SHA, or digest")
 require(image, r"candidate_version=\$\(jq -r \.version packages/cli/package\.json\)", "promotion workflow does not derive the candidate version from the tree")
 require(image, r"candidate_sha=\$\(git rev-parse \"refs/tags/v\$\{candidate_version\}\^\{commit\}\"", "promotion workflow does not derive the candidate SHA from the immutable tag")
-require(image, r"candidate_digest=\$\(docker buildx imagetools inspect \"\$\{IMAGE\}:v\$\{CANDIDATE_VERSION\}\" --format '\{\{\.Manifest\.Digest\}\}'\)", "promotion workflow does not derive the candidate digest from the immutable alias")
 require(image, r"jq -r \.version \.well-known/latest\.json\)\" == \"\$\{candidate_version\}\"", "promotion workflow does not require the public channel pin to match the promoted version")
 require(image, r"verify-promotion-candidate\.sh", "final image build inputs are not compared to the candidate")
-require(image, r"verify-oci-release\.sh", "existing immutable OCI alias is not checked")
 require(image, r"name:\s*Checkout immutable candidate source[\s\S]{0,500}path:\s*release-candidate", "immutable OCI verification has no separate candidate checkout")
-require(image, r"--source-dir\s+\"\$\{GITHUB_WORKSPACE\}/release-candidate\"", "immutable OCI verification does not use the candidate checkout")
-require(image, r"gh attestation verify\s+\"oci://\$\{IMAGE\}@\$\{CANDIDATE_DIGEST\}\"", "exact OCI digest provenance is not verified")
-require(image, r"--source-digest\s+\"\$\{CANDIDATE_SHA\}\"", "OCI provenance is not bound to the derived candidate SHA")
-require(image, r"--signer-workflow\s+\"\$\{GITHUB_REPOSITORY\}/\.github/workflows/image-build\.yml\"", "OCI signer workflow identity is not constrained to the candidate minter")
+require(image, r"--source-digest\s+\"\$\{CANDIDATE_SHA\}\"", "release provenance is not bound to the derived candidate SHA")
 require(image, r"verify-release-assets\.py", "existing public release asset inventory is not verified read-only")
 require(image, r"cosign verify-blob", "existing release bundle signatures are not verified")
 require(
@@ -168,182 +163,111 @@ for pattern, message in (
 # image-build.yml is the only public builder and the stable orchestrator: it
 # mints one immutable candidate at an exact v* tag on explicit dispatch and
 # never carries the retired push-to-main publication or the public pin.
-image_build = workflows.get("image-build.yml")
-if image_build is None:
-    errors.append("dispatch-only candidate minting workflow image-build.yml is missing")
-else:
-    require(image_build, r"^on:\n  workflow_dispatch:\n    inputs:\n      version:", "candidate minting is not a dispatch-only workflow keyed by an exact version input")
-    forbid(image_build, r"^  push:\s*$", "candidate minting can run on a branch or tag push")
-    forbid(image_build, r"pull_request", "candidate minting can run on a pull request event")
-    require(image_build, r"^permissions:\s*\{\s*\}\s*$", "candidate minting does not clear top-level token permissions")
-    require(image_build, r"^concurrency:\n(?:  #[^\n]*\n)*  group: image-build-\$\{\{ inputs\.version \}\}\n  cancel-in-progress: false", "candidate minting does not serialize per candidate version without cancellation")
-    require(image_build, r"timeout-minutes:\s*[0-9]+", "candidate minting has no finite job timeout")
-    require(image_build, r"\[\[ \"\$\{GITHUB_EVENT_NAME\}\" == \"workflow_dispatch\" \]\]", "candidate minting does not reject non-dispatch entry")
-    require(image_build, r"\[\[ \"\$\{GITHUB_REF\}\" == \"refs/tags/v\$\{VERSION\}\" \]\]", "candidate minting is not bound to the exact version tag ref")
-    require(image_build, r"verify-remote-tag\.sh[\s\S]{0,120}--mode exact", "candidate minting does not bind the remote tag to the build source")
-    require(image_build, r"verify-oci-release\.sh[\s\S]{0,200}--source-dir\s+\"\$\{GITHUB_WORKSPACE\}\"", "candidate minting does not run the immutable identity preflight on the checked-out source")
-    require(image_build, r"grep -qx 'publish_required=true'", "candidate minting can rebuild an already published version alias")
-    require(image_build, r"docker/build-push-action@[0-9a-f]{40}", "candidate minting does not build with the pinned build-push action")
-    require(image_build, r"outputs: type=image,name=\$\{\{ env\.IMAGE \}\},push-by-digest=true,name-canonical=true,push=true", "platform builders do not push only by digest")
-    forbid(image_build, r"^\s+tags:", "platform builders publish a tag before the index merge")
-    # The GHA BuildKit cache is mutable and shared by scope; layers imported
-    # from it would shape an immutable candidate outside its attested source.
-    forbid(image_build, r"cache-(?:from|to):|type=gha", "candidate minting imports or exports a mutable BuildKit cache")
-    require(image_build, r"docker buildx imagetools inspect --raw \"\$\{IMAGE\}@\$\{DIGEST\}\"[\s\S]{0,300}json\.load\([\s\S]{0,400}application/vnd\.oci\.image\.index\.v1\+json[\s\S]{0,600}\{\"linux/amd64\", \"linux/arm64\"\}", "candidate minting does not verify the raw OCI index media type and platforms as JSON")
+image_build = workflows.get("image-build.yml", "")
+require(image_build, r"^on:\n  workflow_dispatch:\n    inputs:\n      version:", "image builds are not dispatch-only")
+forbid(uncommented(image_build), r"^  (?:push|pull_request|workflow_call|schedule):", "image build has an automatic trigger")
+require(image_build, r"required: false\n        default: ''", "image selection does not default to the newest candidate")
+require(image_build, r"releases/latest", "default image source is not the latest stable candidate")
+require(image_build, r'version="\$\{tag#v\}"', "image input does not resolve a version tag")
+require(image_build, r"verify-remote-tag\.sh[\s\S]{0,120}--mode exact", "image build lost exact remote tag binding")
+require(image_build, r"verify-oci-release\.sh", "image build lost immutable source/package/chart preflight")
+require(image_build, r"grep -qx 'publish_required=true'", "image build can overwrite a published version")
+require(image_build, r"outputs: type=image,name=\$\{\{ env\.IMAGE \}\},push-by-digest=true,name-canonical=true,push=true", "platforms do not push only by digest")
+forbid(image_build, r"^\s+tags:|cache-(?:from|to):|type=gha", "release image imports cache or tags a platform")
+require(image_build, r"application/vnd\.oci\.image\.index\.v1\+json[\s\S]{0,600}\{\"linux/amd64\", \"linux/arm64\"\}", "image finalization lost the OCI index/platform check")
+require(image_build, r"subject-digest: \$\{\{ steps\.merge\.outputs\.digest \}\}[\s\S]{0,300}push-to-registry: true", "merged index lost GitHub registry provenance")
+require(image_build, r'\[\[ "\$\{GITHUB_REF\}" == "refs/tags/\$\{tag\}" \]\]', "image workflow no longer starts at its selected tag")
+require(image_build, r'"\$\{sha\}" == "\$\{GITHUB_SHA\}"', "image source SHA is not the attestation event SHA")
+require(image_build, r"gh attestation verify \"oci://\$\{IMAGE\}@\$\{DIGEST\}\"[\s\S]{0,300}--source-digest \"\$\{SOURCE_SHA\}\"", "on-demand image provenance is not independently verified")
+require(image_build, r"group: image-build-version-\$\{\{ needs\.resolve\.outputs\.version \}\}\n      cancel-in-progress: false", "default and explicit requests can race the same version alias")
+forbid(image_build, r"^\s+gh workflow run (?:release|version|release-stable)\.yml|^\s+npm (?:publish|dist-tag)", "image workflow still publishes software")
+expected_image_build_permissions = {
+    "resolve": {"contents": "read"},
+    "build-push": {"contents": "read", "packages": "write"},
+    "merge": {"contents": "read", "packages": "write", "id-token": "write", "attestations": "write"},
+    "finalize": {"contents": "read", "packages": "read", "attestations": "read", "actions": "write"},
+}
+if effective_job_permissions(image_build) != expected_image_build_permissions:
+    errors.append("on-demand image job permissions changed")
+image_build_jobs = job_blocks(image_build)
+build_job = "\n".join(image_build_jobs["build-push"])
+merge_job = "\n".join(image_build_jobs["merge"])
+finalize_job = "\n".join(image_build_jobs["finalize"])
+require(merge_job, r"^    needs: \[resolve, build-push\]$", "index merge does not wait for every platform")
+require(finalize_job, r"^    needs: \[resolve, merge\]$", "finalization does not wait for the attested merged index")
+for output in ("digest", "version", "source_sha"):
+    require(finalize_job, rf"needs\.merge\.outputs\.{output}", f"finalize lost merged {output} output")
+require(merge_job, r"digest: \$\{\{ steps\.merge\.outputs\.digest \}\}", "merged digest output is not the created index digest")
+require(merge_job, r"source_sha: \$\{\{ steps\.source\.outputs\.sha \}\}", "merge lost its validated source SHA output")
+require(merge_job, r"verify-oci-release\.sh", "merge does not re-check alias absence before tagging")
+require(merge_job, r"grep -qx 'publish_required=true'", "merge can overwrite an existing version alias")
+require(merge_job, r"pattern: image-digest-\*\n\s+path: \$\{\{ runner\.temp \}\}/digests\n\s+merge-multiple: true", "merge does not download this run's platform digest artifacts")
+require(build_job, r"name: image-digest-\$\{\{ matrix\.arch \}\}", "platform digest artifacts are not distinct")
+forbid(build_job, r"imagetools\s+create|actions/attest-build-provenance", "a platform builder can tag or attest the combined index")
+require(build_job, r"provenance: true", "platform builds lost BuildKit provenance")
+require(merge_job, r"subject-digest: \$\{\{ steps\.merge\.outputs\.digest \}\}", "attestation is not bound to the merged index")
+require(merge_job, r"EXPECTED_DIGEST: \$\{\{ steps\.merge\.outputs\.digest \}\}", "alias readback is not bound to the created index")
+if image_build.count("docker buildx imagetools create") != 1:
+    errors.append("candidate minting must create exactly one index alias")
+require(merge_job, r'docker buildx imagetools create --tag "\$\{IMAGE\}:v\$\{VERSION\}"', "merge does not create only the exact version alias")
+require(merge_job, r'--metadata-file "\$\{RUNNER_TEMP\}/merge-metadata.json"', "merge does not capture the created digest independently of alias readback")
 
-    require(image_build, r"actions/attest-build-provenance@[0-9a-f]{40}[\s\S]{0,300}push-to-registry:\s*true", "candidate minting does not register GitHub provenance in the registry")
-    require(image_build, r"verify-oci-alias\.sh", "candidate minting does not read back the published alias digest")
-    require(image_build, r"gh attestation verify\s+\"oci://\$\{IMAGE\}@\$\{DIGEST\}\"[\s\S]{0,300}--signer-workflow\s+\"\$\{GITHUB_REPOSITORY\}/\.github/workflows/image-build\.yml\"", "candidate minting does not independently verify its own OCI provenance identity")
-    require(image_build, r"verify-tag-ruleset\.py", "candidate minting does not require the active immutable v* tag ruleset")
-    require(image_build, r"gh workflow run release\.yml[\s\S]{0,400}--field channel=stable[\s\S]{0,300}--field orchestrator_run_id=\"\$\{GITHUB_RUN_ID\}\"", "candidate minting does not orchestrate the stable release against its own run")
-    require(image_build, r"id: npm-existing[\s\S]{0,300}reconcile-npm-stable\.sh[\s\S]{0,200}--verify-only[\s\S]{0,400}3\|75\) echo \"verified=false\"", "candidate minting does not verify an existing stable npm package before dispatching")
-    require(image_build, r"- name: Publish stable npm\n\s+if: steps\.npm-existing\.outputs\.verified != 'true'", "candidate minting does not skip the npm dispatch for a verified existing package")
-    require(image_build, r"for attempt in 1 2 3; do[\s\S]{0,2000}grep -q 'npm_registry_transient'[\s\S]{0,400}sleep \$\(\(attempt \* 120\)\)", "candidate minting does not retry the npm dispatch only on transient registry failures")
-    require((root / "scripts/release/reconcile-npm-stable.sh").read_text(encoding="utf-8"), r"npm_registry_transient[\s\S]{0,40}exit 75", "npm reconciler has no transient registry exit code")
-    require(image_build, r"gh workflow run version\.yml[\s\S]{0,200}--ref \"refs/tags/v\$\{VERSION\}\"[\s\S]{0,100}--field stable_publish_only=true", "candidate minting does not orchestrate the stable npm publish at the candidate tag")
-    require(image_build, r"gh run list[\s\S]{0,200}--event workflow_dispatch", "candidate minting resolves dispatched runs from gh workflow run stdout instead of the run list")
-    forbid(image_build, r"\brelease_url=\$\(gh workflow run|\bnpm_url=\$\(gh workflow run", "candidate minting still parses gh workflow run stdout as a run id")
-    require(image_build, r'--certificate-identity\s+"https://github\.com/\$\{GITHUB_REPOSITORY\}/\.github/workflows/sign-attest\.yml@refs/tags/v\$\{VERSION\}"', "candidate minting verifies existing release assets with a non-exact signer identity")
-    require(
-        image_build,
-        r'gh attestation verify "\$\{tarball\}" \\\n\s+--bundle "\$\{tarball\}\.provenance\.json" \\\n\s+--repo "\$\{GITHUB_REPOSITORY\}" \\\n\s+--source-digest "\$\{SOURCE_SHA\}" \\\n\s+--signer-workflow "\$\{GITHUB_REPOSITORY\}/\.github/workflows/sign-attest\.yml"',
-        "candidate minting does not verify existing release provenance bundles offline against its own source",
-    )
-    forbid(image_build, r"--certificate-identity-regexp", "candidate minting accepts a regexp signer identity")
-    require(image_build, r"echo \"CANDIDATE_VERSION=\$\{VERSION\}\"\n\s+echo \"CANDIDATE_SHA=\$\{SOURCE_SHA\}\"\n\s+echo \"CANDIDATE_DIGEST=\$\{DIGEST\}\"", "candidate minting does not print the exact promotion pin values")
-    # #1057: the receipt is written as soon as the stable release exists, BEFORE
-    # the npm publication, so a registry race can never hide the digest.
-    receipt_at = image_build.find("- name: Write candidate receipt")
-    npm_dispatch_at = image_build.find("--field stable_publish_only=true")
-    if receipt_at < 0 or npm_dispatch_at < 0 or receipt_at > npm_dispatch_at:
-        errors.append("candidate minting writes the receipt after the stable npm step instead of before it")
-    # #1057: a tag that already carries a dev prerelease is refused in the very
-    # first job step, before checkout and the multi-arch build.
-    first_checkout_at = image_build.find("- uses: actions/checkout@")
-    early_refusal_at = image_build.find("- name: Refuse a tag that already carries a dev prerelease")
-    if early_refusal_at < 0 or first_checkout_at < 0 or early_refusal_at > first_checkout_at:
-        errors.append("candidate minting does not refuse a dev-prerelease tag before its first checkout")
-    else:
-        early_refusal = image_build[early_refusal_at:first_checkout_at]
-        require(early_refusal, r"releases/tags/v\$\{VERSION\}", "the early prerelease refusal does not look up the release at the tag")
-        require(early_refusal, r"\[\[ \"\$\{release_state\}\" != \$'false\\ttrue' \]\] \|\| \{", "the early prerelease refusal does not test the dev-prerelease state")
-        require(early_refusal, r"candidate=true", "the early prerelease refusal does not name the candidate=true recovery")
-        require(early_refusal, r"refusing to guess", "the early prerelease refusal does not fail closed on lookup errors")
-    # #1057: the mint hands the public pin to pin-candidate.yml on dev instead
-    # of asking for a hand-paste; the dispatch must not fail a finished mint.
-    require(image_build, r"gh workflow run pin-candidate\.yml \\\n\s+--repo \"\$\{GITHUB_REPOSITORY\}\" \\\n\s+--ref dev \\\n\s+--field version=\"\$\{VERSION\}\" \|\| \{", "candidate minting does not dispatch pin-candidate.yml on dev without failing the mint")
-    # #1635: the pin needs the stable release and the attested image, not npm.
-    # It is dispatched right after the receipt and BEFORE the stable npm step,
-    # with plain step gating (a failed release step skips it; no always()), so
-    # a slow registry can neither skip the pin nor hide the digest.
-    pin_dispatch_at = image_build.find("- name: Dispatch the candidate pin to dev")
-    if pin_dispatch_at < 0 or receipt_at < 0 or npm_dispatch_at < 0 or not (receipt_at < pin_dispatch_at < npm_dispatch_at):
-        errors.append("candidate minting does not dispatch the pin between the receipt and the stable npm step")
-    forbid(uncommented(image_build), r"always\(\)", "candidate minting gates a step on always() instead of the preceding steps' success")
-    forbid(image_build, r"paste the CANDIDATE_\* values", "candidate minting still asks for a hand-paste of the candidate pin")
-    for pattern, message in (
-        (r"values-prod-gitops|pin-production-image", "candidate minting still writes a public production pin"),
-        (r"secrets:\s*inherit", "candidate minting inherits repository secrets"),
-        (r"pull_request_target", "candidate minting uses pull_request_target"),
-        (r"VERSION_BUMP_PAT", "candidate minting requests the direct-main writer credential"),
-        (r"\bgit\s+push\b", "candidate minting can move a Git ref"),
-        (r"\bgh\s+api\b[^\n]*(?:--method|-X)\s+(?:POST|PATCH|PUT|DELETE)", "candidate minting performs a mutating API call"),
-        (r"\bgh\s+release\s+(?:create|edit|upload|delete)\b", "candidate minting publishes a release directly instead of through release.yml"),
-        (r"\bnpm\s+(?:publish|dist-tag)\b", "candidate minting publishes npm directly instead of through version.yml"),
-        (r"\b(?:kubectl|helm\s+(?:upgrade|install)|docker\s+service\s+update|aws\s+)", "candidate minting can mutate production infrastructure"),
-        (r"ref:\s*main\b", "candidate minting checks out main instead of the dispatched tag source"),
-        (r"contents:\s*write", "candidate minting grants a Git-writing token"),
-        (r"secrets\.", "candidate minting reads a repository secret instead of github.token"),
-        (r"persist-credentials:\s*true", "candidate minting persists checkout credentials"),
-    ):
-        forbid(image_build, pattern, message)
-    # Platform builders push digests; only merge attests the index under OIDC.
-    # The finalizer independently verifies it and dispatches publishers.
-    expected_image_build_permissions = {
-        "build-push": {"contents": "read", "packages": "write"},
-        "merge": {"contents": "read", "packages": "write", "id-token": "write", "attestations": "write"},
-        "finalize": {"contents": "read", "packages": "read", "attestations": "read", "actions": "write"},
-    }
-    image_build_permissions = effective_job_permissions(image_build)
-    if set(image_build_permissions) != set(expected_image_build_permissions):
-        errors.append(f"candidate minting job set changed: {sorted(image_build_permissions)}")
-    for job_name, expected in expected_image_build_permissions.items():
-        actual = image_build_permissions.get(job_name)
-        if actual != expected:
-            errors.append(f"candidate minting job {job_name} permissions are {actual}, expected exactly {expected}")
-    image_build_jobs = job_blocks(image_build)
-    for job_name in expected_image_build_permissions:
-        block = "\n".join(image_build_jobs.get(job_name, []))
-        require(block, r"^    environment:\s*release\s*$", f"candidate minting job {job_name} does not run in the release environment")
-    build_job = "\n".join(image_build_jobs["build-push"])
-    merge_job = "\n".join(image_build_jobs["merge"])
-    finalize_job = "\n".join(image_build_jobs["finalize"])
-    require(merge_job, r"^    needs: build-push$", "index merge does not wait for every platform")
-    require(finalize_job, r"^    needs: merge$", "finalization does not wait for the attested merged index")
-    for output in ("digest", "version", "source_sha"):
-        require(finalize_job, rf"needs\.merge\.outputs\.{output}", f"finalize lost merged {output} output")
-    require(merge_job, r"digest: \$\{\{ steps\.merge\.outputs\.digest \}\}", "merged digest output is not the created index digest")
-    require(merge_job, r"source_sha: \$\{\{ steps\.source\.outputs\.sha \}\}", "merge lost its validated source SHA output")
-    require(merge_job, r"verify-oci-release\.sh", "merge does not re-check alias absence before tagging")
-    require(merge_job, r"grep -qx 'publish_required=true'", "merge can overwrite an existing version alias")
-    require(merge_job, r"pattern: image-digest-\*\n\s+path: \$\{\{ runner\.temp \}\}/digests\n\s+merge-multiple: true", "merge does not download this run's platform digest artifacts")
-    require(build_job, r"name: image-digest-\$\{\{ matrix\.arch \}\}", "platform digest artifacts are not distinct")
-    forbid(build_job, r"imagetools\s+create|actions/attest-build-provenance", "a platform builder can tag or attest the combined index")
-    require(build_job, r"provenance: true", "platform builds lost BuildKit provenance")
-    require(merge_job, r"subject-digest: \$\{\{ steps\.merge\.outputs\.digest \}\}", "attestation is not bound to the merged index")
-    require(merge_job, r"EXPECTED_DIGEST: \$\{\{ steps\.merge\.outputs\.digest \}\}", "alias readback is not bound to the created index")
-    if image_build.count("docker buildx imagetools create") != 1:
-        errors.append("candidate minting must create exactly one index alias")
-    require(merge_job, r'docker buildx imagetools create --tag "\$\{IMAGE\}:v\$\{VERSION\}"', "merge does not create only the exact version alias")
-    require(merge_job, r'--metadata-file "\$\{RUNNER_TEMP\}/merge-metadata.json"', "merge does not capture the created digest independently of alias readback")
+native_check = workflows.get("image-native-check.yml", "")
+require(native_check, r"^on:\n  pull_request:\n    paths:\n      - .github/workflows/image-build.yml\n      - deploy/Dockerfile\n      - .github/workflows/image-native-check.yml\n", "native PR check trigger or path filters changed")
+forbid(native_check, r"^  (?:workflow_dispatch|push|pull_request_target|workflow_run|schedule):", "native PR check has a non-PR trigger")
+require(native_check, r"^permissions: \{\}$", "native PR check inherits token permissions")
+if effective_job_permissions(native_check) != {"build": {"contents": "read"}}:
+    errors.append("native PR check must have exactly contents:read")
+forbid(uncommented(native_check), r"docker/login-action|secrets\.|github\.token|attest|cache-(?:from|to):|type=gha|setup-qemu-action", "native PR check can authenticate, attest, cache, or emulate")
+require(native_check, r"push: false", "native PR check can publish an image")
+require(native_check, r"outputs: type=oci,dest=\$\{\{ runner\.temp \}\}/image-\$\{\{ matrix\.arch \}\}.tar", "native PR check does not export only a local OCI archive")
+require(native_check, r"provenance: false\n\s+sbom: false", "native PR check produces attestations")
+# Compare all compilation inputs, allowing only publication/metadata to differ.
+# A new build arg, target, secret or action revision must not silently drift.
+def build_inputs(workflow):
+    match = re.search(r"uses: (docker/build-push-action@[0-9a-f]{40})[^\n]*\n        with:\n((?:          [^\n]*\n|            [^\n]*\n)+)", workflow)
+    if not match:
+        errors.append("cannot read native image build action inputs")
+        return {}
+    inputs = dict(re.findall(r"^          ([a-z-]+): (.*)$", match[2], re.MULTILINE))
+    for field in ("push", "outputs", "provenance", "sbom", "labels"):
+        inputs.pop(field, None)
+    return {"action": match[1], **inputs}
+expected_inputs = {"action": "docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8", "context": ".", "file": "deploy/Dockerfile", "platforms": "${{ matrix.platform }}"}
+if build_inputs(build_job) != expected_inputs or build_inputs(native_check) != expected_inputs:
+    errors.append("release and PR compilation inputs differ from the native build contract")
+for workflow in (build_job, native_check):
+    require(workflow, r"runs-on: \$\{\{ matrix\.runner \}\}", "native build does not use its matrix runner")
+    require(workflow, r"- arch: amd64\n\s+platform: linux/amd64\n\s+runner: ubuntu-latest\n\s+- arch: arm64\n\s+platform: linux/arm64\n\s+runner: ubuntu-24.04-arm", "native platform-to-runner mapping changed")
+    forbid(workflow, r"setup-qemu-action", "native build uses emulation")
+    require(workflow, r"docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f", "native builds use different Buildx setup actions")
 
-    native_check = workflows.get("image-native-check.yml", "")
-    require(native_check, r"^on:\n  pull_request:\n    paths:\n      - .github/workflows/image-build.yml\n      - deploy/Dockerfile\n      - .github/workflows/image-native-check.yml\n", "native PR check trigger or path filters changed")
-    forbid(native_check, r"^  (?:workflow_dispatch|push|pull_request_target|workflow_run|schedule):", "native PR check has a non-PR trigger")
-    require(native_check, r"^permissions: \{\}$", "native PR check inherits token permissions")
-    if effective_job_permissions(native_check) != {"build": {"contents": "read"}}:
-        errors.append("native PR check must have exactly contents:read")
-    forbid(uncommented(native_check), r"docker/login-action|secrets\.|github\.token|attest|cache-(?:from|to):|type=gha|setup-qemu-action", "native PR check can authenticate, attest, cache, or emulate")
-    require(native_check, r"push: false", "native PR check can publish an image")
-    require(native_check, r"outputs: type=oci,dest=\$\{\{ runner\.temp \}\}/image-\$\{\{ matrix\.arch \}\}.tar", "native PR check does not export only a local OCI archive")
-    require(native_check, r"provenance: false\n\s+sbom: false", "native PR check produces attestations")
-    # Compare all compilation inputs, allowing only publication/metadata to differ.
-    # A new build arg, target, secret or action revision must not silently drift.
-    def build_inputs(workflow):
-        match = re.search(r"uses: (docker/build-push-action@[0-9a-f]{40})[^\n]*\n        with:\n((?:          [^\n]*\n|            [^\n]*\n)+)", workflow)
-        if not match:
-            errors.append("cannot read native image build action inputs")
-            return {}
-        inputs = dict(re.findall(r"^          ([a-z-]+): (.*)$", match[2], re.MULTILINE))
-        for field in ("push", "outputs", "provenance", "sbom", "labels"):
-            inputs.pop(field, None)
-        return {"action": match[1], **inputs}
-    expected_inputs = {"action": "docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8", "context": ".", "file": "deploy/Dockerfile", "platforms": "${{ matrix.platform }}"}
-    if build_inputs(build_job) != expected_inputs or build_inputs(native_check) != expected_inputs:
-        errors.append("release and PR compilation inputs differ from the native build contract")
-    for workflow in (build_job, native_check):
-        require(workflow, r"runs-on: \$\{\{ matrix\.runner \}\}", "native build does not use its matrix runner")
-        require(workflow, r"- arch: amd64\n\s+platform: linux/amd64\n\s+runner: ubuntu-latest\n\s+- arch: arm64\n\s+platform: linux/arm64\n\s+runner: ubuntu-24.04-arm", "native platform-to-runner mapping changed")
-        forbid(workflow, r"setup-qemu-action", "native build uses emulation")
-        require(workflow, r"docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f", "native builds use different Buildx setup actions")
-    # A dev prerelease at the tag pins its channel classification forever;
-    # finalize must wait for any in-flight release.yml run before reading the
-    # release state, then refuse the prerelease with the recovery command.
-    require(
-        image_build,
-        r"gh run list[^\n]*\\\n\s+--workflow release\.yml --branch \"\$\{tag\}\"[\s\S]{0,400}"
-        r"select\(\.status == \"queued\" or \.status == \"in_progress\"[\s\S]{0,600}sleep 30",
-        "candidate minting does not wait for queued or in-progress release.yml runs at the tag before reading the release state",
-    )
-    require(
-        image_build,
-        r"a dev prerelease already exists at v\$\{VERSION\}; this tag cannot become stable — cut a fresh candidate with \\`gh workflow run version\.yml --ref dev -f candidate=true\\`",
-        "candidate minting does not refuse a tag that already carries a public dev prerelease",
-    )
-    for other in ("release.yml", "release-publish.yml", "version.yml"):
-        require(workflows[other], r"--signer-workflow\s+\"\$\{GITHUB_REPOSITORY\}/\.github/workflows/image-build\.yml\"", f"{other} does not bind the OCI signer to the candidate minter")
-        require(workflows[other], r"verify-orchestrator-run\.py[\s\S]{0,300}--expected-workflow \.github/workflows/image-build\.yml\s*\\\n\s+--allowed-event workflow_dispatch", f"{other} does not require an in-progress dispatch-only image-build orchestrator run")
-    forbid(all_workflows, r"--signer-workflow\s+\"\$\{GITHUB_REPOSITORY\}/\.github/workflows/image-publish\.yml\"", "a workflow still treats the read-only promotion verifier as the OCI signer")
+software = workflows.get("release-stable.yml", "")
+require(software, r"^on:\n  workflow_dispatch:\n    inputs:\n      version:", "software publisher is not tag-dispatched")
+require(software, r'\[\[ "\$\{GITHUB_REF\}" == "refs/tags/v\$\{VERSION\}" \]\]', "software publication is not bound to its exact tag")
+require(software, r"verify-tag-ruleset\.py", "software publication lost tag immutability enforcement")
+require(software, r"verify-remote-tag\.sh[\s\S]{0,120}--mode exact", "software publication lost remote tag binding")
+require(software, r"gh workflow run release\.yml[\s\S]{0,300}--field channel=stable[\s\S]{0,200}orchestrator_run_id=", "software orchestrator does not dispatch the stable release")
+require(software, r"verify-release-assets\.py", "existing stable release assets are not verified before reuse")
+require(software, r"cosign verify-blob", "existing stable release signatures are not verified")
+require(software, r'--certificate-identity\s+"https://github\.com/\$\{GITHUB_REPOSITORY\}/\.github/workflows/sign-attest\.yml@refs/tags/v\$\{VERSION\}"', "existing release signer identity is not exact")
+require(software, r"reconcile-npm-stable\.sh[\s\S]{0,200}--verify-only", "software publication does not verify an existing npm artifact")
+require(software, r"for attempt in 1 2 3; do[\s\S]{0,2000}grep -q 'npm_registry_transient'", "software publication lost bounded transient-only retries")
+require(software, r"gh workflow run version\.yml[\s\S]{0,200}--ref \"refs/tags/v\$\{VERSION\}\"[\s\S]{0,100}--field stable_publish_only=true", "stable npm is not dispatched at its candidate tag")
+require(software, r"gh run list[\s\S]{0,200}--event workflow_dispatch", "publisher run resolution does not use the API run list")
+require(software, r"gh workflow run pin-candidate\.yml", "software publication does not hand off its software pin")
+if not (0 <= software.find("- name: Write candidate receipt") < software.find("- name: Dispatch the candidate pin") < software.find("- name: Install dependencies for stable npm verification")):
+    errors.append("software pin must follow the stable release receipt before any npm work")
+forbid(uncommented(software), r"oci://|imagetools|docker/|expected_digest|image-build\.yml", "software publication still depends on an image")
+if effective_job_permissions(software) != {"publish": {"contents": "read", "attestations": "read", "actions": "write"}}:
+    errors.append("software publication permissions changed")
+require(software, r"environment: release", "software publication lost its existing protected environment")
+for other in ("release.yml", "release-publish.yml", "version.yml"):
+    require(workflows[other], r"verify-orchestrator-run\.py[\s\S]{0,300}--expected-workflow \.github/workflows/release-stable\.yml\s*\\\n\s+--allowed-event workflow_dispatch", f"{other} lost exact software orchestrator authorization")
+    forbid(uncommented(workflows[other]), r"oci://|expected_digest|imagetools", f"{other} still requires an image for software publication")
+for workflow in (image, software, ci):
+    if workflow is not image_build:
+        forbid(uncommented(workflow), r'gh attestation verify "oci://', "software promotion still waits for image provenance")
 
 # image-dev.yml is the dev image channel: one image per merged PR to dev. It
 # has no push trigger (no paths filter, no branches filter), so a direct
@@ -360,24 +284,8 @@ image_dev = workflows.get("image-dev.yml")
 if image_dev is None:
     errors.append("dev image channel workflow image-dev.yml is missing")
 else:
-    dev_trigger_match = re.search(
-        r"^on:\n(?:  #[^\n]*\n)*"
-        r"  workflow_call:\n    inputs:\n(?P<call>(?:      [^\n]*\n)*)"
-        r"(?:  #[^\n]*\n)*"
-        r"  workflow_dispatch:\n    inputs:\n(?P<dispatch>(?:      [^\n]*\n)*)"
-        r"\n*permissions:",
-        image_dev,
-        flags=re.MULTILINE,
-    )
-    if dev_trigger_match is None:
-        errors.append("dev image channel is not triggered by exactly workflow_call plus workflow_dispatch, each with inputs (one image per merged PR, called by version.yml)")
-    else:
-        for entry, body, required in (("workflow_call", dev_trigger_match.group("call"), "true"), ("workflow_dispatch", dev_trigger_match.group("dispatch"), "false")):
-            input_names = re.findall(r"^      ([A-Za-z0-9_-]+):\s*$", body, flags=re.MULTILINE)
-            if input_names != ["ref"]:
-                errors.append(f"dev image channel {entry} inputs are {input_names}; exactly one `ref` input is allowed")
-            require(body, rf"^      ref:\n(?:        #[^\n]*\n)*        description:[^\n]*\n        required: {required}\n        type: string\n", f"dev image channel {entry} `ref` input is not a {'required' if required == 'true' else 'optional'} string")
-        require(dev_trigger_match.group("dispatch"), r"^        default: ''\n", "dev image channel workflow_dispatch `ref` does not default to empty (the current dev head)")
+    require(image_dev, r"^on:\n  workflow_dispatch:\n    inputs:\n      ref:", "dev image channel is not dispatch-only")
+    forbid(image_dev, r"^  workflow_call:", "dev image channel can be called automatically")
     forbid(image_dev, r"^  push:", "dev image channel can run on a push; images are built once per merged PR via the version.yml call, never per commit")
     forbid(image_dev, r"^\s+paths(?:-ignore)?:", "dev image channel carries a paths filter, which only makes sense for a push trigger it must not have")
     forbid(image_dev, r"^\s+branches(?:-ignore)?:", "dev image channel carries a branches filter, which only makes sense for a push trigger it must not have")
@@ -672,78 +580,15 @@ require(
 require(
     version_workflow,
     r"- name: Dispatch release pipeline for the new tag\n(?:        [^\n]*\n)*?          CANDIDATE: \$\{\{ inputs\.candidate \}\}\n[\s\S]{0,600}"
-    r"if \[\[ \"\$\{CANDIDATE\}\" == \"true\" \]\]; then\n\s+echo \"[^\n]*image-build\.yml[^\n]*\"\n\s+exit 0\n\s+fi\n[\s\S]{0,200}gh workflow run release\.yml",
+    r"if \[\[ \"\$\{CANDIDATE\}\" == \"true\" \]\]; then\n\s+echo \"[^\n]*release-stable\.yml[^\n]*\"\n\s+exit 0\n\s+fi\n[\s\S]{0,200}gh workflow run release\.yml",
     "the version workflow dispatches the dev prerelease even for a candidate cut",
 )
 
-# Dev image policy: exactly one image per merged PR to dev. The bump job emits
-# the commit it pushed to dev, and a dedicated `dev-image` job calls the
-# LOCAL reusable image-dev.yml with exactly that commit, after auto-version
-# has fully succeeded (tag push, npm publish, release dispatch), so the build
-# can block none of them. A candidate cut skips it because image-build.yml
-# mints that image at its own tag. Never `gh workflow run`: a dispatch
-# resolves the workflow file against the default branch, where image-dev.yml
-# does not exist until the next promotion.
-require(
-    version_workflow,
-    r"- name: Commit and tag\n        id: bump\n",
-    "the version bump step has no `bump` id to expose the pushed commit",
-)
-require(
-    version_workflow,
-    r"BUMP_SHA=\$\(git rev-parse \"HEAD\^\{commit\}\"\)\n\s+\[\[ \"\$\{BUMP_SHA\}\" =~ \^\[0-9a-f\]\{40\}\$ \]\]\n[\s\S]{0,4000}?"
-    r"\n          done\n[\s\S]{0,1600}"
-    r"\"refs/tags/v\$\{VERSION\}\"\n\n\s+echo \"bump_sha=\$\{BUMP_SHA\}\" >> \"\$GITHUB_OUTPUT\"\n",
-    "the version bump step does not emit the pushed dev commit as bump_sha after both pushes",
-)
-require(
-    version_workflow,
-    r"^  auto-version:\n(?:    [^\n]*\n|\n)*?    outputs:\n(?:      #[^\n]*\n)*      bump_sha: \$\{\{ steps\.bump\.outputs\.bump_sha \}\}\n",
-    "the auto-version job does not expose bump_sha as a job output",
-)
-dev_image_job_match = re.search(
-    r"^  dev-image:\n(?P<body>(?:    [^\n]*\n)*)",
-    version_workflow,
-    flags=re.MULTILINE,
-)
-if dev_image_job_match is None:
-    errors.append("the version workflow has no dev-image job, so no dev image is built per merged PR")
-else:
-    dev_image_job = dev_image_job_match.group("body")
-    require(dev_image_job, r"^    needs: auto-version\n", "the dev-image job does not depend on auto-version")
-    # `inputs` is empty on the merged pull_request trigger, so
-    # `inputs.candidate != true` holds there (null != true) and every merged
-    # PR builds; only an explicit candidate=true dispatch skips.
-    require(dev_image_job, r"^    if: needs\.auto-version\.result == 'success' && inputs\.candidate != true\n", "the dev-image job is not gated on a successful bump and a non-candidate cut")
-    require(dev_image_job, r"^    uses: \./\.github/workflows/image-dev\.yml\n", "the dev-image job does not call the local reusable image-dev.yml")
-    require(dev_image_job, r"^    with:\n      ref: \$\{\{ needs\.auto-version\.outputs\.bump_sha \}\}\n", "the dev-image job does not build exactly the pushed bump commit")
-    if re.findall(r"^      [A-Za-z0-9_-]+:", dev_image_job[dev_image_job.find("    with:"):], flags=re.MULTILINE) != ["      ref:"]:
-        errors.append("the dev-image job passes inputs other than ref to image-dev.yml")
-    forbid(dev_image_job, r"secrets:", "the dev-image job passes secrets to image-dev.yml, which needs only github.token")
-    forbid(dev_image_job, r"^    (?:runs-on|steps):", "the dev-image job runs its own steps instead of only calling image-dev.yml")
-    expected_dev_image_permissions = {"contents": "read", "packages": "write", "id-token": "write", "attestations": "write"}
-    actual_dev_image_permissions = permissions_at(dev_image_job.splitlines(), 4)
-    if actual_dev_image_permissions != expected_dev_image_permissions:
-        errors.append(f"the dev-image job permissions are {actual_dev_image_permissions}, expected exactly {expected_dev_image_permissions}")
-require(
-    version_workflow,
-    r"^  auto-version:\n[\s\S]*- name: Commit and tag\n[\s\S]*- name: Publish to npm via OIDC[\s\S]*- name: Dispatch release pipeline for the new tag\n[\s\S]*^  dev-image:\n[\s\S]*^  publish-stable:",
-    "the dev-image job is not declared after the dev bump job's tag push, npm publish, and release dispatch",
-)
-forbid(version_workflow, r"- name: Dispatch dev image build", "the version workflow still dispatches image-dev.yml instead of calling it")
-# No workflow may dispatch image-dev.yml (it only resolves on the default
-# branch), and no workflow other than version.yml may call it: not the
-# read-only promotion, not the candidate minter, not the release pipeline,
-# not the signer, not CI.
-for other_name in ("image-publish.yml", "image-build.yml", "release.yml", "release-publish.yml", "sign-attest.yml", "ci.yml"):
-    if other_name not in workflows:
-        errors.append(f"{other_name} is missing, so the dev image call boundary cannot be checked")
+# Image production is never called from software publication or merge workflows.
 for other_name, other in workflows.items():
-    forbid(other, r"gh\s+workflow\s+run\s+(?:\S*/)?image-dev\.yml", f"{other_name} dispatches the dev image build; a dispatch resolves against the default branch, and only version.yml may call image-dev.yml, once per merged PR to dev")
-    forbid(other, r"workflows/image-dev\.yml/dispatches", f"{other_name} dispatches the dev image build through the API; only version.yml may call image-dev.yml, once per merged PR to dev")
-    if other_name == "version.yml":
+    if other_name in ("image-build.yml", "image-dev.yml"):
         continue
-    forbid(other, r"^\s+uses:\s*\./\.github/workflows/image-dev\.yml", f"{other_name} calls the dev image build; only version.yml may, once per merged PR to dev")
+    forbid(uncommented(other), r"uses:\s*\./\.github/workflows/image-(?:build|dev)\.yml|gh\s+workflow\s+run\s+image-(?:build|dev)\.yml", f"{other_name} automatically produces an image")
 
 require(release, r"authorize:[\s\S]{0,200}timeout-minutes:\s*[0-9]+", "release authorization has no finite timeout")
 require(release, r"bare tag pushes do not release", "release workflow still misstates bare-tag authorization")
@@ -820,11 +665,6 @@ require(
     r"verify-promotion-candidate\.sh \\\n\s+--candidate-sha \"\$\{candidate_sha\}\" \\\n\s+--final-sha \"\$\(git rev-parse 'HEAD\^\{commit\}'\)\"",
     "the promotion pin gate does not bind the derived candidate to the PR merge commit",
 )
-require(
-    ci,
-    r"gh attestation verify \"oci://\$\{IMAGE\}:v\$\{candidate_version\}\" \\\n\s+--repo \"\$\{GITHUB_REPOSITORY\}\" \\\n\s+--source-digest \"\$\{candidate_sha\}\" \\\n\s+--signer-workflow \"\$\{GITHUB_REPOSITORY\}/\.github/workflows/image-build\.yml\"",
-    "the promotion pin gate does not require the alias to be attested from the tag's source by the minter",
-)
 require(ci, r"pinned_version=\$\(jq -r \.version \.well-known/latest\.json\)", "the promotion pin gate does not require the public channel pin to match the promoted version")
 require(ci, r"candidate=true", "the promotion pin gate error text does not name the one true minting path")
 
@@ -844,12 +684,15 @@ else:
     require(pin_candidate, r"^concurrency:\n  group: version-dev\n  cancel-in-progress: false", "candidate pin does not serialize with the dev version writer under the version-dev group")
     require(pin_candidate, r"timeout-minutes:\s*[0-9]+", "candidate pin has no finite job timeout")
     require(pin_candidate, r"actions/checkout@[0-9a-f]{40}[^\n]*\n\s+with:\n\s+ref: dev\n\s+fetch-depth: 0\n\s+fetch-tags: true\n\s+persist-credentials: false", "candidate pin does not check out dev with full history and tags and without persisted credentials")
-    require(pin_candidate, r"tree_version=\$\(jq -r \.version packages/cli/package\.json\)[\s\S]{0,120}\[\[ \"\$\{tree_version\}\" == \"\$\{VERSION\}\" \]\] \|\| \{", "candidate pin does not refuse a candidate dev has already moved past")
     require(pin_candidate, r"candidate_sha=\$\(git rev-parse \"refs/tags/v\$\{VERSION\}\^\{commit\}\"", "candidate pin does not resolve the candidate from the immutable tag")
     require(pin_candidate, r"verify-remote-tag\.sh[\s\S]{0,120}--mode exact", "candidate pin does not bind the remote tag to the candidate")
-    require(pin_candidate, r"gh attestation verify \"oci://\$\{IMAGE\}@\$\{digest\}\"[\s\S]{0,200}--source-digest \"\$\{candidate_sha\}\"[\s\S]{0,100}--signer-workflow \"\$\{GITHUB_REPOSITORY\}/\.github/workflows/image-build\.yml\"", "candidate pin does not require the alias to be attested from the candidate source by the minter")
     require(pin_candidate, r"== \$'false\\tfalse' \]\] \|\| \{", "candidate pin does not require a public stable release at the tag")
-    require(pin_candidate, r"git add \.well-known/latest\.json \.well-known/dev\.json deploy/helm/omni/values\.yaml marketplace/automagik\.json\n", "candidate pin does not commit exactly the three public channel pin files and the market index")
+    require(pin_candidate, r'if \[\[ "\$\{IMAGE_ONLY\}" != "true" && "\$\{tree_version\}" != "\$\{VERSION\}" \]\]', "software pin does not refuse an obsolete candidate")
+    require(pin_candidate, r"- name: Verify and pin the on-demand image in Helm\n\s+if: inputs.image_only == true", "image pin can verify OCI during software pinning")
+    require(pin_candidate, r"- name: Write the public channel pins\n\s+if: inputs.image_only != true", "image-only pin can rewrite software metadata")
+    require(pin_candidate, r"- name: List the candidate's plugins in the market index\n\s+if: inputs.image_only != true", "image-only pin can rewrite plugin metadata")
+    require(pin_candidate, r'git add deploy/helm/omni/values\.yaml\n\s+else\n\s+git add \.well-known/latest\.json \.well-known/dev\.json marketplace/automagik\.json', "pin modes do not stage disjoint file sets")
+    require(pin_candidate, r'--source-digest "\$\{SOURCE_SHA\}"', "image-only pin does not verify the selected tag source")
     require(pin_candidate, r"bun scripts/marketplace\.ts pin \"v\$\{VERSION\}\"\n\s+bun scripts/marketplace\.ts check\n", "candidate pin does not list Omni's plugins at the candidate's version in the market index")
     require(pin_candidate, r"bun install --frozen-lockfile --ignore-scripts\n", "candidate pin does not install the market tooling without install scripts (they could leave git hooks for the commit)")
     require(pin_candidate, r'git commit -m "chore\(release\): pin candidate v\$\{VERSION\}"', "candidate pin commit is not a conventional chore(release) commit")
@@ -874,7 +717,7 @@ else:
     if pin_permissions != expected_pin_permissions:
         errors.append(f"candidate pin job permissions are {pin_permissions}, expected exactly {expected_pin_permissions}")
 
-    require(pin_candidate, r"^  workflow_call:\n    inputs:\n      version:\n[\s\S]{0,200}    secrets:\n      VERSION_BUMP_PAT:\n        required: true\n", "candidate pin cannot be called in-run by release-candidate.yml with an explicit writer secret")
+    require(pin_candidate, r"^  workflow_call:\n    inputs:\n      version:\n[\s\S]{0,500}    secrets:\n      VERSION_BUMP_PAT:\n        required: true\n", "candidate pin cannot be called in-run by release-candidate.yml with an explicit writer secret")
 
 # release-candidate.yml (#1142): cut -> mint -> pin in one run, orchestration
 # only. The cut and pin are local reusable calls; the mint stays a dispatch of
@@ -903,7 +746,7 @@ else:
     require(cut_job, r"^    with:\n      candidate: true\n", "candidate pipeline cut is not a candidate=true cut")
     mint_job = "\n".join(rc_jobs.get("mint", []))
     require(mint_job, r"^    needs: cut\n", "candidate pipeline mint does not follow the cut")
-    require(mint_job, r"gh workflow run image-build\.yml \\\n\s+--repo \"\$\{GITHUB_REPOSITORY\}\" \\\n\s+--ref \"refs/tags/\$\{tag\}\" \\\n\s+--field version=\"\$\{VERSION\}\"", "candidate pipeline does not dispatch image-build.yml at the exact candidate tag")
+    require(mint_job, r'gh workflow run release-stable\.yml --repo "\$\{GITHUB_REPOSITORY\}" \\\n\s+--ref "refs/tags/\$\{tag\}" --field version="\$\{VERSION\}"', "candidate chain does not dispatch software at the exact tag")
     require(mint_job, r"gh run watch \"\$\{run_id\}\" --repo \"\$\{GITHUB_REPOSITORY\}\" --exit-status", "candidate pipeline does not wait for the mint to succeed")
     pin_job = "\n".join(rc_jobs.get("pin", []))
     require(pin_job, r"^    needs: mint\n", "candidate pipeline pin does not follow the mint")
@@ -926,10 +769,8 @@ else:
         forbid(release_candidate, pattern, message)
     # Idempotent mint (#1209): an existing alias is attestation-verified and
     # its run resumed instead of re-dispatching a refused mint.
-    require(mint_job, r"if docker buildx imagetools inspect \"\$\{IMAGE\}:\$\{tag\}\"[\s\S]{0,300}gh attestation verify \"oci://\$\{IMAGE\}:\$\{tag\}\"[\s\S]{0,200}--source-digest \"\$\{tag_sha\}\"[\s\S]{0,100}--signer-workflow \"\$\{GITHUB_REPOSITORY\}/\.github/workflows/image-build\.yml\"[\s\S]{0,300}refusing to continue", "candidate pipeline mint does not verify an existing alias's attestation before skipping the dispatch")
     require(mint_job, r"completed/success\) exit 0 ;;\n\s+completed/\*\) gh run rerun \"\$\{run_id\}\" --repo \"\$\{GITHUB_REPOSITORY\}\" --failed", "candidate pipeline mint does not resume the existing image-build.yml run on rerun")
-    require(mint_job, r"grep -qiE 'not found\|manifest unknown'[\s\S]{0,300}refusing to guess", "candidate pipeline mint does not fail closed on registry inspection errors")
-    expected_mint = {"actions": "write", "packages": "read", "attestations": "read"}
+    expected_mint = {"contents": "read", "actions": "write"}
     if permissions_at(rc_jobs.get("mint", []), 4) != expected_mint:
         errors.append(f"candidate pipeline mint permissions are {permissions_at(rc_jobs.get('mint', []), 4)}, expected exactly {expected_mint}")
     if permissions_at(rc_jobs.get("pin", []), 4) != {"contents": "read", "packages": "read", "attestations": "read"}:
@@ -969,3 +810,4 @@ print("PASS: read-only public promotion, docs topology, and PR-owned metadata co
 PY
 
 bash "${ROOT}/scripts/release/native-image-merge.test.sh"
+bash "${ROOT}/scripts/release/software-image-decoupling.test.sh"

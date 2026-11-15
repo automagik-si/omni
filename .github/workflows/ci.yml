@@ -827,8 +827,6 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
-      packages: read
-      attestations: read
 
     # A promotion PR (base main) must carry a tree whose candidate was minted.
     # The read-only promotion verifier (image-publish.yml) only runs on push to
@@ -839,7 +837,7 @@ jobs:
     # stale candidate blocks the merge with the recovery command instead.
     #
     # Nothing is hand-pinned (#1057): the candidate is derived from the tree
-    # (package version → immutable v<version> tag → attested registry alias),
+    # (package version → immutable v<version> tag → software pin),
     # exactly as image-publish.yml derives it after the merge.
     #
     # github.base_ref is non-empty only on pull_request events (merge_group
@@ -861,10 +859,9 @@ jobs:
       - name: Bind the tree's minted candidate to the promotion merge commit
         env:
           GH_TOKEN: ${{ github.token }}
-          IMAGE: ghcr.io/${{ github.repository_owner }}/omni-api
         run: |
           set -euo pipefail
-          mint_hint="Mint a candidate for the current dev tip first: gh workflow run version.yml --ref dev -f candidate=true, then gh workflow run image-build.yml --ref refs/tags/v<version> -f version=<version>. The mint pins dev through pin-candidate.yml; nothing is pasted by hand. Then refresh the promotion PR."
+          mint_hint="Mint a candidate for the current dev tip first: gh workflow run version.yml --ref dev -f candidate=true, then gh workflow run release-stable.yml --ref refs/tags/v<version> -f version=<version>. The mint pins dev through pin-candidate.yml; nothing is pasted by hand. Then refresh the promotion PR."
 
           candidate_version=$(jq -r .version packages/cli/package.json)
           candidate_sha=$(git rev-parse "refs/tags/v${candidate_version}^{commit}" 2>/dev/null) || {
@@ -881,17 +878,6 @@ jobs:
             --final-sha "$(git rev-parse 'HEAD^{commit}')" \
             --version "${candidate_version}" || {
             echo "::error::the tree's candidate v${candidate_version} does not bind to this promotion tree (see the verifier output above). ${mint_hint}"
-            exit 1
-          }
-
-          # A tag alone is not a candidate: the registry alias for it must be
-          # attested from exactly that source by the minter, which is what
-          # image-publish.yml re-verifies by digest after the merge.
-          gh attestation verify "oci://${IMAGE}:v${candidate_version}" \
-            --repo "${GITHUB_REPOSITORY}" \
-            --source-digest "${candidate_sha}" \
-            --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/image-build.yml" || {
-            echo "::error::${IMAGE}:v${candidate_version} is not attested from ${candidate_sha} by image-build.yml: the candidate was never minted (or its mint did not finish). ${mint_hint}"
             exit 1
           }
 

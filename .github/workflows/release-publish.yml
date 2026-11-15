@@ -51,12 +51,8 @@ on:
         description: 'Exact verified release source SHA'
         required: true
         type: string
-      expected_digest:
-        description: 'Stable only: exact verified omni-api OCI digest'
-        required: false
-        type: string
       orchestrator_run_id:
-        description: 'Stable only: exact in-progress image-build workflow run'
+        description: 'Stable only: exact in-progress release-stable workflow run'
         required: false
         type: string
       orchestrated:
@@ -114,7 +110,6 @@ jobs:
     permissions:
       contents: write              # gh release create/upload/edit only
       actions: read                 # cross-run signed artifact download
-      packages: read                # OCI verification
       attestations: read            # GitHub attestation verification
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -128,13 +123,11 @@ jobs:
           CHANNEL: ${{ inputs.channel || 'stable' }}
           DRAFT: ${{ inputs.draft }}
           EXPECTED_SHA: ${{ inputs.expected_sha }}
-          EXPECTED_DIGEST: ${{ inputs.expected_digest }}
           ORCHESTRATOR_RUN_ID: ${{ inputs.orchestrator_run_id }}
           RECOVERY_RUN_ID: ${{ inputs.run_id }}
           VERSION: ${{ inputs.version }}
           ORCHESTRATED: ${{ inputs.orchestrated || false }}
           GH_TOKEN: ${{ github.token }}
-          IMAGE: ghcr.io/${{ github.repository_owner }}/omni-api
         run: |
           set -euo pipefail
           entry_args=(
@@ -154,19 +147,14 @@ jobs:
             [[ "${entry_mode}" == "orchestrated" ]]
             [[ "${ACTOR}" == "github-actions[bot]" ]]
             [[ "${EXPECTED_SHA}" =~ ^[0-9a-f]{40}$ ]]
-            [[ "${EXPECTED_DIGEST}" =~ ^sha256:[0-9a-f]{64}$ ]]
             [[ "${ORCHESTRATOR_RUN_ID}" =~ ^[0-9]+$ ]]
             gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${ORCHESTRATOR_RUN_ID}" > "${RUNNER_TEMP}/orchestrator.json"
             scripts/release/verify-orchestrator-run.py \
               --run-json "${RUNNER_TEMP}/orchestrator.json" \
               --repository "${GITHUB_REPOSITORY}" \
               --source-sha "${EXPECTED_SHA}" \
-              --expected-workflow .github/workflows/image-build.yml \
+              --expected-workflow .github/workflows/release-stable.yml \
               --allowed-event workflow_dispatch
-            gh attestation verify "oci://${IMAGE}@${EXPECTED_DIGEST}" \
-              --repo "${GITHUB_REPOSITORY}" \
-              --source-digest "${EXPECTED_SHA}" \
-              --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/image-build.yml"
           elif [[ "${entry_mode}" == "recovery" ]]; then
             [[ "${RECOVERY_RUN_ID}" =~ ^[0-9]+$ ]]
             gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RECOVERY_RUN_ID}" > "${RUNNER_TEMP}/upstream-run.json"

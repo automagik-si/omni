@@ -1,361 +1,137 @@
-# Public launch readiness
+# Public release and image readiness
 
-This change preserves the already-published release candidate and turns the
-public main-branch path into verification only. Production deployment
-authority and the canonical production digest are not owned by this public
-repository.
+Software releases are automatic. Container images are built only on demand.
+Production deployment authority remains separate/private; these workflows do
+not deploy a cluster or move a private production pin.
 
-## The one true promotion path
+## Automatic software publication
 
-Every merged PR to `dev` produces a promotable candidate with no dispatch
-(#1142). `version.yml` makes its usual dev bump (`chore(version): bump to X`),
-and that push fires `.github/workflows/release-candidate.yml`, which in one run:
+Every eligible merged PR to `dev` triggers the version bump. That bump starts
+`release-candidate.yml`, which:
 
-1. **cut** — calls `version.yml` with `candidate=true` (commit
-   `chore(version): cut candidate Y`, tag `vY`, no npm `next`, no dev
-   prerelease);
-2. **mint** — dispatches `image-build.yml` at `refs/tags/vY` and watches it to
-   success (it stays a dispatch; see "Candidate minting" for why);
-3. **pin** — calls `pin-candidate.yml`, which commits the public channel pins
-   to `dev`.
+1. Calls `version.yml` with `candidate=true` to cut an immutable candidate tag,
+   without publishing that candidate as npm `next` or a dev prerelease.
+2. Dispatches `release-stable.yml` at the exact candidate tag and watches it.
+3. Pins the verified software metadata on `dev` through `pin-candidate.yml`.
 
-Then open the `dev` → `main` promotion PR; that is the only manual step. The
-pipeline ignores every other push to `dev` — including its own cut and pin
-commits, so it never loops — and runs under
-`concurrency: release-candidate` with `cancel-in-progress: true`, so a burst of
-merges leaves one surviving candidate for the last tip. The same run can be
-started by hand for the current `dev` tip:
+`release-stable.yml` retains the protected `release` environment, exact tag and
+source binding, immutable tag ruleset, existing release inventory/signature
+verification, and bounded npm retries. It publishes the stable GitHub release
+through `release.yml`, then the stable `@automagik/omni` npm package through
+`version.yml`, then dispatches the software pin. Its receipt records the source,
+version and release timestamp independently of npm success.
+
+The software pin writes `.well-known/latest.json`, `.well-known/dev.json`, and
+`marketplace/automagik.json`. It does not inspect an image or change Helm's image
+selection. The reusable fallback pin in `release-candidate.yml` runs only after
+stable software publication succeeds. Both paths use the existing serialized
+`version-dev` writer and are idempotent.
+
+No automatic software workflow dispatches `image-build.yml` or `image-dev.yml`.
+A `no-release` PR still skips automatic versioning. The merged-PR npm `next`
+path remains separate from stable candidate publication.
+
+## Read-only main promotion
+
+A human reviews and merges a direct `dev` → `main` promotion PR.
+The Promotion Pin Gate and `image-publish.yml` bind the promoted tree to its
+immutable version tag and source, verify signed GitHub release assets and
+GitHub-native tarball provenance, and verify exact stable npm state.
+They never require a container image. Protected source-input drift checks
+remain in `scripts/release/verify-promotion-candidate.sh`.
+
+Promotion neither builds nor publishes artifacts, moves aliases or refs,
+changes a runtime, nor grants production deployment authority.
+
+## Recovering a failed orchestrated release
+
+The candidate summary links the tag-bound `release-stable.yml` run. Find it with:
 
 ```bash
-gh workflow run release-candidate.yml --ref dev
+gh run list --workflow release-stable.yml --branch v<version>
 ```
 
-The individual steps remain dispatchable for manual use:
+Rerun the failed jobs of that software orchestrator, or the failed mint job in
+`release-candidate.yml`. The latter resumes the existing software run for the
+same source. Existing stable release assets and npm package bytes are verified
+before reuse; an existing version is never overwritten. Once stable npm is
+verified, the software pin is dispatched again and commits nothing if current.
+
+Stable publishers use `verify-orchestrator-run.py` to require the exact
+in-progress, tag-bound `release-stable.yml` dispatch. A child publication rerun
+when its parent completed is refused; recover the parent instead.
+
+Only transient registry failures receive bounded retries: readback convergence,
+tarball propagation and publish 5xx errors. A publish PUT 404 can indicate an
+authorization refusal and is not retried as propagation.
+
+## On-demand release images
+
+Open `image-build.yml` in Actions and select the candidate tag in **Use workflow
+from**. The optional `version` input is a `v<version>` tag; empty means the newest
+stable candidate. The workflow must start at that same tag so the GitHub
+attestation certificate binds the build to the selected source SHA. A branch
+start refuses with one line naming the newest candidate tag to pick.
 
 ```bash
-gh workflow run version.yml --ref dev -f candidate=true          # cuts v<version> on dev
-gh workflow run image-build.yml --ref refs/tags/v<version> -f version=<version>
-gh workflow run pin-candidate.yml --ref dev -f version=<version>  # image-build.yml also dispatches this
+# Intentional operation only; software publication never runs this command.
+gh workflow run image-build.yml --ref v<version> -f version=v<version>
 ```
 
-Nothing else mints. A merged-PR bump (or a `version.yml` dispatch without
-`candidate=true`) publishes a dev prerelease at its tag, and that tag can never
-become stable: `image-build.yml` refuses it in its first step with the
-`candidate=true` hint. Any merge to `dev` after the mint bumps the version
-past the candidate, so the Promotion Pin Gate goes red until the pipeline run
-for that merge pins the new candidate; then refresh the promotion PR.
+The native matrix builds amd64 on `ubuntu-latest` and arm64 on
+`ubuntu-24.04-arm`. Platform jobs push by digest without BuildKit cache imports
+or exports. `merge` repeats the immutable source/package/chart and alias-absence
+preflight, creates exactly one version index, captures its digest from Buildx
+metadata, reads the alias back, and attests it. Final verification checks the
+exact index digest, both platforms and GitHub provenance before handing off the
+image-only pin. The image workflow never publishes npm or a GitHub release.
 
-### Recovering a failed orchestrated release
+`pin-candidate.yml` with `image_only=true` verifies the image's tag/source and
+attestation and writes only Helm's image repository and tag. The chart's
+`image.tag` therefore points to the last verified image built on demand, not to
+every software release. It advances when that pin run succeeds. Enterprise
+consumers can select every built image by its immutable digest; private rollout
+and production pins remain operator-controlled.
 
-Find the mint run: the `release-candidate.yml` run's summary links it, or
-`gh run list --workflow image-build.yml --branch v<version>`.
+An already-published image version is refused. If verification or pin dispatch
+fails after the alias was created, rerun failed jobs of the same image run;
+never rebuild or move that version alias. The pin itself can be rerun without
+rebuilding. Default and explicit requests serialize the merge by resolved
+version so they cannot overwrite the same alias.
 
-- **cut failed** (nothing tagged or tag pushed without a mint): rerun the
-  whole pipeline, `gh workflow run release-candidate.yml --ref dev`. A
-  stranded tag with no alias is harmless; the next cut takes the next number.
-- **mint failed**: `gh run rerun <mint run id> --failed`. Never dispatch a new
-  mint for the same version: `build-push` refuses it once the `vX` alias
-  exists. `finalize` dispatches `pin-candidate.yml` as soon as the stable
-  release exists, before the stable npm step, and again on a rerun (a no-op
-  once dev pins the candidate); or run `gh workflow run pin-candidate.yml
-  --ref dev -f version=<version>`.
-- **mint failed in the stable npm step** (the release, receipt and pin are
-  already done): `gh run rerun <release-candidate run id> --failed` also
-  works. The mint job sees the existing `omni-api:v<version>`, verifies its
-  attestation against the tag SHA (mismatch fails loudly), skips the dispatch,
-  and reruns the failed jobs of the existing mint run. On that rerun,
-  `finalize` rebuilds the CLI package byte-identically (`scripts/pack-market.ts`
-  stamps the commit time, not the clock), verifies an already-published npm
-  package in place and skips the publish dispatch; a publish run failing only
-  because the registry is slow or returned a 404/5xx (exit 75,
-  `npm_registry_transient`: a readback that has not converged, a tarball URL
-  still 404, a 5xx on publish) is re-dispatched up to 3 times automatically.
-  The pipeline's own `pin` job runs whenever the stable release exists, so an
-  npm-only failure never leaves the candidate unpinned.
-- **pin failed**: `gh workflow run pin-candidate.yml --ref dev -f
-  version=<version>`. If it reports that `dev` moved past the candidate, a
-  newer merge already started a newer pipeline run; let that one finish.
+Use a candidate cut after the image-only workflow was adopted. The new workflow
+refuses a selected tag without that workflow, but immutable older tags still
+contain the historical workflow copy. A direct dispatch at such an old tag runs
+that historical code; this change cannot retrofit or disable it.
 
-Why rerunning `release.yml` (or the stable `version.yml` publish) alone is
-refused with `orchestrator verification failed: caller run is not in_progress`:
-both re-verify their `orchestrator_run_id` with `verify-orchestrator-run.py`,
-which requires that run to be `image-build.yml`, dispatched, bound to the tag
-SHA, and **still `in_progress`**. A standalone rerun of a child starts after
-the mint run completed, so the binding fails by design — otherwise any
-completed mint could authorize a later stable publication. Rerunning the
-mint's failed jobs puts the same run id back to `in_progress` and re-dispatches
-the children under it, which is why that is the only recovery.
+The path-filtered `image-native-check.yml` PR guard remains a native build check
+only: local OCI output, no login, registry push, secrets or attestations. Its
+compilation inputs match the release build. Registry pushes, index publication,
+attestation and the image pin require proof from a real intentional image run.
 
-## Immutable candidate
+## Optional dev images
 
-The candidate is **derived from the tree**, never hand-pinned (#1057):
+`image-dev.yml` is dispatch-only. It builds an exact commit on `dev`, or its
+current head when no ref is supplied, and produces the `dev-<sha12>` and `dev`
+aliases. It is never part of the automatic version job. Legacy/private consumers
+retain their existing digest until an intentional dispatch and private pin update.
 
-- Version: `packages/cli/package.json` `version` on the promoted tree
-- Source commit: what the immutable `refs/tags/v<version>` resolves to
-  (the active `v*` tag ruleset blocks update and deletion)
-- OCI index: what `ghcr.io/automagik-dev/omni-api:v<version>` resolves to,
-  accepted only when GitHub provenance binds that digest to the source commit
-  above with `image-build.yml` as the signer
-- Public release timestamp: `published_at` of the stable GitHub Release at
-  the tag, written into `.well-known/latest.json` and `.well-known/dev.json`
-  by `pin-candidate.yml`
-- Current values: `jq -r .version .well-known/latest.json` is the pinned
-  public candidate; `git rev-parse refs/tags/v<version>` its source
-- Protected image build inputs: `deploy/Dockerfile`,
-  `deploy/Dockerfile.dockerignore`, root `package.json`, `bun.lock`,
-  `packages/**`, and `apps/**` (the list in
-  `scripts/release/verify-promotion-candidate.sh` is authoritative)
+## npm publisher configuration
 
-The promotion workflow has read-only permissions. It rejects a non-main or
-stale invocation, a moved tag or digest, missing platforms, invalid GitHub
-provenance, invalid signed release assets, non-exact npm state, or any protected
-build-input difference between the candidate and the final main tree. It has no
-build, tag, release, alias, repository-write, cloud, Helm, kubectl, or Argo
-operation.
+The automatic stable path publishes only `@automagik/omni`. Its npm trusted
+publisher is GitHub Actions, owner `automagik-si`, repository `omni`, workflow
+filename `version.yml`, with environment left blank: the npm publisher job has
+no environment. The protected parent `release-stable.yml` does not execute
+`npm publish`. Package metadata must name the same canonical repository.
 
-## Candidate minting
+The investigated publisher runs failed at npm's publish PUT with E404 after
+image production, authorization and package build had succeeded. That is a
+publish authorization failure rather than an image dependency or a tarball
+propagation failure. The canonical GitHub repository redirects from its former
+owner; a stale trusted-publisher binding is a leading inference, not a verified
+account setting. The package repository URL is corrected in code. An owner must
+check npmjs.com settings separately; no token/settings changes or publication
+attempts are part of this change.
 
-The read-only promotion above verifies a candidate; it cannot create one. New
-candidates are minted by the dispatch-only `.github/workflows/image-build.yml`
-("Mint Release Candidate"), which is also the orchestrator identity that the
-stable Release (`release.yml` `authorize`), `release-publish.yml`, and the
-stable npm publisher (`version.yml` `publish-stable`) require: each of them
-verifies an in-progress `image-build.yml` run bound to the candidate SHA and an
-OCI attestation signed by `image-build.yml`.
-
-1. An operator cuts a candidate tag:
-   `gh workflow run version.yml --ref dev -f candidate=true`. This bumps the
-   version and cuts `vX` on `dev`, but skips both the npm `next` publish and
-   the `release.yml` dev-prerelease dispatch so the tag stays reserved for
-   `image-build.yml`. npm trusted publishing (OIDC) can only `npm publish`,
-   never move a dist-tag, so the version must stay unpublished until the
-   mint's stable step runs `npm publish --tag latest` through OIDC.
-   Merged-PR bumps (and dispatches without `candidate=true`) publish npm
-   `next` and a dev prerelease at their tag and are never mintable: a tag's
-   channel classification is immutable
-   (`verify-release-state.py --phase existing`), so `finalize` refuses a tag
-   that already carries a public prerelease with
-   `a dev prerelease already exists at vX; this tag cannot become stable`.
-2. An operator dispatches the mint at that exact tag:
-   `gh workflow run image-build.yml --ref refs/tags/vX -f version=X`.
-   `build-push` refuses any non-dispatch entry, a ref other than
-   `refs/tags/vX`, a tag that does not resolve to the dispatched SHA, a
-   package/chart version that differs from `X`, or an already-published
-   `ghcr.io/automagik-dev/omni-api:vX` alias; then it builds the
-   `linux/amd64,linux/arm64` OCI index, pushes only the `vX` alias, and
-   registers GitHub provenance. `finalize` independently re-verifies the digest,
-   platforms, and signer identity, requires the active immutable `v*` tag
-   ruleset, waits until no `release.yml` run at the tag is queued or in
-   progress, refuses a dev prerelease at the tag, dispatches `release.yml`
-   (`channel=stable`) and `version.yml` (`stable_publish_only=true`) at the
-   same tag, and waits for both. It never creates or moves a tag, pushes a
-   branch, or writes a production pin.
-3. As soon as the stable release exists — before the stable npm step, so an
-   npm registry race never hides the digest — the run writes its receipt
-   (`CANDIDATE_VERSION=`, `CANDIDATE_SHA=`, `CANDIDATE_DIGEST=`,
-   `RELEASE_PUBLISHED_AT=`). The stable npm reconciler
-   (`scripts/release/reconcile-npm-stable.sh`) then polls the registry for
-   roughly 15 minutes of backoff before declaring non-convergence, because
-   npm propagation has taken 5-10 minutes in practice.
-4. After the npm step, the run dispatches `pin-candidate.yml` on `dev`. That
-   workflow re-verifies the candidate from public state alone (immutable tag,
-   attested alias, public stable release), refuses a candidate `dev` has
-   already moved past, and commits `chore(release): pin candidate v<version>`
-   directly to `dev` — `.well-known/latest.json`, `.well-known/dev.json`, and
-   `deploy/helm/omni/values.yaml` `image.tag` — with the same machine
-   credential and `version-dev` concurrency group as `version.yml`'s bump. A
-   direct push, not a PR: a merged PR would trigger the merged-PR bump and
-   move `dev` past the candidate again. Until the first promotion carrying
-   `pin-candidate.yml` reaches `main`, the dispatch 404s and the mint prints
-   the manual command (`gh workflow run pin-candidate.yml --ref dev -f
-   version=<version>`) as a warning instead of failing.
-5. Open the `dev` → `main` promotion PR. The Promotion Pin Gate derives the
-   candidate from the PR tree (package version → tag → attested alias), binds
-   it to the merge commit with `verify-promotion-candidate.sh`, and requires
-   `.well-known/latest.json` to pin the same version. On merge,
-   `image-publish.yml` derives the same identity from `main` and verifies it
-   read-only. No workflow, test, or document pins a version, SHA, or digest by
-   hand.
-
-The release build uses native `ubuntu-latest` (amd64) and `ubuntu-24.04-arm`
-(arm64) runners, with no BuildKit cache imports or exports. Each platform is
-pushed by digest; `merge` re-checks that the version alias does not exist,
-creates the single version index, and attests that index. `finalize` independently
-verifies its digest, both platforms and provenance before publication.
-
-The path-filtered `image-native-check.yml` PR guard builds the same Dockerfile
-and platforms on native runners, exporting only local OCI archives. It has no
-registry login, secrets or attestation. Build-input parity is contract-tested.
-This proves the native builds when CI passes; digest pushes, index assembly,
-attestation and stable publication remain pending the first real candidate.
-Rollback is to revert the native-runner PR; never rebuild an existing alias.
-
-Stranded mint recovery: if `finalize` fails after `merge` succeeded (the
-ruleset check, a run-resolution timeout, a concurrent dispatch, or a failed
-`release.yml` run), a fresh `image-build.yml` dispatch is refused by design
-because the `vX` alias now exists. Recover with "Re-run failed jobs" on the
-SAME run: it keeps `GITHUB_RUN_ID` (the `orchestrator_run_id` the stable
-publishers re-verify), the `merge` outputs, and the `in_progress` state
-those publishers require.
-
-All `image-build.yml` jobs run in the `release` environment. The `release`
-environment must be configured with required reviewers before the first mint,
-and its deployment tag policy must allow `v*` tags (all jobs are dispatched
-on a tag ref). The active `v*` tag ruleset must keep its `update` and
-`deletion` rules with no bypass actors; do not add a `creation` rule, because
-`scripts/release/verify-tag-ruleset.py` rejects bypass actors and
-`version.yml` must still be able to push the candidate tag. Until the
-environment is protected, any write collaborator who can dispatch the
-workflow can publish a stable release and move npm `latest`.
-
-## Dev image channel
-
-`.github/workflows/image-dev.yml` ("Publish dev image") is the only producer
-of the dev image channel, and it builds exactly one image per merged PR to
-`dev`. It has no `push:` trigger: `version.yml` calls it as a local reusable
-workflow (`uses: ./.github/workflows/image-dev.yml`) once per dev version cut,
-after the version bump commit and its `v<version>` tag have landed on `dev`,
-passing that bump commit as the `ref` input. Direct commits to `dev` (fixes,
-merge commits, chores) never build an image; the previous dev image stays
-valid until the next merged PR. A manual dispatch rebuilds the current `dev`
-head on demand (`gh workflow run image-dev.yml --ref dev`, or with
-`-f ref=<sha>` for one exact commit already on `dev`; a dispatch only resolves
-once the workflow file is on the default branch, which is why `version.yml`
-calls it instead of dispatching it), and a candidate cut (`version.yml` with
-`candidate=true`) skips the call because `image-build.yml` mints that image at
-its tag. Whatever the entry, the workflow checks out the `dev` branch itself
-and refuses any `ref` that is not a full commit SHA reachable from `dev`.
-
-Each run builds the `linux/amd64` + `linux/arm64` OCI index from the resolved
-`dev` commit, pushes the immutable `ghcr.io/automagik-dev/omni-api:dev-<sha12>`
-alias and the floating `:dev` alias, and registers GitHub-native provenance
-for the index digest (`DEV_IMAGE_DIGEST=` in the run log and step summary). It
-uses only `github.token` with `contents: read, packages: write, id-token:
-write, attestations: write`, runs in no environment, and never creates a tag
-ref, a `v<version>` alias, a release, an npm publication, or public channel
-metadata.
-
-`dev` and `dev-<sha12>` are never promotable: candidates are minted only by
-`image-build.yml` at an exact `v<version>` tag, `image-publish.yml` verifies
-only those, and `verify-promotion-candidate.sh` is unaffected by this channel
-(a dev image is not a candidate and has no version tag to bind). The HML
-instance tracks the channel through the private GitOps repository
-(`git.namastex.io/khal/deploy`), which pins the `dev-<sha12>` alias by digest;
-the `dev` → `main` promotion never carries a dev image.
-
-## Public repository ownership
-
-The generic Helm `image.digest` renderer remains available, but the public
-production pin and its writer were removed. `latest.json` and `dev.json` are
-reconciled to the already-public release in the reviewed dev-to-main change;
-the retired third channel pointer is removed, and release automation no longer
-commits channel metadata after merge. Existing legacy runtime overlays are not
-changed.
-
-## PR #939 final-head review disposition
-
-CodeRabbit reviewed `1ca278744fc3d389405819c594c1283895d43de5`; the PR's
-final head was `b4dd27cb0e4513017de0ad69ece2a4ab03449f22`.
-
-| Finding | Disposition and evidence |
-| --- | --- |
-| Image jobs lacked timeouts | Fixed/superseded: the build/classification jobs no longer exist; the single read-only verification job has `timeout-minutes: 30`. |
-| `gh workflow run` stdout was parsed as a run ID | Fixed by removal: the promotion workflow contains no dispatch or `gh run watch`; it verifies existing state directly. |
-| Release authorization lacked a timeout | Fixed with a finite job timeout. |
-| Bare-tag comment incorrectly claimed stable fallback | Fixed: the workflow states that stable requires authorized dispatch and bare tags do not release. |
-| Version channel-selector comment was orphaned | Fixed by removing the stale comment and third-channel selector. |
-| Version workflow had a trailing blank line | Fixed; the file ends after its final content plus one newline. |
-| Helm test duplicated release values | Superseded by the ownership correction: the test binds the chart's default `image.tag` to the verified public candidate in `.well-known/latest.json` (decoupled from `Chart.appVersion`, which is stamped on every dev bump although no image is built until an operator dispatches `image-build.yml` at that tag), supplies a generic valid digest, and asserts that no public production pin exists. |
-| Orchestrated release plus recovery run ID lacked coverage | Fixed with a negative regression test. |
-| Pin test did not set `GITHUB_OUTPUT` | Disproved at final head: `b4dd27cb` deliberately unsets runner-inherited `GITHUB_OUTPUT`, and the helper falls back to `/dev/stdout`. Extracting `scripts/release/pin-production-image{,.test}.sh` with `git archive b4dd27cb0e4513017de0ad69ece2a4ab03449f22` and running the extracted test returns exactly `PASS: race-safe production digest pin contract`. The obsolete pin and test are removed by this ownership change. |
-| npm post-publish readback had no retry | Fixed with bounded retries and backoff that tolerate transient registry 404/stale reads. |
-| npm downloads lacked curl bounds | Fixed with connection/total timeouts and three retries for tarball, key, and packument reads. |
-| npm provenance ran only after publish | Fixed: attestation and SLSA checks run for `publish`, `repair_latest`, and `none`. |
-| Shell-input contract missed YAML run forms | Fixed: the test covers inline, literal, folded, and chomping block scalars; workflows pass inputs through typed environment variables. |
-| npm signing-key expiry ignored publication time | Fixed: the verifier reads the packument publication timestamp, rejects keys expired before publication, and accepts keys valid at publication time. |
-| npm `latest` could move backward | Fixed: a newer `latest` is rejected with version ordering; only an older alias is repairable. |
-| Detached root/merge source failed without a diagnostic | Fixed: detached repair requires exactly one parent and reports a clear source-parent error. |
-
-All changed regression tests were first run against the merged PR baseline and
-failed for the intended missing contract before the implementation was applied.
-
-## FIX-FIRST supply-chain remediation
-
-The independent final-head review of `0db5804e93b97afc67be570a40a37b631d71ee8b`
-identified four additional blockers. They are closed as follows:
-
-- The final `main` checkout remains the root control tree, while
-  `image-publish.yml` creates a second `release-candidate` checkout at the
-  candidate SHA (derived from the tree's version tag since #1057;
-  `b8c1bf20cd42b1e30974fc8d67f2b7d0fb620031` when this remediation landed for
-  `v2.260830.2`). The root-owned OCI verifier now
-  requires an explicit source directory and changes into that historical
-  checkout before checking `HEAD`, the immutable tag, package/chart versions,
-  and the registry alias. Its integration fixture executes final control code
-  from a different Git checkout and failed with usage status 2 before the new
-  source-context contract was implemented.
-- Release notes now derive their tag exclusively from the version emitted by
-  the signing workflow after publication completes. A dispatch-supplied version
-  must be numeric and exactly equal that signed/published version. No GitHub
-  expression is interpolated into shell source anywhere in the workflow set;
-  values cross the shell boundary only through step environments. The policy
-  fixture covers inline, literal, folded, chomping, direct-input, step-output,
-  and job-output expressions.
-- Every action and reusable-workflow reference in every `.yml` or `.yaml`
-  workflow is audited for a 40-character commit pin. Commitlint now uses
-  [`actions/checkout` v4.3.1 at `34e1148…`](https://github.com/actions/checkout/commit/34e114876b0b11c390a56381ad16ebd13914f8d5)
-  and the peeled
-  [`wagoid/commitlint-github-action` v6.2.1 commit `b948419…`](https://github.com/wagoid/commitlint-github-action/commit/b948419dd99f3fd78a6548d48f94e3df7f6bf3ed).
-- Every workflow declares explicit top-level permissions; write grants are
-  job-local. Checkout credentials are not persisted. The three reusable calls
-  no longer use `secrets: inherit`, and called workflows use the scoped
-  `github.token` for artifact access instead of requesting inherited secrets.
-
-The TDD policy and integration changes were run before workflow implementation:
-the candidate-context fixture failed because `--source-dir` was absent, the
-workflow contract failed because no candidate checkout existed, and the
-repository-wide policy rejected the transitive release output, both mutable
-Commitlint refs, missing permissions, inherited secrets, and every other shell
-expression exposed by expanding the audit to all workflows.
-
-### Zizmor classification
-
-Zizmor `1.29.0` reports zero high, medium, or low findings. Its sole remaining
-result is the informational `use-trusted-publishing` recommendation for the
-manual SDK publish. The workflow documents that the SDK package does not yet
-have an npm trusted-publisher entry and therefore keeps its existing narrowly
-scoped `NPM_TOKEN` path; npm's
-[`Trusted publishing` documentation](https://docs.npmjs.com/trusted-publishers/)
-confirms that an npm-side workflow trust relationship must be configured before
-OIDC publication can authenticate. Creating that external setting is outside
-this repository-only, no-settings run, so the informational migration note is
-classified as a future operational hardening item rather than an unresolved
-repository finding.
-
-## Validation evidence
-
-The final worktree passed the following local, non-mutating gates:
-
-- `git diff --check` — clean except for the intentional trailing-whitespace
-  fixture inside `scripts/release/stable-release-order.test.sh` (the
-  `run: |  ` block-scalar case of the run-expression matcher self-test), which
-  is exempt by design
-- `bun scripts/verify-versions.ts` — every tracked version field agrees with
-  `packages/cli/package.json`. The value itself follows each dev bump, so it
-  is not a fixed claim of this document; the pinned public candidate is
-  whatever `.well-known/latest.json` names
-- every `scripts/release/*.test.sh`
-- `scripts/ci/test-helm-image-digest.sh` with Helm `v3.16.4` pinned to the
-  repository's CI checksum
-- actionlint `1.7.7` against every `.github/workflows/*.yml`
-- zizmor `1.29.0` against the complete workflow directory (one informational
-  SDK trusted-publishing migration note; zero low/medium/high findings)
-- `bun run typecheck`
-- `bunx biome check .`
-- `bunx knip`
-- `bun run build`
-
-The build gate's generated rewrite was discarded. A final Git comparison
-confirms that every protected image build input is byte-identical to the
-candidate source, and the legacy HML runtime paths are byte-identical to the
-merged baseline.
+The standalone `@omni/sdk` publisher is manual and outside this release chain;
+its token-based setup remains unchanged.

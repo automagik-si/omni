@@ -4,10 +4,9 @@ set -euo pipefail
 # Helm image contract for the public chart.
 #
 # Static section (python3 only, no helm): the chart's default image.tag must be
-# pinned to the verified public candidate in .well-known/latest.json and must
+# an explicit version of the last on-demand image and must
 # NOT be derived from Chart.appVersion — appVersion is stamped on every dev bump
-# (version.yml → scripts/sync-versions.ts) while no workflow in this public
-# repository builds images, so v<appVersion> is not guaranteed to exist.
+# (version.yml → scripts/sync-versions.ts) while images are built only on demand, so v<appVersion> is not guaranteed to exist.
 #
 # Rendering section (needs helm — CI passes HELM_BIN): default render uses the
 # pinned tag, image.digest wins and is validated, prod overlays render with a
@@ -26,18 +25,6 @@ fail() {
 }
 
 # ---- static contract (no helm) ----------------------------------------------
-PUBLIC_VERSION="$(python3 - "${ROOT}/.well-known/latest.json" <<'PY'
-import json, re, sys
-doc = json.load(open(sys.argv[1], encoding="utf-8"))
-version = str(doc.get("version", ""))
-if doc.get("channel") != "stable" or re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version) is None:
-    raise SystemExit(".well-known/latest.json is not a stable semantic-version manifest")
-print(version)
-PY
-)" || fail "could not read the verified public candidate version from .well-known/latest.json"
-EXPECTED_TAG="v${PUBLIC_VERSION}"
-EXPECTED_TAG_RE="${EXPECTED_TAG//./\\.}"
-
 APP_VERSION="$(python3 - "${CHART}/Chart.yaml" <<'PY'
 import re, sys
 text = open(sys.argv[1], encoding="utf-8").read()
@@ -53,7 +40,7 @@ APP_VERSION_RE="${APP_VERSION//./\\.}"
 # key is not set. Only the top-level `image:` block is inspected (adminUi.image
 # and autopg.image are nested deeper and ignored).
 image_tag_of() {
-  python3 - "$1" <<'PY'
+  python3 - "$1" "${2:-tag}" <<'PY'
 import sys
 lines = open(sys.argv[1], encoding="utf-8").read().splitlines()
 in_image = False
@@ -65,8 +52,9 @@ for line in lines:
         continue
     if line.strip() and not line.startswith(" "):
         break
-    if line.startswith("  tag:"):
-        value = line[len("  tag:"):].split("#", 1)[0].strip()
+    prefix = f"  {sys.argv[2]}:"
+    if line.startswith(prefix):
+        value = line[len(prefix):].split("#", 1)[0].strip()
         if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
             value = value[1:-1]
         print(value)
@@ -77,9 +65,14 @@ PY
 
 DEFAULT_TAG="$(image_tag_of "${CHART}/values.yaml")" || fail "could not parse values.yaml image.tag"
 [[ "${DEFAULT_TAG}" != "<absent>" && -n "${DEFAULT_TAG}" ]] || \
-  fail "values.yaml image.tag is unset, so the default image would track Chart.appVersion (${APP_VERSION}) instead of the verified public candidate"
-[[ "${DEFAULT_TAG}" == "${EXPECTED_TAG}" ]] || \
-  fail "values.yaml image.tag '${DEFAULT_TAG}' does not match the verified public candidate ${EXPECTED_TAG} from .well-known/latest.json"
+  fail "values.yaml image.tag is unset, so the default image would track Chart.appVersion (${APP_VERSION}) instead of the on-demand image"
+[[ "${DEFAULT_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || \
+  fail "values.yaml image.tag must be an explicit version of an on-demand image"
+EXPECTED_TAG="${DEFAULT_TAG}"
+EXPECTED_TAG_RE="${EXPECTED_TAG//./\\.}"
+IMAGE_VERSION="${EXPECTED_TAG#v}"
+IMAGE_REPOSITORY="$(image_tag_of "${CHART}/values.yaml" repository)"
+IMAGE_REPOSITORY_RE="$(python3 -c 'import re,sys; print(re.escape(sys.argv[1]))' "${IMAGE_REPOSITORY}")"
 
 # Realm overlays may hold a different published v-tag, but must never reset
 # tag to "" — that silently re-couples the render to Chart.appVersion.
@@ -92,7 +85,7 @@ done
 [[ ! -e "${CHART}/values-prod-gitops.yaml" ]] || \
   fail "public chart still carries a canonical production digest pin"
 
-printf 'PASS: static Helm default-tag contract (image.tag %s = .well-known/latest.json; Chart.appVersion %s is decoupled)\n' \
+printf 'PASS: static Helm default-tag contract (image.tag %s follows the on-demand image; Chart.appVersion %s is decoupled)\n' \
   "${EXPECTED_TAG}" "${APP_VERSION}"
 
 # ---- rendering contract (needs helm) ----------------------------------------
@@ -125,19 +118,19 @@ trap 'rm -rf "${work}"' EXIT
 
 # Default render: the pinned public candidate, never v<Chart.appVersion>.
 render >"${work}/default.yaml"
-assert_count 1 "image: \"ghcr\\.io/automagik-dev/omni-api:${EXPECTED_TAG_RE}\"" "${work}/default.yaml"
-if [[ "${APP_VERSION}" != "${PUBLIC_VERSION}" ]]; then
-  assert_count 0 "image: \"ghcr\\.io/automagik-dev/omni-api:v${APP_VERSION_RE}\"" "${work}/default.yaml"
+assert_count 1 "image: \"${IMAGE_REPOSITORY_RE}:${EXPECTED_TAG_RE}\"" "${work}/default.yaml"
+if [[ "${APP_VERSION}" != "${IMAGE_VERSION}" ]]; then
+  assert_count 0 "image: \"${IMAGE_REPOSITORY_RE}:v${APP_VERSION_RE}\"" "${work}/default.yaml"
 fi
 
 # tag "" is the documented fallback to v<Chart.appVersion> — keep it explicit
 # so a future change to the helper cannot silently alter the fallback.
 render --set-string "image.tag=" >"${work}/fallback.yaml"
-assert_count 1 "image: \"ghcr\\.io/automagik-dev/omni-api:v${APP_VERSION_RE}\"" "${work}/fallback.yaml"
+assert_count 1 "image: \"${IMAGE_REPOSITORY_RE}:v${APP_VERSION_RE}\"" "${work}/fallback.yaml"
 
 render --set-string "image.digest=${VALID_DIGEST}" >"${work}/digest.yaml"
-assert_count 1 "image: \"ghcr\\.io/automagik-dev/omni-api@${VALID_DIGEST}\"" "${work}/digest.yaml"
-assert_count 0 'image: "ghcr\.io/automagik-dev/omni-api:' "${work}/digest.yaml"
+assert_count 1 "image: \"${IMAGE_REPOSITORY_RE}@${VALID_DIGEST}\"" "${work}/digest.yaml"
+assert_count 0 "image: \"${IMAGE_REPOSITORY_RE}:" "${work}/digest.yaml"
 
 for invalid in \
   'sha256:ABCDEF0123456789abcdef0123456789abcdef0123456789abcdef0123456789' \
@@ -163,7 +156,7 @@ render \
   --set-string 'serviceAccount.annotations.eks\.amazonaws\.com/role-arn=arn:aws:iam::000000000000:role/omni-media' \
   >"${work}/prod.yaml"
 
-assert_count 1 "image: \"ghcr\\.io/automagik-dev/omni-api@${VALID_DIGEST}\"" "${work}/prod.yaml"
+assert_count 1 "image: \"${IMAGE_REPOSITORY_RE}@${VALID_DIGEST}\"" "${work}/prod.yaml"
 assert_count 1 '^kind: HorizontalPodAutoscaler$' "${work}/prod.yaml"
 assert_count 1 '^  minReplicas: 2$' "${work}/prod.yaml"
 assert_count 1 '^  maxReplicas: 2$' "${work}/prod.yaml"
@@ -189,6 +182,6 @@ render \
   --set-string 'ingress.annotations.alb\.ingress\.kubernetes\.io/certificate-arn=arn:aws:acm:sa-east-1:000000000000:certificate/00000000-0000-0000-0000-000000000000' \
   --set-string 'serviceAccount.annotations.eks\.amazonaws\.com/role-arn=arn:aws:iam::000000000000:role/omni-media' \
   >"${work}/prod-tag.yaml"
-assert_count 1 "image: \"ghcr\\.io/automagik-dev/omni-api:${EXPECTED_TAG_RE}\"" "${work}/prod-tag.yaml"
+assert_count 1 "image: \"${IMAGE_REPOSITORY_RE}:${EXPECTED_TAG_RE}\"" "${work}/prod-tag.yaml"
 
 printf 'PASS: generic Helm digest rendering contract\n'
