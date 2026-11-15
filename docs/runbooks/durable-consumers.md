@@ -92,6 +92,45 @@ is refused with 400). Leases live on the consumer row (`lease_state`,
 compare-and-set), so pullers on different API replicas coordinate through
 PostgreSQL — no extra broker.
 
+## Audited cursor seek (RFC-0002)
+
+Pause followers and finish their outstanding acks before seeking. Use exactly one
+of these targets to move backward or forward:
+
+```bash
+omni events consumers seek deploy-tracker --to-sequence 120
+omni events consumers seek deploy-tracker --to-time '2026-11-15T10:00:00Z'
+```
+
+API: `POST /api/v2/events/consumers/:name/seek` with exactly one of
+`{"toSequence":120}` or `{"toTime":"2026-11-15T10:00:00Z"}`. The sequence is
+an exclusive cursor: the next pull starts **strictly after** it. A time resolves
+to the **lowest `journal_seq`** whose `receivedAt` is at or after that time;
+the cursor is set to the previous journal row's sequence (or 0 for the first
+row), so the resolved row is the first delivered. The publisher's clock may
+be out of journal order. Later journal rows stamped before the target may
+also replay; no row stamped at or after the target is skipped, subject to the
+consumer's read filters.
+
+To replay the journal's oldest row itself, use `toTime` at the journal's oldest
+`receivedAt`. `toSequence` at the oldest sequence starts after that row.
+
+The bound is the journal's oldest sequence through its head, within the consumer's
+tenant when stamped. Time targets outside its oldest/newest `receivedAt` are
+refused; an empty journal is refused. NATS retention does not set the bound.
+The same keys that may ack that consumer may seek it, including full-access
+keys. Seeking backward preserves tenant, instance, agent/source-grant, type,
+payload, and access-verdict read filters.
+
+A shared consumer with **any outstanding lease** returns 409, including expired
+leases awaiting redelivery. Finish/redeliver and ack those pages first. A seek
+with no outstanding leases resets both cursor and claimed watermark atomically;
+concurrent shared pulls retry against that new position. Each accepted request
+writes a `consumer.seek` config-audit row and publishes `custom.consumer.sought`
+with `consumerId`, `name`, `from`, `to`, `by` (key ID), and `when` (UTC timestamp),
+following the route mutation audit/event pattern. Fan-out followers must be
+stopped first: a previously pulled page can still ack progress after a seek.
+
 ## The model
 
 - **Cursor** = last acked `omni_events.journal_seq`, a monotonic journal

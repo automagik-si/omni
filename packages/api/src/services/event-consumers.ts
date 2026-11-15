@@ -64,10 +64,11 @@ import type {
   SharedLeaseState,
 } from '@omni/db';
 import { agentSourceGrants, durableConsumers, instances, omniEvents } from '@omni/db';
-import { type SQL, and, asc, count, eq, gt, inArray, isNotNull, isNull, lte, or, sql } from 'drizzle-orm';
+import { type SQL, and, asc, count, eq, gt, gte, inArray, isNotNull, isNull, lt, lte, or, sql } from 'drizzle-orm';
 import { unionAll } from 'drizzle-orm/pg-core';
 import { z } from 'zod';
 import type { KeyAgentResolution } from '../lib/key-agent';
+import { SeekConsumerSchema } from '../schemas/openapi/event-consumers';
 import { pairedAgentFlagState } from '../tenancy/feature-flag';
 import { runDetachedFromTenantScope, scopedHandle } from '../tenancy/tenant-scope';
 import { runTenantWorkDb } from '../tenancy/worker-tenant-context';
@@ -708,7 +709,7 @@ export class EventConsumerService {
     if (!row.scoped && caller && caller.instanceIds !== null) {
       throw new OmniError({
         code: ERROR_CODES.FORBIDDEN,
-        message: `Instance-restricted API keys cannot pull, stream, ack or delete unscoped consumer '${name}'. Create a scoped consumer (scoped: true) for this key.`,
+        message: `Instance-restricted API keys cannot pull, stream, ack, seek or delete unscoped consumer '${name}'. Create a scoped consumer (scoped: true) for this key.`,
         context: { name },
         recoverable: false,
       });
@@ -893,6 +894,93 @@ export class EventConsumerService {
       hasMore,
       scanExhausted: hasMore && items.length === 0,
     };
+  }
+
+  /** Resolve only inside this consumer's tenant journal; no event payload is returned. */
+  private async seekTarget(
+    db: Pick<Database, 'select'>,
+    tenantId: string | null,
+    input: z.infer<typeof SeekConsumerSchema>,
+  ): Promise<number> {
+    const tenant = tenantId ? eq(omniEvents.tenantId, tenantId) : undefined;
+    const [bounds] = await db
+      .select({
+        oldest: sql<number | null>`min(${omniEvents.journalSeq})::bigint`,
+        head: sql<number | null>`max(${omniEvents.journalSeq})::bigint`,
+        firstTime: sql<string | null>`min(${omniEvents.receivedAt})`,
+        lastTime: sql<string | null>`max(${omniEvents.receivedAt})`,
+      })
+      .from(omniEvents)
+      .where(tenant);
+    if (bounds?.oldest == null || bounds.head == null) throw new ValidationError('Cannot seek an empty journal');
+    if (input.toSequence !== undefined) {
+      if (input.toSequence < Number(bounds.oldest) || input.toSequence > Number(bounds.head)) {
+        throw new ValidationError(
+          `Seek target must be within journal sequences ${bounds.oldest} through ${bounds.head}`,
+        );
+      }
+      return input.toSequence;
+    }
+    const time = new Date(input.toTime as string);
+    if (time < new Date(bounds.firstTime as string) || time > new Date(bounds.lastTime as string)) {
+      throw new ValidationError('Seek time must be within the journal oldest timestamp and newest timestamp');
+    }
+    // Publisher timestamps can arrive out of order. Start at the earliest
+    // journal position matching the time so later-arriving older stamps never
+    // move the cursor past matching rows already journaled before them.
+    const [row] = await db
+      .select({ sequence: sql<number | null>`min(${omniEvents.journalSeq})::bigint` })
+      .from(omniEvents)
+      .where(and(tenant, gte(omniEvents.receivedAt, time)));
+    if (row?.sequence == null) throw new ValidationError('No journal row at or after the seek time');
+    const [previous] = await db
+      .select({ sequence: sql<number>`coalesce(max(${omniEvents.journalSeq}), 0)::bigint` })
+      .from(omniEvents)
+      .where(and(tenant, lt(omniEvents.journalSeq, Number(row.sequence))));
+    return Number(previous?.sequence ?? 0);
+  }
+
+  /** RFC-0002: explicit backward/forward positioning, serialized with shared lease claims/acks. */
+  async seek(name: string, target: z.infer<typeof SeekConsumerSchema>, caller?: ConsumerCaller) {
+    const input = SeekConsumerSchema.parse(target);
+    const visible = await this.getMutable(name, caller);
+    const result = await this.db.transaction(async (tx) => {
+      // A claim either finishes before this lock (and is refused below), or its
+      // lease-state CAS observes the reset watermark and retries after the seek.
+      const [consumer] = await tx
+        .select()
+        .from(durableConsumers)
+        .where(and(eq(durableConsumers.id, visible.id), consumerAccessClause(caller)))
+        .limit(1)
+        .for('update');
+      if (!consumer || !canAccessConsumer(consumer, caller)) throw new NotFoundError('DurableConsumer', name);
+      if (consumer.shared && consumer.leaseState?.leases.length) {
+        throw new ConflictError(
+          'DurableConsumer',
+          'Cannot seek while shared leases are outstanding; ack every lease first',
+        );
+      }
+      const to = await this.seekTarget(tx, consumer.tenantId, input);
+      const when = new Date();
+      const [updated] = await tx
+        .update(durableConsumers)
+        .set({
+          cursor: to,
+          ...(consumer.shared ? { leaseState: { claimed: to, leases: [] } } : {}),
+          updatedAt: when,
+        })
+        .where(eq(durableConsumers.id, consumer.id))
+        .returning();
+      if (!updated) throw new NotFoundError('DurableConsumer', name);
+      return {
+        data: updated,
+        from: consumer.cursor,
+        to,
+        by: caller?.keyId ?? null,
+        when: when.toISOString(),
+      };
+    });
+    return { ...result, data: await this.withLag(result.data, await this.head(result.data.tenantId), caller) };
   }
 
   /**
