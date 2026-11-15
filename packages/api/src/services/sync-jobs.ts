@@ -17,7 +17,7 @@ import {
   type SyncJobType,
   syncJobs,
 } from '@omni/db';
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import { scopedHandle } from '../tenancy/tenant-scope';
 import { runTenantWorkDb } from '../tenancy/worker-tenant-context';
 
@@ -237,15 +237,11 @@ export class SyncJobService {
         const active = await tx
           .select()
           .from(syncJobs)
-          .where(and(eq(syncJobs.instanceId, job.instanceId), inArray(syncJobs.status, ['pending', 'running'])));
-        const prior = active.some(
-          (other) =>
-            other.id !== id &&
-            (other.status === 'running' ||
-              !other.config.backfill ||
-              other.createdAt < job.createdAt ||
-              (other.createdAt.getTime() === job.createdAt.getTime() && other.id < id)),
-        );
+          .where(and(eq(syncJobs.instanceId, job.instanceId), inArray(syncJobs.status, ['pending', 'running'])))
+          .orderBy(asc(syncJobs.createdAt), asc(syncJobs.id));
+        const prior =
+          active[0]?.id !== id ||
+          active.some((other) => other.id !== id && (other.status === 'running' || !other.config.backfill));
         if (prior) return null;
         const [claimed] = await tx
           .update(syncJobs)

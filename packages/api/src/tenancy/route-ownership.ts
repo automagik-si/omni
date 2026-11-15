@@ -738,6 +738,7 @@ const TENANT_SCOPED_ROUTES: readonly RouteKey[] = [
   'GET /api/v2/chats',
   'GET /api/v2/chats/:id',
   'GET /api/v2/chats/:id/backfill/:jobId',
+  'GET /api/v2/chats/:id/coverage',
   'GET /api/v2/chats/:id/messages',
   'GET /api/v2/chats/:id/participants',
   'GET /api/v2/chats/by-external',

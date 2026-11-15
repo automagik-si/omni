@@ -1110,7 +1110,7 @@ export interface paths {
                                 chatId: string;
                                 /** @description Platform-native message id */
                                 externalId: string;
-                                /** @description Where it came from (platform, api, agent, …) */
+                                /** @description Where it came from: realtime, api, or history (sync, import) */
                                 source: string;
                                 /** @description text, audio, image, video, document, sticker, … */
                                 messageType: string;
@@ -1531,6 +1531,7 @@ export interface paths {
                                     newest: string | null;
                                     count: number;
                                     countInWindow: number;
+                                    deletedCount: number;
                                     mediaMissing: number;
                                     lastInbound: string | null;
                                     lastOutbound: string | null;
@@ -1622,6 +1623,7 @@ export interface paths {
                                     newest: string | null;
                                     count: number;
                                     countInWindow: number;
+                                    deletedCount: number;
                                     mediaMissing: number;
                                     lastInbound: string | null;
                                     lastOutbound: string | null;
@@ -2158,7 +2160,7 @@ export interface paths {
         };
         /**
          * List the messages of a chat
-         * @description Newest first, up to limit; before/after bound the time window and mediaOnly keeps media messages.
+         * @description Newest first, up to limit; before/after bound the time window (both inclusive) and mediaOnly keeps media messages. Pass meta.cursor back as cursor for the next page: it continues after the last item, so messages sharing one time are never repeated or skipped. Deleted messages are left out unless includeDeleted=true.
          */
         get: {
             parameters: {
@@ -2167,6 +2169,10 @@ export interface paths {
                     before?: string;
                     after?: string;
                     mediaOnly?: string;
+                    /** @description true also lists deleted messages, with their deletedAt and status */
+                    includeDeleted?: string;
+                    /** @description meta.cursor from the previous page: continues after its last item */
+                    cursor?: string;
                 };
                 header?: never;
                 path: {
@@ -2176,16 +2182,208 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Messages */
+                /** @description A page of messages */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
                         "application/json": {
+                            /** @description Newest first */
                             items: {
-                                [key: string]: unknown;
+                                /**
+                                 * Format: uuid
+                                 * @description Message UUID
+                                 */
+                                id: string;
+                                /**
+                                 * Format: uuid
+                                 * @description Chat the message belongs to
+                                 */
+                                chatId: string;
+                                /** @description Platform-native message id */
+                                externalId: string;
+                                /** @description Where it came from: realtime, api, or history (sync, import) */
+                                source: string;
+                                /** @description text, audio, image, video, document, sticker, … */
+                                messageType: string;
+                                status: string | null;
+                                /** @description Sent by the instance owner */
+                                isFromMe: boolean;
+                                senderDisplayName: string | null;
+                                /** Format: uuid */
+                                senderPersonId: string | null;
+                                textContent: string | null;
+                                /** @description Transcript of a voice note */
+                                transcription: string | null;
+                                hasMedia: boolean;
+                                /** @description ISO time the platform reports */
+                                platformTimestamp: string | null;
+                                createdAt: string;
+                                senderPlatformUserId?: string | null;
+                                /**
+                                 * Format: uuid
+                                 * @description Set when an agent sent it
+                                 */
+                                senderAgentId?: string | null;
+                                mediaMimeType?: string | null;
+                                /** @description Description of an image */
+                                imageDescription?: string | null;
+                                /** @description Description of a video */
+                                videoDescription?: string | null;
+                                /** @description Text read from a document */
+                                documentExtraction?: string | null;
+                                reactions?: {
+                                    emoji: string;
+                                    platformUserId: string;
+                                    personId?: string;
+                                    displayName?: string;
+                                    /** @description ISO time of the reaction */
+                                    at: string;
+                                }[] | null;
+                                /** @description Reactions per emoji */
+                                reactionCounts?: {
+                                    [key: string]: number;
+                                } | null;
+                                editCount?: number;
+                                /** @description ISO time of the last edit */
+                                editedAt?: string | null;
+                                /** @description ISO time it was deleted; listed only with includeDeleted=true */
+                                deletedAt?: string | null;
                             }[];
+                            meta: {
+                                hasMore: boolean;
+                                /** @description Pass as cursor for the next page; null on the last page */
+                                cursor: string | null;
+                            };
+                        };
+                    };
+                };
+                /** @description Invalid query, or a cursor this route did not issue */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                /**
+                                 * @description Error code
+                                 * @example NOT_FOUND
+                                 */
+                                code: string;
+                                /** @description Human-readable error message */
+                                message: string;
+                                /** @description Additional error details */
+                                details?: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Chat not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                /**
+                                 * @description Error code
+                                 * @example NOT_FOUND
+                                 */
+                                code: string;
+                                /** @description Human-readable error message */
+                                message: string;
+                                /** @description Additional error details */
+                                details?: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/chats/{id}/coverage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What Omni holds for a chat
+         * @description Oldest and newest platform times, counts, media still missing a stored file, and the newest message each way. Uses the same rows as GET /chats/{id}/messages, so count is what paging the whole chat returns. Read-only.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    from?: string;
+                    to?: string;
+                    /** @description true also lists deleted messages, with their deletedAt and status */
+                    includeDeleted?: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description The coverage */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                /** @description ISO platform time of the oldest stored message */
+                                oldest: string | null;
+                                /** @description ISO platform time of the newest stored message */
+                                newest: string | null;
+                                /** @description Stored messages, as paging the whole chat returns them */
+                                count: number;
+                                /** @description Those between from and to, both inclusive */
+                                countInWindow: number;
+                                /** @description Media messages with no stored file */
+                                mediaMissing: number;
+                                /** @description Deleted messages, counted whatever includeDeleted says */
+                                deletedCount: number;
+                                /** @description ISO platform time of the newest message not sent from the account */
+                                lastInbound: string | null;
+                                /** @description ISO platform time of the newest message sent from the account */
+                                lastOutbound: string | null;
+                            };
+                        };
+                    };
+                };
+                /** @description Invalid query */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                /**
+                                 * @description Error code
+                                 * @example NOT_FOUND
+                                 */
+                                code: string;
+                                /** @description Human-readable error message */
+                                message: string;
+                                /** @description Additional error details */
+                                details?: unknown;
+                            };
                         };
                     };
                 };
@@ -2623,7 +2821,7 @@ export interface paths {
                                 chatId: string;
                                 /** @description Platform-native message id */
                                 externalId: string;
-                                /** @description Where it came from (platform, api, agent, …) */
+                                /** @description Where it came from: realtime, api, or history (sync, import) */
                                 source: string;
                                 /** @description text, audio, image, video, document, sticker, … */
                                 messageType: string;
@@ -2714,7 +2912,7 @@ export interface paths {
                                 chatId: string;
                                 /** @description Platform-native message id */
                                 externalId: string;
-                                /** @description Where it came from (platform, api, agent, …) */
+                                /** @description Where it came from: realtime, api, or history (sync, import) */
                                 source: string;
                                 /** @description text, audio, image, video, document, sticker, … */
                                 messageType: string;
@@ -7298,6 +7496,85 @@ export interface components {
             /** Format: uuid */
             personId: string | null;
         };
+        ChatMessage: {
+            /**
+             * Format: uuid
+             * @description Message UUID
+             */
+            id: string;
+            /**
+             * Format: uuid
+             * @description Chat the message belongs to
+             */
+            chatId: string;
+            /** @description Platform-native message id */
+            externalId: string;
+            /** @description Where it came from: realtime, api, or history (sync, import) */
+            source: string;
+            /** @description text, audio, image, video, document, sticker, … */
+            messageType: string;
+            status: string | null;
+            /** @description Sent by the instance owner */
+            isFromMe: boolean;
+            senderDisplayName: string | null;
+            /** Format: uuid */
+            senderPersonId: string | null;
+            textContent: string | null;
+            /** @description Transcript of a voice note */
+            transcription: string | null;
+            hasMedia: boolean;
+            /** @description ISO time the platform reports */
+            platformTimestamp: string | null;
+            createdAt: string;
+            senderPlatformUserId?: string | null;
+            /**
+             * Format: uuid
+             * @description Set when an agent sent it
+             */
+            senderAgentId?: string | null;
+            mediaMimeType?: string | null;
+            /** @description Description of an image */
+            imageDescription?: string | null;
+            /** @description Description of a video */
+            videoDescription?: string | null;
+            /** @description Text read from a document */
+            documentExtraction?: string | null;
+            reactions?: {
+                emoji: string;
+                platformUserId: string;
+                personId?: string;
+                displayName?: string;
+                /** @description ISO time of the reaction */
+                at: string;
+            }[] | null;
+            /** @description Reactions per emoji */
+            reactionCounts?: {
+                [key: string]: number;
+            } | null;
+            editCount?: number;
+            /** @description ISO time of the last edit */
+            editedAt?: string | null;
+            /** @description ISO time it was deleted; listed only with includeDeleted=true */
+            deletedAt?: string | null;
+        };
+        ChatCoverage: {
+            /** @description ISO platform time of the oldest stored message */
+            oldest: string | null;
+            /** @description ISO platform time of the newest stored message */
+            newest: string | null;
+            /** @description Stored messages, as paging the whole chat returns them */
+            count: number;
+            /** @description Those between from and to, both inclusive */
+            countInWindow: number;
+            /** @description Media messages with no stored file */
+            mediaMissing: number;
+            /** @description Deleted messages, counted whatever includeDeleted says */
+            deletedCount: number;
+            /** @description ISO platform time of the newest message not sent from the account */
+            lastInbound: string | null;
+            /** @description ISO platform time of the newest message sent from the account */
+            lastOutbound: string | null;
+        };
         StoredMessage: {
             /**
              * Format: uuid
@@ -7311,7 +7588,7 @@ export interface components {
             chatId: string;
             /** @description Platform-native message id */
             externalId: string;
-            /** @description Where it came from (platform, api, agent, …) */
+            /** @description Where it came from: realtime, api, or history (sync, import) */
             source: string;
             /** @description text, audio, image, video, document, sticker, … */
             messageType: string;

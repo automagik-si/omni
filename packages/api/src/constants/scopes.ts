@@ -156,6 +156,7 @@ export const SCOPE_MAP: Record<string, string> = {
   'GET /chats/:id/backfill/:jobId': 'chats:read',
   'POST /chats/:id/backfill/:jobId/cancel': 'chats:write',
   'GET /chats/:id/messages': 'chats:read',
+  'GET /chats/:id/coverage': 'chats:read',
   'GET /chats/by-external': 'chats:read',
   'POST /chats/:id/read': 'chats:write',
   'POST /chats/:id/disappearing': 'chats:write',
