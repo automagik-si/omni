@@ -10,6 +10,7 @@ const coverage: ChatCoverage = {
   newest: null,
   count: 0,
   countInWindow: 0,
+  deletedCount: 0,
   mediaMissing: 0,
   lastInbound: null,
   lastOutbound: null,

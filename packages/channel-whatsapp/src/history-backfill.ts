@@ -59,6 +59,29 @@ export interface BackfillRoundTracker {
   lastActivity: number;
 }
 
+async function drainBackfillRound(
+  drain: () => Promise<void>,
+  shouldCancel: () => Promise<boolean>,
+  sleep: (ms: number) => Promise<void>,
+): Promise<boolean> {
+  let settled = false;
+  const pending = drain();
+  pending.then(
+    () => {
+      settled = true;
+    },
+    () => {
+      settled = true;
+    },
+  );
+  while (!settled) {
+    if (await shouldCancel()) return false;
+    await sleep(250);
+  }
+  await pending;
+  return !(await shouldCancel());
+}
+
 export async function fetchChatBackfillRounds(options: {
   anchor: BackfillAnchor;
   since: Date;
@@ -89,8 +112,7 @@ export async function fetchChatBackfillRounds(options: {
       if (await options.shouldCancel()) return;
       await sleep(250);
     }
-    await options.drain();
-    if (await options.shouldCancel()) return;
+    if (!(await drainBackfillRound(options.drain, options.shouldCancel, sleep))) return;
     const oldest: BackfillAnchor | undefined = (options.tracker as BackfillRoundTracker).oldest;
     await options.onRound({
       round,

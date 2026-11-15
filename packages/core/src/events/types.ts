@@ -685,6 +685,7 @@ export interface ChatCoverage {
   newest: string | null;
   count: number;
   countInWindow: number;
+  deletedCount: number;
   mediaMissing: number;
   lastInbound: string | null;
   lastOutbound: string | null;

@@ -59,7 +59,7 @@ describe('history sync media (#1127)', () => {
     expect(createPlugin().shouldDownloadHistoryMedia('inst-1', { chatJid: 'chat', downloadMedia: false })).toBe(true);
   });
 
-  it('a failed file stays a media row and publishes no message event', async () => {
+  it('an enveloped failed file stays a media row and publishes no message event', async () => {
     const plugin = new WhatsAppPlugin();
     const published: string[] = [];
     const noop = () => {};
@@ -79,6 +79,7 @@ describe('history sync media (#1127)', () => {
     // Fail the declared size guard before disk I/O. No phone, service, or shared storage is used.
     const message = imageMessage('expired-backfill', 1_600_000_000);
     message.message!.imageMessage!.fileLength = 2 ** 40;
+    message.message = { associatedChildMessage: { message: message.message } };
     await (
       plugin as unknown as { processHistoryMessage: (id: string, msg: WAMessage, state: unknown) => Promise<void> }
     ).processHistoryMessage('inst-1', message, {

@@ -75,7 +75,7 @@ import {
   createChatTracker,
 } from './utils/history-anchors';
 import { type MentionResolution, resolveMentions } from './utils/mention-resolver';
-import { getDocumentMessage, getMessageContextInfo } from './utils/message';
+import { getDocumentMessage, getMessageContextInfo, withUnwrappedContent } from './utils/message';
 import { type RateLimitManager, createRateLimitManager, isRateLimitError } from './utils/rate-limit';
 
 // Re-export for external consumers that previously imported from this module
@@ -4677,7 +4677,7 @@ export class WhatsAppPlugin extends BaseChannelPlugin {
     if (await this.processHistoryMutation(msg, timestamp, syncState, instanceId)) return;
 
     // Extract basic content info
-    const content = this.extractHistoryMessageContent(msg);
+    const content = this.extractHistoryMessageContent(msg, syncState);
     if (!content) {
       this.logger.debug('Skipping history message - no extractable content', {
         instanceId,
@@ -4871,7 +4871,10 @@ export class WhatsAppPlugin extends BaseChannelPlugin {
    * Simplified version for history sync processing
    * @internal
    */
-  private extractHistoryMessageContent(msg: WAMessage): {
+  private extractHistoryMessageContent(
+    msg: WAMessage,
+    syncState?: { chatJid?: string },
+  ): {
     type: string;
     text?: string;
     mediaUrl?: string;
@@ -4879,7 +4882,7 @@ export class WhatsAppPlugin extends BaseChannelPlugin {
     mimeType?: string;
     caption?: string;
   } | null {
-    const message = msg.message;
+    const message = syncState?.chatJid ? withUnwrappedContent(msg).message : msg.message;
     if (!message) return null;
 
     // Use a lookup approach to reduce complexity

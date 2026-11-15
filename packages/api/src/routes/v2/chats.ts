@@ -18,6 +18,7 @@ import { optionalDateParam } from '../../schemas/date-query';
 import type { Services } from '../../services';
 import { type InstanceOwner, withIsGroup } from '../../services/chats';
 import { isSelfChat } from '../../services/message-context';
+import { decodeChatMessagesCursor } from '../../services/messages';
 import type { AppVariables } from '../../types';
 
 const chatsRoutes = new Hono<{ Variables: AppVariables }>();
@@ -655,6 +656,12 @@ chatsRoutes.patch(
   },
 );
 
+const includeDeletedParam = z
+  .string()
+  .optional()
+  .transform((v) => v === 'true')
+  .describe('true also lists deleted messages, with their deletedAt and status');
+
 export const listMessagesQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(1000).default(100),
   before: optionalDateParam('before'),
@@ -663,6 +670,21 @@ export const listMessagesQuerySchema = z.object({
     .string()
     .optional()
     .transform((v) => v === 'true'),
+  includeDeleted: includeDeletedParam,
+  cursor: z
+    .string()
+    .optional()
+    .transform((v, ctx) => {
+      if (v === undefined || v === '') return undefined;
+      const decoded = decodeChatMessagesCursor(v);
+      if (decoded) return decoded;
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'invalid cursor parameter: pass meta.cursor from the previous page unchanged',
+      });
+      return z.NEVER;
+    })
+    .describe('meta.cursor from the previous page: continues after its last item'),
 });
 
 /**
@@ -672,17 +694,39 @@ chatsRoutes.get('/:id/messages', zValidator('query', listMessagesQuerySchema), a
   const raw = c.req.param('id');
   const chatId = await resolveChatIdParam(c, raw);
   if (chatId === null) return chatNotFoundResponse(c, raw);
-  const { limit, before, after, mediaOnly } = c.req.valid('query');
+  const { limit, before, after, mediaOnly, includeDeleted, cursor } = c.req.valid('query');
   const services = c.get('services');
 
-  const messages = await services.messages.getChatMessages(chatId, {
+  const page = await services.messages.pageChatMessages(chatId, {
     limit,
     before,
     after,
     mediaOnly,
+    includeDeleted,
+    cursor,
   });
 
-  return c.json({ items: messages });
+  return c.json({ items: page.items, meta: { hasMore: page.hasMore, cursor: page.cursor } });
+});
+
+export const chatCoverageQuerySchema = z.object({
+  from: optionalDateParam('from'),
+  to: optionalDateParam('to'),
+  includeDeleted: includeDeletedParam,
+});
+
+/**
+ * GET /chats/:id/coverage - What Omni holds for a chat
+ */
+chatsRoutes.get('/:id/coverage', zValidator('query', chatCoverageQuerySchema), async (c) => {
+  const raw = c.req.param('id');
+  const chatId = await resolveChatIdParam(c, raw);
+  if (chatId === null) return chatNotFoundResponse(c, raw);
+  const { from, to, includeDeleted } = c.req.valid('query');
+
+  const coverage = await c.get('services').messages.getChatCoverage(chatId, { from, to, includeDeleted });
+
+  return c.json({ data: coverage });
 });
 
 export const chatBackfillSchema = z

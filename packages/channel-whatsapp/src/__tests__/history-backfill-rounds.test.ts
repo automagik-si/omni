@@ -65,6 +65,24 @@ describe('chat backfill round driver', () => {
     expect(requests).toBe(1);
   });
 
+  test('cancel stops while an in-flight media download is still draining', async () => {
+    const options = setup();
+    let draining = false;
+    await fetchChatBackfillRounds({
+      ...options,
+      request: async () => {},
+      drain: () => {
+        draining = true;
+        return new Promise<void>(() => {});
+      },
+      shouldCancel: async () => draining,
+      onRound: async () => {
+        throw new Error('cancelled download cannot complete the round');
+      },
+    });
+    expect(draining).toBe(true);
+  });
+
   test('an unanswered round reports zero replies and ends', async () => {
     const rounds: number[] = [];
     await fetchChatBackfillRounds({

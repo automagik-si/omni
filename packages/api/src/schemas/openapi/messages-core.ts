@@ -16,7 +16,7 @@ export const StoredMessageSchema = z.object({
   id: z.string().uuid().openapi({ description: 'Message UUID' }),
   chatId: z.string().uuid().openapi({ description: 'Chat the message belongs to' }),
   externalId: z.string().openapi({ description: 'Platform-native message id' }),
-  source: z.string().openapi({ description: 'Where it came from (platform, api, agent, …)' }),
+  source: z.string().openapi({ description: 'Where it came from: realtime, api, or history (sync, import)' }),
   messageType: z.string().openapi({ description: 'text, audio, image, video, document, sticker, …' }),
   status: z.string().nullable(),
   isFromMe: z.boolean().openapi({ description: 'Sent by the instance owner' }),
