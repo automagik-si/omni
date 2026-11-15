@@ -31,6 +31,40 @@ and needs it; the canvas plugin (`@automagik/omni-canvas-dsh`) sits on this one.
   plugin's welcome (−300) and Connect AI (−200). A skip is kept by `@automagik/welcome-dsh`
   when it is installed, else in this browser.
 
+## Attach a Telegram bot from a wizard host
+
+The host-only `omniChannels.omniTelegramAttach({ token, name, source?, answerBot? })`
+accepts the wizard's hand-off. Call it **only after the person confirms and the old
+Telegram listener's off receipt has arrived**, in that order. It does not check or stop
+the old tool. Creating the Omni instance starts its connection immediately.
+
+Pass the token directly from that hand-off; there is no attach page, HTTP route, model
+tool, file, environment variable or setting that supplies it. The existing manual add
+and clipboard flows are separate and are never fallbacks for this function. The host
+uses its existing linked Omni key, sends the token through `POST /instances`'s write-only
+`token` field, and reads `/instances/:id/status`. It creates no Omni agent or route.
+The token must have Telegram's bot-token shape. Returned text, errors and the optional
+`source` host log label redact the submitted token as `[REDACTED]`; the label is not saved
+or returned.
+
+The receipt is `{ channelId, channelName, connected, detail, botId? }`. `connected` uses
+the same connection-state check as channel pairing; `detail` is `profileName` or `null`.
+`botId` is the Telegram bot ID, included only when Omni's status reports it. There is no
+`chatId`. A false `connected` value is a status snapshot, not proof that connection
+will eventually succeed. Instance names are unique: retrying the same `name` receives
+Omni's conflict instead of creating or reconnecting a second instance. If a later step
+fails after creation, inspect the existing channel before retrying.
+
+Optionally pass `answerBot`, the ID of the existing DSH channel bot the person picked.
+The host reuses the owner-confirmation actions to give that bot the new channel. If
+the bot already answers, or explicitly owns no other channel, answering is enabled with
+its existing settings and defaults unchanged, including the new child's sending mode.
+The receipt also includes `{ answerBot, answering: true }`. If answering is currently
+off and the bot explicitly owns other channels, it stays off: the receipt includes
+`{ answerBot, answering: false, reason: 'other-channels' }`, and the wizard should direct
+the person to answer settings. This avoids silently enabling answers on other channels.
+Without `answerBot`, the attach changes no DSH ownership or answer settings.
+
 ## Bind each answer child to its person
 
 An answer bot's settings have **Bind each child to its person** (`personBinding`, off by
