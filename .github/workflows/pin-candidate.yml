@@ -1,33 +1,7 @@
-# =============================================================================
-# Pin a minted release candidate's public channel metadata on dev.
-# =============================================================================
-# Replaces the hand-paste ritual (#1057). release-candidate.yml calls this, and
-# image-build.yml dispatches it, once
-# its stable publication finished (or an operator dispatches it for a candidate
-# that already minted). It re-verifies the candidate from public state alone —
-# the immutable v<version> tag, the attested registry alias, and the public
-# stable release — and then commits exactly four files to dev:
-#
-#   .well-known/latest.json        version, released_at, tarball_base
-#   .well-known/dev.json           same values (dev tracks the stable candidate)
-#   deploy/helm/omni/values.yaml   image.tag: v<version>
-#   marketplace/automagik.json     Omni's own plugins listed at their version in
-#                                  v<version> (the Omni release of their last change;
-#                                  a new one pinned to the candidate commit,
-#                                  scripts/marketplace.ts)
-#
-# image-publish.yml and the CI promotion gate derive the candidate identity
-# from the tree (package version → tag → alias), so no workflow or test pins
-# a version, SHA, or digest by hand any more.
-#
-# The push is a direct commit to dev with the same machine credential and the
-# same `version-dev` concurrency group version.yml uses: a PR would trigger
-# version.yml's merged-PR bump and move dev past the candidate again. The
-# github.token stays read-only.
-#
-# It refuses to pin when dev has already moved past the candidate: that
-# candidate can no longer be promoted, so cut and mint a fresh one.
-# =============================================================================
+# Pin software metadata on dev after stable GitHub/npm publication.
+# Verify the immutable tag and public stable release; images are independent.
+# Software mode writes only channel manifests and the plugin market index.
+# Image-only mode verifies the image and changes only Helm image selection.
 name: Pin Release Candidate
 
 on:
@@ -37,6 +11,10 @@ on:
         description: 'Exact minted candidate version without the v prefix'
         required: true
         type: string
+      image_only:
+        description: 'Pin only the verified on-demand image in Helm; leave software pins alone'
+        type: boolean
+        default: false
   # release-candidate.yml calls the pin in-run after its mint succeeds (#1142).
   workflow_call:
     inputs:
@@ -44,6 +22,10 @@ on:
         description: 'Exact minted candidate version without the v prefix'
         required: true
         type: string
+      image_only:
+        description: 'Pin only the verified on-demand image in Helm; leave software pins alone'
+        type: boolean
+        default: false
     secrets:
       VERSION_BUMP_PAT:
         required: true
@@ -56,7 +38,7 @@ permissions: {}
 
 jobs:
   pin:
-    name: Pin the minted candidate on dev
+    name: Pin software or image metadata on dev
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -64,8 +46,8 @@ jobs:
       packages: read
       attestations: read
     env:
-      IMAGE: ghcr.io/${{ github.repository_owner }}/omni-api
       VERSION: ${{ inputs.version }}
+      IMAGE: ghcr.io/${{ github.repository_owner }}/omni-api
     steps:
       - name: Require protected version writer credential
         env:
@@ -83,13 +65,11 @@ jobs:
           fetch-tags: true
           persist-credentials: false
 
-      - name: Set up Buildx for read-only OCI inspection
-        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
-
       - name: Verify the minted candidate from public state
         id: candidate
         env:
           GH_TOKEN: ${{ github.token }}
+          IMAGE_ONLY: ${{ inputs.image_only }}
         run: |
           set -euo pipefail
           [[ "${VERSION}" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || {
@@ -97,12 +77,12 @@ jobs:
             exit 1
           }
           tree_version=$(jq -r .version packages/cli/package.json)
-          [[ "${tree_version}" == "${VERSION}" ]] || {
-            echo "::error::dev is at ${tree_version}, past candidate ${VERSION}; that candidate can no longer be promoted. Cut and mint a fresh one: version.yml with candidate=true on dev, then image-build.yml at refs/tags/v<version>"
+          if [[ "${IMAGE_ONLY}" != "true" && "${tree_version}" != "${VERSION}" ]]; then
+            echo "::error::dev is at ${tree_version}, past candidate ${VERSION}; that software candidate can no longer be promoted. Cut and publish a fresh candidate"
             exit 1
-          }
+          fi
           candidate_sha=$(git rev-parse "refs/tags/v${VERSION}^{commit}" 2>/dev/null) || {
-            echo "::error::no immutable tag v${VERSION}; cut it with version.yml candidate=true and mint it with image-build.yml first"
+            echo "::error::no immutable tag v${VERSION}; cut it with version.yml candidate=true and publish it with release-stable.yml first"
             exit 1
           }
           [[ "${candidate_sha}" =~ ^[0-9a-f]{40}$ ]]
@@ -113,33 +93,56 @@ jobs:
             exit 1
           }
 
-          digest=$(docker buildx imagetools inspect "${IMAGE}:v${VERSION}" --format '{{.Manifest.Digest}}')
-          [[ "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]] || {
-            echo "::error::${IMAGE}:v${VERSION} has no valid OCI index digest; mint the candidate first"
-            exit 1
-          }
-          gh attestation verify "oci://${IMAGE}@${digest}" \
-            --repo "${GITHUB_REPOSITORY}" \
-            --source-digest "${candidate_sha}" \
-            --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/image-build.yml"
-
-          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/v${VERSION}" > "${RUNNER_TEMP}/release.json"
-          [[ "$(jq -r '[.draft,.prerelease] | @tsv' "${RUNNER_TEMP}/release.json")" == $'false\tfalse' ]] || {
-            echo "::error::release v${VERSION} is not public stable; the mint did not finish"
-            exit 1
-          }
-          published_at=$(jq -r .published_at "${RUNNER_TEMP}/release.json")
-          [[ "${published_at}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || {
-            echo "::error::stable release v${VERSION} has no published_at timestamp"
-            exit 1
-          }
+          if [[ "${IMAGE_ONLY}" != "true" ]]; then
+            gh api "repos/${GITHUB_REPOSITORY}/releases/tags/v${VERSION}" > "${RUNNER_TEMP}/release.json"
+            [[ "$(jq -r '[.draft,.prerelease] | @tsv' "${RUNNER_TEMP}/release.json")" == $'false\tfalse' ]] || {
+              echo "::error::release v${VERSION} is not public stable; the mint did not finish"
+              exit 1
+            }
+            published_at=$(jq -r .published_at "${RUNNER_TEMP}/release.json")
+            [[ "${published_at}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || {
+              echo "::error::stable release v${VERSION} has no published_at timestamp"
+              exit 1
+            }
+          else
+            published_at=""
+          fi
           {
             echo "sha=${candidate_sha}"
-            echo "digest=${digest}"
             echo "published_at=${published_at}"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Set up Buildx for the image-only pin
+        if: inputs.image_only == true
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - name: Verify and pin the on-demand image in Helm
+        if: inputs.image_only == true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ steps.candidate.outputs.sha }}
+        run: |
+          set -euo pipefail
+          digest=$(docker buildx imagetools inspect "${IMAGE}:v${VERSION}" --format '{{.Manifest.Digest}}')
+          [[ "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]] || exit 1
+          gh attestation verify "oci://${IMAGE}@${digest}" \
+            --repo "${GITHUB_REPOSITORY}" --source-digest "${SOURCE_SHA}" \
+            --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/image-build.yml"
+          python3 - "${VERSION}" "${IMAGE}" <<'PY_IMAGE'
+          import re, sys
+          from pathlib import Path
+          path = Path("deploy/helm/omni/values.yaml")
+          text, count = re.subn(r'^  tag: "v[0-9]+\.[0-9]+\.[0-9]+"$', f'  tag: "v{sys.argv[1]}"', path.read_text(), flags=re.MULTILINE)
+          if count != 1:
+              raise SystemExit("expected exactly one Helm image.tag")
+          text, count = re.subn(r'^  repository: \S+$', f'  repository: {sys.argv[2]}', text, count=1, flags=re.MULTILINE)
+          if count != 1:
+              raise SystemExit("expected a Helm image.repository")
+          path.write_text(text)
+          PY_IMAGE
+
       - name: Write the public channel pins
+        if: inputs.image_only != true
         env:
           PUBLISHED_AT: ${{ steps.candidate.outputs.published_at }}
         run: |
@@ -170,15 +173,11 @@ jobs:
               )
               path.write_text(text, encoding="utf-8")
 
-          values = Path("deploy/helm/omni/values.yaml")
-          values.write_text(
-              replace_once(values.read_text(encoding="utf-8"), r'^  tag: "v[0-9]+\.[0-9]+\.[0-9]+"$', f'  tag: "v{version}"', str(values)),
-              encoding="utf-8",
-          )
           PY
           git diff --stat
 
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      - if: inputs.image_only != true
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: 1.4.4
 
@@ -186,6 +185,7 @@ jobs:
       # files carry at the tag (the Omni release of each one's last change), so it
       # never trails Omni; an unchanged plugin keeps its listed entry.
       - name: List the candidate's plugins in the market index
+        if: inputs.image_only != true
         run: |
           set -euo pipefail
           bun install --frozen-lockfile --ignore-scripts
@@ -197,17 +197,25 @@ jobs:
         env:
           VERSION_WRITER_TOKEN: ${{ secrets.VERSION_BUMP_PAT }}
           CANDIDATE_SHA: ${{ steps.candidate.outputs.sha }}
-          CANDIDATE_DIGEST: ${{ steps.candidate.outputs.digest }}
+          IMAGE_ONLY: ${{ inputs.image_only }}
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add .well-known/latest.json .well-known/dev.json deploy/helm/omni/values.yaml marketplace/automagik.json
+          if [[ "${IMAGE_ONLY}" == "true" ]]; then
+            git add deploy/helm/omni/values.yaml
+          else
+            git add .well-known/latest.json .well-known/dev.json marketplace/automagik.json
+          fi
           if git diff --cached --quiet; then
             echo "dev already pins candidate v${VERSION}; nothing to commit"
             exit 0
           fi
-          git commit -m "chore(release): pin candidate v${VERSION}"
+          if [[ "${IMAGE_ONLY}" == "true" ]]; then
+            git commit -m "chore(release): pin image v${VERSION}"
+          else
+            git commit -m "chore(release): pin candidate v${VERSION}"
+          fi
           # Machine-account push (not github-actions[bot]) so the pin commit's
           # CI runs and any open promotion PR is not held at action_required;
           # same rationale and credential as version.yml's bump push.
@@ -217,6 +225,5 @@ jobs:
           {
             echo "### Pinned Omni release candidate v${VERSION} on dev"
             echo "- source: \`${CANDIDATE_SHA}\`"
-            echo "- OCI digest: \`${CANDIDATE_DIGEST}\`"
             echo "- next: open (or refresh) the dev → main promotion PR"
           } >> "${GITHUB_STEP_SUMMARY}"

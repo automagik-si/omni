@@ -6,7 +6,7 @@ on:
   # after merge.
   #
   # The `no-release` label opts one merged PR out: auto-version skips, so no
-  # bump commit, tag, npm `next`, dev image or release candidate follows
+  # bump commit, tag, npm `next` or release candidate follows
   # (release-candidate.yml runs on every dev push, but its cut job is gated on
   # the bump commit's subject and author, so it cuts nothing). Use it for docs-only,
   # docs/rfcs and .genie-only PRs; a PR that changes code must never carry it.
@@ -37,7 +37,7 @@ on:
   workflow_dispatch:
     inputs:
       candidate:
-        description: 'Cut a stable candidate tag: skip the dev prerelease so image-build.yml can publish the stable release'
+        description: 'Cut a stable candidate tag: skip the dev prerelease so release-stable.yml can publish the stable release'
         type: boolean
         default: false
       stable_publish_only:
@@ -52,16 +52,12 @@ on:
         description: 'Stable-only: exact 40-character release source SHA'
         required: false
         type: string
-      expected_digest:
-        description: 'Stable-only: exact verified omni-api OCI digest'
-        required: false
-        type: string
       orchestrator_run_id:
-        description: 'Stable-only: exact in-progress image-build workflow run'
+        description: 'Stable-only: exact in-progress release-stable workflow run'
         required: false
         type: string
       orchestrator_control_sha:
-        description: 'Stable-only: exact control revision executing image-build'
+        description: 'Stable-only: exact control revision executing release-stable'
         required: false
         type: string
 
@@ -243,8 +239,7 @@ jobs:
             git tag "v${VERSION}"
 
             # The commit that lands on dev (the fresh bump, or the unchanged
-            # head on a no-op re-run). The dev-image job builds exactly this
-            # commit, so it is emitted only after both pushes below succeed.
+            # head on a no-op re-run), emitted after both pushes succeed.
             BUMP_SHA=$(git rev-parse "HEAD^{commit}")
             [[ "${BUMP_SHA}" =~ ^[0-9a-f]{40}$ ]]
 
@@ -325,7 +320,7 @@ jobs:
       # can only `npm publish`, never move a dist-tag, so if the candidate
       # version were already on npm under `next`, the stable `latest` alias
       # could only be set with a classic token. Leaving the version unpublished
-      # lets image-build.yml's stable publish run `npm publish --tag latest`
+      # lets release-stable.yml's stable publish run `npm publish --tag latest`
       # through OIDC.
       - name: Publish to npm via OIDC (@${{ steps.context.outputs.npm_tag }})
         if: inputs.candidate != true
@@ -358,7 +353,7 @@ jobs:
       # skips this dispatch entirely. A dev prerelease at v<version> would
       # otherwise pin the tag's channel classification to dev forever
       # (verify-release-state.py: "channel classification is immutable"), so
-      # image-build.yml could never publish the stable release at that tag.
+      # release-stable.yml could never publish the stable release at that tag.
       # The npm `next` publish above is also skipped for a candidate cut.
       - name: Dispatch release pipeline for the new tag
         continue-on-error: true
@@ -373,7 +368,7 @@ jobs:
           TAG_SHA=$(git rev-parse "${TAG}^{commit}")
           [[ "${TAG_SHA}" =~ ^[0-9a-f]{40}$ ]]
           if [[ "${CANDIDATE}" == "true" ]]; then
-            echo "candidate=true: skipping the dev prerelease dispatch; ${TAG} is reserved for image-build.yml (gh workflow run image-build.yml --ref ${TAG} -f version=${VERSION})"
+            echo "candidate=true: skipping the dev prerelease dispatch; ${TAG} is reserved for release-stable.yml (gh workflow run release-stable.yml --ref ${TAG} -f version=${VERSION})"
             exit 0
           fi
           echo "Dispatching release pipeline against ${TAG} (channel=${CHANNEL})..."
@@ -388,42 +383,6 @@ jobs:
           fi
 
   # Dev image policy: ONE image per merged PR to dev, never per commit.
-  # image-dev.yml has no push trigger, so a direct commit to dev (a fix, a
-  # merge commit, a chore) never builds an image; the only producer of the
-  # `dev` / `dev-<sha12>` channel is this call, which runs once per dev
-  # version cut after the bump commit and its v<version> tag have been
-  # pushed, and builds exactly that bump commit. A manual dispatch of
-  # image-dev.yml rebuilds the dev head (or a given dev commit) on demand.
-  #
-  # A local reusable-workflow call, not `gh workflow run`: a dispatch resolves
-  # the workflow file against the DEFAULT branch, so image-dev.yml could not
-  # be dispatched until it reached main (the exact 404 the first
-  # image-build.yml dispatch hit). `uses:` resolves it from this run's own
-  # checkout, so it works on dev before any promotion.
-  #
-  # `candidate=true` skips this: a candidate cut mints its own attested image
-  # via image-build.yml at the exact v<version> tag, and a dev image is never
-  # a candidate. On the merged-PR trigger `inputs` is empty, so
-  # `inputs.candidate` is null and `null != true` holds: every merged PR is a
-  # dev cut and builds. (Same expression as the npm publish step above.)
-  #
-  # Runs AFTER auto-version has fully succeeded (tag push, npm publish, and
-  # release dispatch included), so a build failure can never block those; it
-  # surfaces as a failed job, and the operator rebuilds by dispatching
-  # image-dev.yml with `ref=<bump sha>`.
-  dev-image:
-    name: Dev image
-    needs: auto-version
-    if: needs.auto-version.result == 'success' && inputs.candidate != true
-    uses: ./.github/workflows/image-dev.yml
-    permissions:
-      contents: read
-      packages: write
-      id-token: write
-      attestations: write
-    with:
-      ref: ${{ needs.auto-version.outputs.bump_sha }}
-
   publish-stable:
     name: Publish verified stable npm package
     # Read-only: republishes one already-verified stable version and never
@@ -444,8 +403,6 @@ jobs:
       contents: read
       id-token: write
       actions: read
-      packages: read
-      attestations: read
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
@@ -456,16 +413,13 @@ jobs:
         env:
           ACTOR: ${{ github.actor }}
           EXPECTED_SHA: ${{ inputs.expected_sha }}
-          EXPECTED_DIGEST: ${{ inputs.expected_digest }}
           ORCHESTRATOR_RUN_ID: ${{ inputs.orchestrator_run_id }}
           ORCHESTRATOR_CONTROL_SHA: ${{ inputs.orchestrator_control_sha }}
           GH_TOKEN: ${{ github.token }}
-          IMAGE: ghcr.io/${{ github.repository_owner }}/omni-api
         run: |
           set -euo pipefail
           [[ "${ACTOR}" == "github-actions[bot]" ]]
           [[ "${EXPECTED_SHA}" =~ ^[0-9a-f]{40}$ ]]
-          [[ "${EXPECTED_DIGEST}" =~ ^sha256:[0-9a-f]{64}$ ]]
           [[ "${ORCHESTRATOR_RUN_ID}" =~ ^[0-9]+$ ]]
           [[ "${ORCHESTRATOR_CONTROL_SHA}" =~ ^[0-9a-f]{40}$ ]]
           gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${ORCHESTRATOR_RUN_ID}" > "${RUNNER_TEMP}/orchestrator.json"
@@ -473,12 +427,8 @@ jobs:
             --run-json "${RUNNER_TEMP}/orchestrator.json" \
             --repository "${GITHUB_REPOSITORY}" \
             --source-sha "${ORCHESTRATOR_CONTROL_SHA}" \
-            --expected-workflow .github/workflows/image-build.yml \
+            --expected-workflow .github/workflows/release-stable.yml \
             --allowed-event workflow_dispatch
-          gh attestation verify "oci://${IMAGE}@${EXPECTED_DIGEST}" \
-            --repo "${GITHUB_REPOSITORY}" \
-            --source-digest "${EXPECTED_SHA}" \
-            --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/image-build.yml"
 
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:

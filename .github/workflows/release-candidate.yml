@@ -1,53 +1,6 @@
-# =============================================================================
-# One-shot release candidate: cut -> mint -> pin in a single run (#1142).
-# =============================================================================
-# Replaces the three hand-dispatched steps (version.yml candidate=true, then
-# image-build.yml at the tag, then pin-candidate.yml). This file is
-# orchestration only: every immutability, attestation, prerelease-refusal and
-# tag-binding check stays in the workflows it drives, unchanged.
-#
-#   cut   workflow_call into version.yml with candidate=true: bumps dev and
-#         pushes v<version> without npm `next` or a dev prerelease.
-#   mint  DISPATCHES image-build.yml at refs/tags/v<version> and watches it.
-#         It cannot be a workflow_call: release.yml and version.yml
-#         publish-stable re-verify the orchestrator with
-#         verify-orchestrator-run.py (run path image-build.yml, event
-#         workflow_dispatch, status in_progress, head SHA = the tag), and
-#         build-push binds GITHUB_REF to the exact tag. Under a call those would
-#         be this workflow, a push, and refs/heads/dev.
-#   pin   workflow_call into pin-candidate.yml once the stable release exists
-#         at the tag, even when the mint failed later in its stable npm step:
-#         the pin re-verifies the tag, the attested alias and the public stable
-#         release, none of which depend on npm. (image-build.yml dispatches the
-#         same pin itself right after the release; this call is the in-run
-#         second pass and commits nothing when dev already pins the candidate.)
-#
-# Trigger: the auto-bump push version.yml makes after every merged PR
-# (`chore(version): bump to <version>` by github-actions[bot]). Everything
-# else pushed to dev is ignored, including this run's own writes: the candidate
-# cut commits `chore(version): cut candidate <version>` and the pin commits
-# `chore(release): pin candidate v<version>`. Ignored pushes run in their own
-# per-run concurrency group so they never cancel the live candidate.
-#
-# A burst of merges collapses into one candidate for the last tip:
-# cancel-in-progress cancels the older run. A mint it was watching keeps
-# running to completion (a started mint must finish); its pin then refuses
-# because dev moved past it, and the newer run mints the newer tip.
-#
-# Idempotent mint (#1209): `gh run rerun <this run> --failed` is a real
-# recovery. When ghcr.io/<owner>/omni-api:v<version> already exists, the mint
-# verifies its attestation against the tag's source SHA with image-build.yml as
-# signer (a mismatch fails loudly), dispatches nothing, and instead resumes the
-# existing image-build.yml run for the tag: a succeeded run is accepted, a
-# running one is watched, a failed one gets `gh run rerun --failed` (the same
-# run id the stable publishers re-verify as in_progress). That re-run verifies
-# an already published npm package in place: the CLI package rebuilds
-# byte-identically (scripts/pack-market.ts stamps the commit time, not the
-# clock), and a registry that is merely slow (exit 75) is retried, not failed.
-#
-# Recovery: see docs/deployment/public-launch-readiness.md
-# "Recovering a failed orchestrated release".
-# =============================================================================
+# Automatic chain: bump -> candidate tag -> stable GitHub release -> stable npm
+# -> software pins on dev. Images are dispatched intentionally, never here.
+# Failed publication resumes the same tag-bound release-stable.yml run.
 name: Release Candidate
 
 on:
@@ -70,129 +23,77 @@ jobs:
       (startsWith(github.event.head_commit.message, 'chore(version): bump to ') &&
        github.event.head_commit.author.email == 'github-actions[bot]@users.noreply.github.com')
     uses: ./.github/workflows/version.yml
-    # The ceiling of every job version.yml declares (auto-version, dev-image,
-    # publish-stable); with candidate=true only auto-version runs.
+    # Candidate cuts only bump and tag; software publication follows below.
     permissions:
       contents: write
       id-token: write
       actions: write
-      packages: write
-      attestations: write
     with:
       candidate: true
     secrets:
       VERSION_BUMP_PAT: ${{ secrets.VERSION_BUMP_PAT }}
 
   mint:
-    name: Mint candidate
+    name: Publish candidate software
     needs: cut
     runs-on: ubuntu-latest
-    # The mint waits on the `release` environment reviewers, then a cold
-    # two-platform build and the stable release + npm publication.
-    timeout-minutes: 360
+    timeout-minutes: 240
     permissions:
-      actions: write # gh workflow run / gh run rerun image-build.yml
-      packages: read # inspect an existing candidate alias
-      attestations: read # verify its provenance before resuming
+      contents: read
+      actions: write
     outputs:
       version: ${{ needs.cut.outputs.version }}
       stable_released: ${{ steps.release.outputs.stable_released }}
     steps:
-      - name: Log in to GHCR to inspect an existing candidate alias
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ github.token }}
-
-      - name: Dispatch image-build.yml at the candidate tag and watch it
+      - name: Dispatch release-stable.yml at the candidate tag and watch it
         env:
           GH_TOKEN: ${{ github.token }}
-          IMAGE: ghcr.io/${{ github.repository_owner }}/omni-api
           VERSION: ${{ needs.cut.outputs.version }}
         run: |
           set -euo pipefail
-          [[ "${VERSION}" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || {
-            echo "::error::cut did not emit a canonical version (got '${VERSION}')"
-            exit 1
-          }
+          [[ "${VERSION}" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || exit 1
           tag="v${VERSION}"
           tag_sha=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${tag}" --jq .sha)
-          [[ "${tag_sha}" =~ ^[0-9a-f]{40}$ ]] || {
-            echo "::error::could not resolve ${tag} to a commit"
-            exit 1
-          }
-
-          if docker buildx imagetools inspect "${IMAGE}:${tag}" >/dev/null 2>"${RUNNER_TEMP}/inspect.err"; then
-            # Same provenance binding finalize and the stable publishers enforce.
-            gh attestation verify "oci://${IMAGE}:${tag}" \
-              --repo "${GITHUB_REPOSITORY}" \
-              --source-digest "${tag_sha}" \
-              --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/image-build.yml" || {
-              echo "::error::${IMAGE}:${tag} already exists but is not attested by image-build.yml for ${tag_sha}; refusing to continue"
-              exit 1
-            }
-            existing=$(gh run list --repo "${GITHUB_REPOSITORY}" \
-              --workflow image-build.yml --branch "${tag}" --event workflow_dispatch \
-              --limit 50 --json databaseId,headSha,status,conclusion \
-              | jq -c --arg sha "${tag_sha}" '[.[] | select(.headSha == $sha)][0] // empty')
-            run_id=$(jq -r '.databaseId // empty' <<<"${existing}")
-            [[ "${run_id}" =~ ^[0-9]+$ ]] || {
-              echo "::error::${IMAGE}:${tag} exists but no image-build.yml run for ${tag_sha} was found to resume"
-              exit 1
-            }
+          [[ "${tag_sha}" =~ ^[0-9a-f]{40}$ ]] || exit 1
+          existing=$(gh run list --repo "${GITHUB_REPOSITORY}" \
+            --workflow release-stable.yml --branch "${tag}" --event workflow_dispatch \
+            --limit 50 --json databaseId,headSha,status,conclusion \
+            | jq -c --arg sha "${tag_sha}" '[.[] | select(.headSha == $sha)][0] // empty')
+          run_id=$(jq -r '.databaseId // empty' <<<"${existing}")
+          if [[ -n "${run_id}" ]]; then
+            [[ "${run_id}" =~ ^[0-9]+$ ]] || exit 1
             state=$(jq -r '"\(.status)/\(.conclusion)"' <<<"${existing}")
-            echo "${IMAGE}:${tag} already exists with a valid attestation for ${tag_sha}; skipping the image-build.yml dispatch and resuming run ${run_id} (${state})"
             case "${state}" in
               completed/success) exit 0 ;;
               completed/*) gh run rerun "${run_id}" --repo "${GITHUB_REPOSITORY}" --failed && sleep 15 ;;
             esac
-            gh run watch "${run_id}" --repo "${GITHUB_REPOSITORY}" --exit-status
-            exit 0
+          else
+            before=$(gh run list --repo "${GITHUB_REPOSITORY}" \
+              --workflow release-stable.yml --branch "${tag}" --event workflow_dispatch \
+              --limit 50 --json databaseId)
+            gh workflow run release-stable.yml --repo "${GITHUB_REPOSITORY}" \
+              --ref "refs/tags/${tag}" --field version="${VERSION}"
+            run_id=""
+            for _ in $(seq 1 30); do
+              after=$(gh run list --repo "${GITHUB_REPOSITORY}" \
+                --workflow release-stable.yml --branch "${tag}" --event workflow_dispatch \
+                --limit 50 --json databaseId,headSha)
+              run_id=$(jq -r --argjson before "${before}" --arg sha "${tag_sha}" \
+                '[.[] | select(.headSha == $sha) | .databaseId] - [$before[] | .databaseId] | map(tostring) | join(" ")' <<<"${after}")
+              [[ -z "${run_id}" ]] || break
+              sleep 10
+            done
+            [[ "${run_id}" =~ ^[0-9]+$ ]] || {
+              echo "::error::could not resolve exactly one new release-stable.yml run for ${tag}"
+              exit 1
+            }
           fi
-          grep -qiE 'not found|manifest unknown' "${RUNNER_TEMP}/inspect.err" || {
-            cat "${RUNNER_TEMP}/inspect.err" >&2
-            echo "::error::registry inspection of ${IMAGE}:${tag} failed without a not-found response; refusing to guess"
-            exit 1
-          }
-
-          # `gh workflow run` prints no run id: snapshot, dispatch, then take
-          # exactly one new dispatch run on the tag (same approach as
-          # image-build.yml's finalize).
-          list_runs() {
-            gh run list --repo "${GITHUB_REPOSITORY}" \
-              --workflow image-build.yml --branch "${tag}" --event workflow_dispatch \
-              --limit 50 --json databaseId
-          }
-          before=$(list_runs)
-          gh workflow run image-build.yml \
-            --repo "${GITHUB_REPOSITORY}" \
-            --ref "refs/tags/${tag}" \
-            --field version="${VERSION}"
-          run_id=""
-          for _ in $(seq 1 30); do
-            run_id=$(jq -r --argjson before "${before}" \
-              '[.[] | .databaseId] - [$before[] | .databaseId] | map(tostring) | join(" ")' \
-              <<<"$(list_runs)")
-            [[ -z "${run_id}" ]] || break
-            sleep 10
-          done
-          [[ "${run_id}" =~ ^[0-9]+$ ]] || {
-            echo "::error::could not resolve exactly one new image-build.yml run for ${tag} (got: '${run_id}')"
-            exit 1
-          }
-          {
-            echo "### Minting candidate ${tag}"
-            echo "- mint run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${run_id}"
-            echo "- if it fails: gh run rerun ${run_id} --failed (the pin is dispatched as soon as the stable release exists; a re-run verifies the published npm package in place)"
-          } >> "${GITHUB_STEP_SUMMARY}"
+          echo "Software release run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${run_id}" >> "${GITHUB_STEP_SUMMARY}"
           gh run watch "${run_id}" --repo "${GITHUB_REPOSITORY}" --exit-status
 
-      # The pin needs the stable release and the attested image, not npm
-      # (pin-candidate.yml re-verifies both): record whether the release exists
-      # once the mint settled, so a mint that failed only in its stable npm
-      # step still pins. Not always(): a cancelled run (a newer tip) pins
-      # nothing, and a mint that never released reports false.
+      # The software pin follows a completed release and stable npm publication.
+      # It verifies tag/release without an image. Cancelled runs pin nothing;
+      # a mint that never released reports false.
       - name: Check whether the stable release exists at the tag
         id: release
         if: ${{ !cancelled() }}
@@ -215,7 +116,7 @@ jobs:
     name: Pin candidate on dev
     needs: mint
     # Gated on the stable release, not on the mint's npm step; not always().
-    if: ${{ !cancelled() && needs.mint.outputs.stable_released == 'true' }}
+    if: ${{ !cancelled() && needs.mint.result == 'success' && needs.mint.outputs.stable_released == 'true' }}
     uses: ./.github/workflows/pin-candidate.yml
     permissions:
       contents: read
