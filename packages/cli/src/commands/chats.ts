@@ -8,7 +8,8 @@
  * omni chats delete <id>
  * omni chats archive <id>
  * omni chats unarchive <id>
- * omni chats messages <id>
+ * omni chats messages <id> [--cursor <cursor>] [--include-deleted]
+ * omni chats coverage <id> [--from <date>] [--to <date>] [--include-deleted]
  * omni chats participants <id>
  */
 
@@ -1035,8 +1036,10 @@ export function createChatsCommand(): Command {
     .command('messages <id>')
     .description('List chat messages (use "omni messages get <id>" for full single message)')
     .option('--limit <n>', 'Limit results', (v) => Number.parseInt(v, 10), 100)
-    .option('--before <cursor>', 'Get messages before cursor')
-    .option('--after <cursor>', 'Get messages after cursor')
+    .option('--before <date>', 'Only messages at or before this ISO time')
+    .option('--after <date>', 'Only messages at or after this ISO time')
+    .option('--cursor <cursor>', 'Continue after a previous page (the cursor it printed)')
+    .option('--include-deleted', 'Also list deleted messages')
     .option('--compact', 'Show compact format (minimal fields, no transcriptions)')
     .option('--media-only', 'Only show media messages (all types)')
     .option('--audio-only', 'Only show audio messages')
@@ -1055,6 +1058,8 @@ export function createChatsCommand(): Command {
           limit?: number;
           before?: string;
           after?: string;
+          cursor?: string;
+          includeDeleted?: boolean;
           compact?: boolean;
           mediaOnly?: boolean;
           audioOnly?: boolean;
@@ -1074,15 +1079,17 @@ export function createChatsCommand(): Command {
 
         try {
           const chatId = await resolveChatId(id);
-          const rawMessages = await client.chats.getMessages(chatId, {
+          const page = await client.chats.pageMessages(chatId, {
             limit: options.limit,
             before: options.before,
             after: options.after,
             mediaOnly: options.mediaOnly || undefined,
+            includeDeleted: options.includeDeleted || undefined,
+            cursor: options.cursor,
           });
 
-          // Cast to extended type, filter ephemeral, and apply filters
-          let messages = rawMessages as ExtendedMessage[];
+          // Cast to the display type (the page items are stored rows), filter ephemeral, and apply filters
+          let messages = page.items as unknown as ExtendedMessage[];
           messages = messages.filter((m) => m.messageType !== 'ephemeralMessage');
           messages = applyMessageFilters(messages, options);
 
@@ -1094,12 +1101,37 @@ export function createChatsCommand(): Command {
             const items = formatRichMessages(messages);
             output.list(items, { emptyMessage: 'No messages found.', rawData: messages });
           }
+          if (page.meta.cursor) output.info(`Older messages: add --cursor ${page.meta.cursor}`);
         } catch (err) {
           const message = err instanceof Error ? err.message : 'Unknown error';
           output.error(`Failed to get messages: ${message}`);
         }
       },
     );
+
+  // omni chats coverage <id>
+  chats
+    .command('coverage <id>')
+    .description('What Omni holds for a chat: oldest and newest message, counts, media still missing a file')
+    .option('--from <date>', 'countInWindow counts from this ISO time (inclusive)')
+    .option('--to <date>', 'countInWindow counts up to this ISO time (inclusive)')
+    .option('--include-deleted', 'Count deleted messages too')
+    .action(async (id: string, options: { from?: string; to?: string; includeDeleted?: boolean }) => {
+      const client = getClient();
+
+      try {
+        const chatId = await resolveChatId(id);
+        const coverage = await client.chats.getCoverage(chatId, {
+          from: options.from,
+          to: options.to,
+          includeDeleted: options.includeDeleted || undefined,
+        });
+        output.data(coverage);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Unknown error';
+        output.error(`Failed to get coverage: ${message}`);
+      }
+    });
 
   // omni chats participants <id>
   chats

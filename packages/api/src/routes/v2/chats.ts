@@ -11,7 +11,7 @@ import type { ChannelType } from '@omni/core/types';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { checkInstanceAccess, resolveChatIdParam } from '../../lib/resolve-chat-id';
+import { checkInstanceAccess, resolveChatIdInKeyInstances, resolveChatIdParam } from '../../lib/resolve-chat-id';
 import { clearAgentSession } from '../../plugins/session-cleaner';
 import { optionalDateParam } from '../../schemas/date-query';
 import type { Services } from '../../services';
@@ -691,7 +691,7 @@ export const listMessagesQuerySchema = z.object({
  */
 chatsRoutes.get('/:id/messages', zValidator('query', listMessagesQuerySchema), async (c) => {
   const raw = c.req.param('id');
-  const chatId = await resolveChatIdParam(c, raw);
+  const chatId = await resolveChatIdInKeyInstances(c, raw);
   if (chatId === null) return chatNotFoundResponse(c, raw);
   const { limit, before, after, mediaOnly, includeDeleted, cursor } = c.req.valid('query');
   const services = c.get('services');
@@ -719,7 +719,7 @@ export const chatCoverageQuerySchema = z.object({
  */
 chatsRoutes.get('/:id/coverage', zValidator('query', chatCoverageQuerySchema), async (c) => {
   const raw = c.req.param('id');
-  const chatId = await resolveChatIdParam(c, raw);
+  const chatId = await resolveChatIdInKeyInstances(c, raw);
   if (chatId === null) return chatNotFoundResponse(c, raw);
   const { from, to, includeDeleted } = c.req.valid('query');
 
