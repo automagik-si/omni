@@ -254,10 +254,14 @@ messages never start an answer.
   channel's history) marks. The header gives the coverage (oldest, newest, count, count in the
   window, deleted, media without a file), the last contact each way, "page N of about M", the
   next cursor (which keeps its window and size) and the chat's reading note. When Omni holds
-  nothing for the window, it says to ask the user for a backfill first.
+  nothing for the window, it says to ask the user for a backfill first. A page stays under the
+  size DSH keeps whole in a tool result (about 46,000 characters): its texts are cut shorter
+  to fit, never its lines.
 - `save_reading_note { chat, note, readThrough }` keeps the note (at most 8,000 characters: who
   the person is to the user, what is open, the last contact, how the user talks to them), the
-  time it reads through, and when it was updated.
+  newest message time it covers (`readThrough`, where a later reading of what is new starts),
+  and when it was updated. Pages go back from the newest, so until a reading reaches its last
+  page the note itself says how far back it has read.
 
 The notes live in `omni-reading-notes.json` beside `omni.json` (0600), keyed by Omni chat id:
 never in `state.json`, a log or the roster view. Each save rewrites the file through a

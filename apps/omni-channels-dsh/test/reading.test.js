@@ -1,9 +1,10 @@
 // Reading a chat's history (src/host/reading.js) on the real plugin framework: a real cordis
-// Context with DSH's own session store, LLM runtime, system prompt, tool runtime and native
-// tool executor, the real Bot team and this plugin loaded through root.plugin with their own
-// inject lists, and each tool run through tools.execute as DSH runs a model's call. Only
-// the host services that need a live server or a browser (the connection, the Session
-// controller, Session titles, the workspace registry, settings) are provided small here.
+// Context with DSH's own session store, projections, agent registry, LLM runtime, Session
+// titles, system prompt, tool runtime and native tool executor, the real Bot team and this
+// plugin loaded through root.plugin with their own inject lists, and each tool run through
+// tools.execute as DSH runs a model's call. Only the host services that need a live server,
+// a filesystem workspace or a browser (the connection, the Session controller, the workspace
+// registry, settings) are provided small here.
 // Omni is a fake of the two routes reading uses (O1's contract), kept in one place: omniO1.
 import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
@@ -15,13 +16,14 @@ import { AgentRegistry } from '@deepseek-ai/dsh-agent'
 import { LlmRuntime, ToolCallId } from '@deepseek-ai/dsh-llm'
 import { SessionStore } from '@deepseek-ai/dsh-session'
 import { SessionProjectionRegistry } from '@deepseek-ai/dsh-session-projection'
+import { SessionTitleService } from '@deepseek-ai/dsh-session-title'
 import { SystemPrompt } from '@deepseek-ai/dsh-system-prompt'
 import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import { ToolRuntime } from '@deepseek-ai/dsh-tools'
 import * as team from '@automagik/bots-dsh'
 import * as channels from '../index.js'
 import { LINK_FILE } from '../src/host/omni-link.js'
-import { ANSWER_CHILD_REFUSAL, BAD_CURSOR, CURSOR_WINDOW, LINE_TEXT_MAX, NOT_OPERATOR, NOT_READABLE, NOTES_FILE } from '../src/host/reading.js'
+import { ANSWER_CHILD_REFUSAL, BAD_CURSOR, CURSOR_WINDOW, LINE_TEXT_MAX, NOT_OPERATOR, NOT_READABLE, NOTES_FILE, PAGE_CHARS_MAX } from '../src/host/reading.js'
 import { INSTANCE, OMNI, OTHER_INSTANCE, resetFetch, teamState } from './thread-fixture.js'
 
 const realFetch = globalThis.fetch
@@ -35,6 +37,7 @@ const LINK_KEY = 'omni_sk_link_reading'
 const CHAT = '7a1c0d2e-3b4f-4c5d-8e6f-0a1b2c3d4e01'
 const BIG = '7a1c0d2e-3b4f-4c5d-8e6f-0a1b2c3d4e02'
 const ELSEWHERE = '7a1c0d2e-3b4f-4c5d-8e6f-0a1b2c3d4e03'
+const ODD = '7a1c0d2e-3b4f-4c5d-8e6f-0a1b2c3d4e04'
 const id = n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
 const SAME = '2026-05-10T12:00:00.000Z'
 const message = (n, platformTimestamp, extra = {}) => ({
@@ -52,6 +55,8 @@ const MESSAGES = [
   message(7, '2026-08-01T09:00:00.000Z', { textContent: 'Thanks again', isFromMe: true, senderDisplayName: null }),
   message(8, '2026-11-01T08:00:00.000Z', { messageType: 'document', hasMedia: true, source: 'import' }),
 ]
+// A chat with one row in a form no message has (its time a number).
+const ODD_MESSAGES = [{ ...message(2000, '2026-04-01T00:00:00.000Z', { textContent: 'fine' }), chatId: ODD }, { id: 'odd-row', chatId: ODD, platformTimestamp: 1_775_000_000 }]
 // 205 long messages of another chat, one a minute.
 const LONG = 'x'.repeat(LINE_TEXT_MAX + 100)
 const BIG_MESSAGES = Array.from({ length: 205 }, (_, n) => ({ ...message(1000 + n, new Date(Date.parse('2026-01-01T00:00:00.000Z') + n * 60_000).toISOString(), { textContent: LONG }), chatId: BIG }))
@@ -59,6 +64,7 @@ const CHATS = {
   [CHAT]: { id: CHAT, name: 'Ana', instanceId: INSTANCE, externalId: '5511988880000@s.whatsapp.net', chatType: 'dm' },
   [BIG]: { id: BIG, name: 'Supplier', instanceId: INSTANCE, externalId: '5511977770000@s.whatsapp.net', chatType: 'dm' },
   [ELSEWHERE]: { id: ELSEWHERE, name: 'Elsewhere', instanceId: OTHER_INSTANCE, externalId: '5511966660000@s.whatsapp.net', chatType: 'dm' },
+  [ODD]: { id: ODD, name: 'Odd', instanceId: INSTANCE, externalId: '5511955550000@s.whatsapp.net', chatType: 'dm' },
 }
 
 // O1's contract: GET /chats/:id/messages pages back by (platformTimestamp desc, id desc) from an
@@ -66,7 +72,7 @@ const CHATS = {
 // GET /chats/:id/coverage answers { data } with from/to bounding countInWindow only.
 function omniO1() {
   const asked = []
-  const rows = [...MESSAGES, ...BIG_MESSAGES]
+  const rows = [...MESSAGES, ...BIG_MESSAGES, ...ODD_MESSAGES]
   const json = (status, body) => new Response(JSON.stringify(body), { status })
   const later = (a, b) => (a.platformTimestamp === b.platformTimestamp ? (a.id > b.id ? -1 : 1) : (a.platformTimestamp > b.platformTimestamp ? -1 : 1))
   globalThis.fetch = async (address, init = {}) => {
@@ -86,8 +92,9 @@ function omniO1() {
     if (part === 'coverage') {
       const from = query.get('from')
       const to = query.get('to')
-      const times = own.map(row => row.platformTimestamp).sort()
-      const newestOf = list => list.map(row => row.platformTimestamp).sort().at(-1) ?? null
+      // Omni's coverage is SQL over the stored column: a row's time there is always a time.
+      const times = own.map(row => row.platformTimestamp).filter(time => typeof time === 'string').sort()
+      const newestOf = list => list.map(row => row.platformTimestamp).filter(time => typeof time === 'string').sort().at(-1) ?? null
       return json(200, { data: {
         oldest: times[0] ?? null, newest: times.at(-1) ?? null, count: own.length,
         countInWindow: own.filter(row => (!from || row.platformTimestamp >= from) && (!to || row.platformTimestamp <= to)).length,
@@ -125,11 +132,12 @@ function homeWith(t, state = teamState()) {
 // One DSH start on `home`; `stop` disposes it before the home goes.
 async function start(t, home) {
   const root = new Context()
-  for (const [plugin, config] of [[SessionStore], [SessionProjectionRegistry], [AgentRegistry], [LlmRuntime], [SystemPrompt, {}], [ToolRuntime, {}], [NativeToolExecutor]]) await root.plugin(plugin, config)
+  // Session titles as DSH's base bundle configures them.
+  const titles = { fallbackMaxWords: 5, fallbackMaxBytes: 40, maxTitleBytes: 80 }
+  for (const [plugin, config] of [[SessionStore], [SessionProjectionRegistry], [AgentRegistry], [LlmRuntime], [SessionTitleService, titles], [SystemPrompt, {}], [ToolRuntime, {}], [NativeToolExecutor]]) await root.plugin(plugin, config)
   await root.plugin(Object.assign((ctx) => {
     ctx.provide('connection', { fetch: { register: () => () => {} } })
     ctx.provide('sessionController', { create: async () => ({ sessionId: 'unused' }), resolveAgent: async () => ({}), selectModel: async () => ({}) })
-    ctx.provide('sessionTitle', { rename: async () => {} })
     ctx.provide('workspaceRegistry', { get: () => undefined, resolveByPath: async () => undefined, create: async path => ({ id: 'w1', path }), archiveSession: async () => {}, archivedSessionIds: [] })
     ctx.provide('settings', {})
   }, { inject: [] }))
@@ -208,16 +216,25 @@ test('read_history reads a chat over several pages with equal timestamps: each m
   assert.equal(await dsh.run('read_history', { chat: CHAT, cursor: cursorOf(pages[0]), size: 5 }), CURSOR_WINDOW)
 })
 
-test('read_history: a page of 200 holds 200 lines, a long text is cut with a mark, and a size over 200 is refused', async (t) => {
+test('read_history: a page of 200 keeps all 200 lines within what DSH keeps whole, cutting texts shorter with a mark; an odd row stays a line; a size over 200 is refused', async (t) => {
   omniO1()
   const dsh = await start(t, homeWith(t))
   const page = await dsh.run('read_history', { chat: BIG, size: 200 })
   assert.equal(idsOf(page).length, 200)
+  assert.ok(page.length <= PAGE_CHARS_MAX, `${page.length} characters`)
   assert.match(page, /^Page 1 of about 2, newest pages first: 200 messages, /m)
-  assert.ok(linesOf(page).every(line => line.includes(`${'x'.repeat(LINE_TEXT_MAX)}…[+100 chars]`)))
+  const limit = Number(/^Texts on this page are cut at (\d+) characters to keep the page whole; a smaller size keeps more of each\.$/m.exec(page)?.[1])
+  assert.ok(limit > 0 && limit < LINE_TEXT_MAX, String(limit))
+  assert.ok(linesOf(page).every(line => line.includes(`: ${'x'.repeat(limit)}…[+${LONG.length - limit} chars] | id `)))
   const rest = await dsh.run('read_history', { chat: BIG, cursor: cursorOf(page) })
   assert.equal(idsOf(rest).length, 5)
-  assert.deepEqual(new Set([...idsOf(page), ...idsOf(rest)]).size, 205)
+  assert.equal(new Set([...idsOf(page), ...idsOf(rest)]).size, 205)
+  // A page that fits keeps texts up to LINE_TEXT_MAX and says nothing of a cut.
+  assert.ok(linesOf(rest).every(line => line.includes(`${'x'.repeat(LINE_TEXT_MAX)}…[+100 chars]`)))
+  assert.doesNotMatch(rest, /^Texts on this page are cut/m)
+  // One row that is no message as Omni gives one does not keep the rest from being read.
+  const odd = await dsh.run('read_history', { chat: ODD })
+  assert.deepEqual(linesOf(odd).sort(), [`2026-04-01T00:00:00Z Ana: fine | id ${id(2000)}`, 'a row Omni gave in a form this tool cannot read | id odd-row'])
   assert.match(await dsh.run('read_history', { chat: BIG, size: 201 }), /size of 1 to 200/)
 })
 
@@ -263,10 +280,10 @@ test('answer children are refused both tools, read nothing and keep thread_histo
   const dsh = await start(t, homeWith(t, state))
   assert.equal(dsh.root.get('omniChannels').threads.bySession('child-1').answerChild, true)
   const reads = omni.reads().length
-  // Through DSH's pipeline: refused before the tool runs.
+  // Through DSH's pipeline the child's containment (thread-tools.js) denies first: this bench's
+  // stand-in Session has no scoped tool registry, so it is never contained and nothing runs.
   for (const [name, args] of [['read_history', { chat: CHAT }], ['save_reading_note', { chat: CHAT, note: 'x', readThrough: '2026-11-01' }]]) {
-    const answer = await dsh.run(name, args, 'child-1')
-    assert.ok(answer.startsWith('ERROR') || answer === ANSWER_CHILD_REFUSAL, `${name}: ${answer}`)
+    assert.equal(await dsh.run(name, args, 'child-1'), 'ERROR This Session has no scoped tool registry.', name)
   }
   // The tool's own refusal, whatever an answer child is allowed.
   const tool = name => dsh.root.tools.get(name)
