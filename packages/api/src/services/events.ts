@@ -15,6 +15,7 @@ import {
 } from '@omni/db';
 import { type SQL, and, desc, eq, gte, ilike, inArray, like, lte, not, or, sql } from 'drizzle-orm';
 import { scopedHandle } from '../tenancy/tenant-scope';
+import { type JournalReader, journalVisibilityClause } from './journal-visibility';
 
 /** Escape LIKE wildcards so a glob prefix matches literally (backslash is postgres's default escape char). */
 function escapeLikePattern(value: string): string {
@@ -49,6 +50,7 @@ export function eventTypeFilterClause(include?: readonly string[], exclude?: rea
 }
 
 export interface ListEventsOptions {
+  reader?: JournalReader;
   channel?: ChannelType[];
   instanceId?: string;
   instanceIds?: string[];
@@ -167,7 +169,7 @@ export class EventService {
       cursor,
     } = options;
 
-    const conditions = [];
+    const conditions = [journalVisibilityClause(options.reader)];
 
     if (channel?.length) {
       conditions.push(inArray(omniEvents.channel, channel));
@@ -175,8 +177,8 @@ export class EventService {
 
     if (instanceId) {
       conditions.push(eq(omniEvents.instanceId, instanceId));
-    } else if (options.instanceIds?.length) {
-      conditions.push(inArray(omniEvents.instanceId, options.instanceIds));
+    } else if (options.instanceIds !== undefined) {
+      conditions.push(options.instanceIds.length ? inArray(omniEvents.instanceId, options.instanceIds) : sql`false`);
     }
 
     if (personId) {
@@ -248,8 +250,12 @@ export class EventService {
   /**
    * Get event by ID
    */
-  async getById(id: string): Promise<OmniEvent> {
-    const [result] = await this.db.select().from(omniEvents).where(eq(omniEvents.id, id)).limit(1);
+  async getById(id: string, reader?: JournalReader): Promise<OmniEvent> {
+    const [result] = await this.db
+      .select()
+      .from(omniEvents)
+      .where(and(eq(omniEvents.id, id), journalVisibilityClause(reader)))
+      .limit(1);
 
     if (!result) {
       throw new NotFoundError('Event', id);
@@ -268,8 +274,8 @@ export class EventService {
    * depth/node caps so a pathological chain cannot run away; `truncated`
    * reports when a cap was hit.
    */
-  async trace(id: string): Promise<EventTraceResult> {
-    const focus = await this.getById(id);
+  async trace(id: string, reader?: JournalReader): Promise<EventTraceResult> {
+    const focus = await this.getById(id, reader);
 
     const seen = new Set<string>([focus.id]);
 
@@ -279,7 +285,11 @@ export class EventService {
     let truncated = false;
     while (current.causationId && ancestors.length < TRACE_MAX_ANCESTORS) {
       if (seen.has(current.causationId)) break; // cycle guard — malformed data must not loop forever
-      const [parent] = await this.db.select().from(omniEvents).where(eq(omniEvents.id, current.causationId)).limit(1);
+      const [parent] = await this.db
+        .select()
+        .from(omniEvents)
+        .where(and(eq(omniEvents.id, current.causationId), journalVisibilityClause(reader)))
+        .limit(1);
       if (!parent) break; // parent never persisted or pruned — chain ends here
       seen.add(parent.id);
       ancestors.unshift(parent);
@@ -296,7 +306,7 @@ export class EventService {
       const children = await this.db
         .select()
         .from(omniEvents)
-        .where(inArray(omniEvents.causationId, frontier))
+        .where(and(inArray(omniEvents.causationId, frontier), journalVisibilityClause(reader)))
         .orderBy(omniEvents.receivedAt)
         .limit(TRACE_MAX_NODES + 1);
       const fresh = children.filter((c) => !seen.has(c.id));
@@ -319,11 +329,18 @@ export class EventService {
    */
   async getTimeline(
     personId: string,
-    options: { channels?: ChannelType[]; since?: Date; until?: Date; limit?: number; cursor?: string } = {},
+    options: {
+      reader?: JournalReader;
+      channels?: ChannelType[];
+      since?: Date;
+      until?: Date;
+      limit?: number;
+      cursor?: string;
+    } = {},
   ): Promise<{ items: OmniEvent[]; hasMore: boolean; cursor?: string }> {
     const { channels, since, until, limit = 50, cursor } = options;
 
-    const conditions = [eq(omniEvents.personId, personId)];
+    const conditions = [eq(omniEvents.personId, personId), journalVisibilityClause(options.reader)];
 
     if (channels?.length) {
       conditions.push(inArray(omniEvents.channel, channels));
@@ -370,11 +387,12 @@ export class EventService {
       until?: Date;
       instanceId?: string;
       granularity?: 'hourly' | 'daily';
+      reader?: JournalReader;
     } = {},
   ): Promise<EventAnalytics> {
     const { since, until, instanceId, granularity } = options;
 
-    const conditions = [];
+    const conditions = [journalVisibilityClause(options.reader)];
 
     if (since) {
       conditions.push(gte(omniEvents.receivedAt, since));
@@ -543,6 +561,7 @@ export class EventService {
        * consumerAccessClause for an ownOnly key, #1461). Absent for every other caller.
        */
       consumerAccess?: SQL;
+      reader?: JournalReader;
     } = {},
   ): Promise<EventTypeInventoryRow[]> {
     const autos = options.automations ?? [];
@@ -555,7 +574,12 @@ export class EventService {
           lastSeen: sql<string>`max(${omniEvents.receivedAt})::text`,
         })
         .from(omniEvents)
-        .where(options.since ? gte(omniEvents.receivedAt, options.since) : undefined)
+        .where(
+          and(
+            journalVisibilityClause(options.reader),
+            options.since ? gte(omniEvents.receivedAt, options.since) : undefined,
+          ),
+        )
         .groupBy(omniEvents.eventType)
         .orderBy(desc(sql`count(*)`)),
       this.db

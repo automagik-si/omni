@@ -72,6 +72,7 @@ import { pairedAgentFlagState } from '../tenancy/feature-flag';
 import { runDetachedFromTenantScope, scopedHandle } from '../tenancy/tenant-scope';
 import { runTenantWorkDb } from '../tenancy/worker-tenant-context';
 import { eventTypeFilterClause } from './events';
+import { changeJournalReplayExclusion, journalVisibilityClause } from './journal-visibility';
 
 type NewDurableConsumer = typeof durableConsumers.$inferInsert;
 
@@ -282,6 +283,17 @@ export interface StreamAccess {
  * otherwise `instance_id IN (...)` (rows with no instance excluded, as in
  * `GET /events`), and a match-nothing predicate for an empty allow-list.
  */
+function consumerJournalClause(caller?: ConsumerCaller): SQL | undefined {
+  return journalVisibilityClause(
+    caller
+      ? {
+          instanceIds: caller.instanceIds,
+          fullAccess: (caller.keyId === null || caller.admin === true) && caller.instanceIds === null,
+        }
+      : undefined,
+  );
+}
+
 export function streamInstanceClause(instanceIds: readonly string[] | null): SQL | undefined {
   if (instanceIds === null) return undefined;
   return instanceIds.length === 0 ? sql`false` : inArray(omniEvents.instanceId, [...instanceIds]);
@@ -661,11 +673,13 @@ export class EventConsumerService {
   ) {}
 
   /** Highest journal_seq in the journal, 0 when empty. Cheap (backward index scan). */
-  async head(tenantId?: string | null): Promise<number> {
+  async head(tenantId?: string | null, caller?: ConsumerCaller): Promise<number> {
     const query = this.db
       .select({ head: sql<number>`coalesce(max(${omniEvents.journalSeq}), 0)::bigint` })
       .from(omniEvents);
-    const [row] = await (tenantId ? query.where(eq(omniEvents.tenantId, tenantId)) : query);
+    const [row] = await query.where(
+      and(tenantId ? eq(omniEvents.tenantId, tenantId) : undefined, consumerJournalClause(caller)),
+    );
     return Number(row?.head ?? 0);
   }
 
@@ -677,7 +691,7 @@ export class EventConsumerService {
         .from(durableConsumers)
         .where(caller?.tenantId ? eq(durableConsumers.tenantId, caller.tenantId) : undefined)
         .orderBy(asc(durableConsumers.name)),
-      this.head(caller?.tenantId),
+      this.head(caller?.tenantId, caller),
     ]);
     const visible = rows.filter((row) => canAccessConsumer(row, caller));
     return Promise.all(visible.map((row) => this.withLag(row, head, caller)));
@@ -699,7 +713,7 @@ export class EventConsumerService {
   /** getByName plus live head/lag — the `inspect` surface. */
   async inspect(name: string, caller?: ConsumerCaller): Promise<ConsumerWithLag> {
     const row = await this.getVisible(name, caller);
-    return this.withLag(row, await this.head(row.tenantId), caller);
+    return this.withLag(row, await this.head(row.tenantId, caller), caller);
   }
 
   /** Delivery and mutations fail closed for restricted callers on unscoped consumers. */
@@ -719,15 +733,8 @@ export class EventConsumerService {
   private async withLag(row: DurableConsumer, head: number, caller?: ConsumerCaller): Promise<ConsumerWithLag> {
     const caughtUp =
       row.cursor >= head ||
-      (
-        await this.scan(
-          narrowToCaller(row, caller),
-          1,
-          undefined,
-          undefined,
-          streamInstanceClause(caller?.instanceIds ?? null),
-        )
-      ).length === 0;
+      (await this.scan(narrowToCaller(row, caller), 1, undefined, undefined, consumerJournalClause(caller))).length ===
+        0;
     return { ...row, head, lag: computeLag(head, row.cursor), caughtUp };
   }
 
@@ -756,7 +763,7 @@ export class EventConsumerService {
     const scope = resolveConsumerScope(input, caller);
     if (scope.scoped) await this.assertInstancesResolve(scope.instanceIds);
     const tenantId = caller?.tenantId ?? null;
-    const head = await this.head(tenantId);
+    const head = await this.head(tenantId, caller);
     const cursor = resolveInitialCursor(input.startFrom ?? 'now', head);
 
     const values = consumerInsertValues(input, { tenantId, agentId, cursor, scope });
@@ -860,7 +867,7 @@ export class EventConsumerService {
     const deadline = Date.now() + waitMs;
     // Readiness gate (opt-in): a page cut to empty keeps long-polling.
     const settleMs = consumer.waitForReady ? resolveConsumerSettleMs() : 0;
-    const keyInstances = streamInstanceClause(caller?.instanceIds ?? null);
+    const keyInstances = consumerJournalClause(caller);
     const scan = async (): Promise<OmniEvent[]> => {
       const page = await this.scan(consumer, limit, undefined, undefined, keyInstances);
       return consumer.waitForReady ? truncateAtUnready(page, true, settleMs, Date.now()) : page;
@@ -883,7 +890,7 @@ export class EventConsumerService {
           and(eq(durableConsumers.id, consumer.id), lte(durableConsumers.cursor, cursor), consumerAccessClause(caller)),
         );
     }
-    const head = await this.head(consumer.tenantId);
+    const head = await this.head(consumer.tenantId, caller);
     const hasMore = scanned.length === limit;
     return {
       consumer: consumer.name,
@@ -933,7 +940,7 @@ export class EventConsumerService {
       );
     }
 
-    return this.withLag(updated, await this.head(updated.tenantId), caller);
+    return this.withLag(updated, await this.head(updated.tenantId, caller), caller);
   }
 
   /**
@@ -989,7 +996,7 @@ export class EventConsumerService {
     return runDetachedFromTenantScope(() =>
       runTenantWorkDb(this.pool, access.tenantId, async () => {
         const consumer = { ...(await this.getStreamable(name, access.caller)), waitForReady: true };
-        const keyInstances = streamInstanceClause(access.caller.instanceIds);
+        const keyInstances = consumerJournalClause(access.caller);
         const page = await this.scan(consumer, limit, after, undefined, keyInstances);
         const rows = truncateAtUnready(page, true, resolveConsumerSettleMs(), Date.now());
         const held = rows.length < page.length;
@@ -1013,7 +1020,7 @@ export class EventConsumerService {
     caller?: ConsumerCaller,
   ): Promise<PullResult> {
     const deadline = Date.now() + waitMs;
-    const keyInstances = streamInstanceClause(caller?.instanceIds ?? null);
+    const keyInstances = consumerJournalClause(caller);
     let claim = await this.claimShared(initial, limit, leaseMs, keyInstances, caller);
     while (!claim.lease && Date.now() < deadline) {
       await new Promise<void>((resolve) => setTimeout(resolve, PULL_POLL_INTERVAL_MS));
@@ -1031,7 +1038,7 @@ export class EventConsumerService {
       consumer: consumer.name,
       items,
       cursor: lease?.to ?? consumer.cursor,
-      head: await this.head(consumer.tenantId),
+      head: await this.head(consumer.tenantId, caller),
       hasMore,
       scanExhausted: hasMore && items.length === 0,
       ...(lease && items.length > 0 ? { leaseId: lease.id } : {}),
@@ -1107,7 +1114,7 @@ export class EventConsumerService {
         );
       }
       const updated = await this.casLeaseState(consumer, released.state, Math.max(consumer.cursor, released.cursor));
-      if (updated) return this.withLag(updated, await this.head(updated.tenantId), caller);
+      if (updated) return this.withLag(updated, await this.head(updated.tenantId, caller), caller);
     }
     throw new ConflictError('DurableConsumer', `too much contention acking '${name}', retry`, { name });
   }
@@ -1178,6 +1185,9 @@ export class EventConsumerService {
       eventTypeFilterClause([consumer.eventType], consumer.excludeTypes ?? undefined),
       consumer.tenantId ? eq(omniEvents.tenantId, consumer.tenantId) : undefined,
       accessFilterClause(consumer.accessFilter, consumer.waitForReady),
+      // Existing custom/connector grants still admit instance-less rows. New
+      // journal families must satisfy the caller policy on every grant branch.
+      extra ? or(changeJournalReplayExclusion(), extra) : undefined,
     );
     const page = (branch: SQL | undefined) =>
       this.db.select().from(omniEvents).where(and(common, branch)).orderBy(asc(omniEvents.journalSeq)).limit(limit);

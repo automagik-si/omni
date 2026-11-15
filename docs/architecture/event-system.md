@@ -469,11 +469,12 @@ interface AccessCheckedEvent extends BaseEvent<'access.checked', {
   reason: string;
 }> {}
 
-interface AccessRuleChangedEvent extends BaseEvent<'access.rule_changed', {
+// Provisional vocabulary: IDs and field names only; clients re-read through the API.
+interface AccessRuleChangedEvent extends BaseEvent<
+  'access.rule_created' | 'access.rule_updated' | 'access.rule_deleted', {
   ruleId: string;
-  action: 'created' | 'updated' | 'deleted';
-  rule?: AccessRule;
-  changedBy: string;
+  instanceId: string | null;
+  changedKeys: string[];
 }> {}
 ```
 
@@ -1351,3 +1352,36 @@ rate(omni_dead_letters_total[5m])
 # Consumer lag
 omni_consumer_pending_messages
 ```
+
+
+### Record changes and journal visibility
+
+Record writes publish `access.rule_created`, `access.rule_updated`, `access.rule_deleted`,
+`chat.created`, `chat.updated`, `chat.deleted`, `person.created`, `person.updated`, and
+`person.merged`. Chat label writes publish `chat.updated`. Change payloads contain internal
+IDs and `changedKeys` (field names, never values); person merges carry source/target person
+IDs and moved identity IDs. Notifications follow successful writes and tenant commit.
+The names are provisional pending vocabulary ownership. Existing `identity.linked` and
+`identity.unlinked` retain their platform-link meaning; `identity.created`/`identity.merged`
+remain unpublished. `person.>` shares the existing IDENTITY NATS stream and its retention.
+
+Forward-only journal subscriptions cover `access.>`, `chat.>`, `identity.>`, `person.>`, and
+`instance.>`. Per-check `access.allowed`/`access.denied`, credential-bearing
+`access.pairing_requested`, and `instance.qr_code` are never journaled. The single
+`CHANGE_JOURNAL_POLICY` table in `packages/api/src/services/journal-visibility.ts` classifies
+all new-family types; unclassified family types are excluded until classified.
+
+Sensitive access events (pairing approved, owner/device/connect-link/key lifecycle),
+identity events, instance connect/disconnect, and chat idle/handoff/closed events require
+`isAdminTierKey`: a literal `*` scope **and** `instanceIds === null`. IDs-only record changes,
+`chat.archived`, and `instance.updated` use normal instance visibility. Restricted keys
+cannot see new-family no-instance rows, including through aggregates and trace relatives.
+Existing agent-consumer custom/connector grant branches retain their no-instance semantics. This policy
+applies to pull/shared pulls, SSE, event list/search/by-sender, individual rows, traces,
+both person timelines, analytics, type inventory, event metrics, payload routes, and
+journal-backed automation test/execute. Existing message/reaction/custom/connector policy
+is unchanged. SSE keeps its existing reconnect/re-authentication lifetime ceiling.
+
+Agent replay continues to read stored messages only. Generic event-ops replay excludes the
+five new journal families from counts and batch selection; existing custom and connector
+replay behavior is preserved. Journaling is forward-only and does not backfill old events.

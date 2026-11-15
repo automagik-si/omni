@@ -22,6 +22,7 @@ import {
   unwrapDbError,
 } from '@omni/db';
 import { and, asc, desc, eq, gt, ilike, inArray, isNull, or, sql } from 'drizzle-orm';
+import { changedRecordKeys, publishRecordChange } from '../lib/record-change-events';
 import { scopedHandle } from '../tenancy/tenant-scope';
 import { sanitizeText } from '../utils/utf8';
 import { extractPhoneFromJid, isSelfChat } from './message-context';
@@ -588,6 +589,12 @@ export class ChatService {
       throw new Error('Failed to create chat');
     }
 
+    publishRecordChange(
+      this.eventBus,
+      'chat.created',
+      { chatId: created.id, instanceId: created.instanceId, changedKeys: changedRecordKeys(data) },
+      created.instanceId,
+    );
     return created;
   }
 
@@ -717,6 +724,12 @@ export class ChatService {
         .catch((err) => log.debug('Failed to publish chat.handoff_activated', { error: String(err) }));
     }
 
+    publishRecordChange(
+      this.eventBus,
+      'chat.updated',
+      { chatId: updated.id, instanceId: updated.instanceId, changedKeys: changedRecordKeys(data) },
+      updated.instanceId,
+    );
     return updated;
   }
 
@@ -805,33 +818,60 @@ export class ChatService {
    * Add a label to a chat
    */
   async addLabel(chatId: string, label: string): Promise<void> {
-    await this.db
+    const rows = await this.db
       .update(chats)
       .set({
         labels: sql`array(SELECT DISTINCT unnest(array_append(${chats.labels}, ${label})))`,
         updatedAt: new Date(),
       })
-      .where(eq(chats.id, chatId));
+      .where(eq(chats.id, chatId))
+      .returning();
+    for (const row of rows)
+      publishRecordChange(
+        this.eventBus,
+        'chat.updated',
+        { chatId: row.id, instanceId: row.instanceId, changedKeys: ['labels'] },
+        row.instanceId,
+      );
   }
 
   /**
    * Remove a label from a chat
    */
   async removeLabel(chatId: string, label: string): Promise<void> {
-    await this.db
+    const rows = await this.db
       .update(chats)
       .set({
         labels: sql`array_remove(${chats.labels}, ${label})`,
         updatedAt: new Date(),
       })
-      .where(eq(chats.id, chatId));
+      .where(eq(chats.id, chatId))
+      .returning();
+    for (const row of rows)
+      publishRecordChange(
+        this.eventBus,
+        'chat.updated',
+        { chatId: row.id, instanceId: row.instanceId, changedKeys: ['labels'] },
+        row.instanceId,
+      );
   }
 
   /**
    * Soft delete a chat
    */
   async delete(id: string): Promise<void> {
-    await this.db.update(chats).set({ deletedAt: new Date(), updatedAt: new Date() }).where(eq(chats.id, id));
+    const rows = await this.db
+      .update(chats)
+      .set({ deletedAt: new Date(), updatedAt: new Date() })
+      .where(eq(chats.id, id))
+      .returning();
+    for (const row of rows)
+      publishRecordChange(
+        this.eventBus,
+        'chat.deleted',
+        { chatId: row.id, instanceId: row.instanceId, changedKeys: ['deletedAt'] },
+        row.instanceId,
+      );
   }
 
   // =========================================================================

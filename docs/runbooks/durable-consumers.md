@@ -142,3 +142,31 @@ forecloses it; nothing here builds it.
   pass (the RLS coverage gate freezes which tables may carry `tenant_id`).
 - **Filtered lag** — lag is head-minus-cursor, not "matching events behind";
   computing the latter is a full scan.
+
+
+## Change-event families and key visibility
+
+The journal now follows `access.*`, `chat.*`, `identity.*`, `person.*`, and `instance.*`
+from subscription creation onward. `person.created`/`updated`/`merged` describe person
+records; `identity.linked`/`unlinked` describe platform identity links. Record changes
+carry internal IDs and changed field names only. Re-read values through the API.
+Vocabulary remains provisional.
+
+`access.allowed`, `access.denied`, `access.pairing_requested` (pairing credential), and
+`instance.qr_code` never enter the journal. Sensitive lifecycle events require a literal
+`*` scope and no instance restriction, using `isAdminTierKey`. The complete conservative
+classification is `CHANGE_JOURNAL_POLICY` in `packages/api/src/services/journal-visibility.ts`.
+It covers all new-family types; unclassified types stay out until classified. IDs-only
+record changes, `chat.archived`, and `instance.updated` retain normal visibility. A
+restricted key never receives sensitive events or new-family no-instance rows, even when an event
+belongs to an allowed instance. Existing grant-authorized custom/connector no-instance delivery
+for agent-owned consumers remains unchanged. The same filter governs pull, shared leases, SSE pages,
+readiness checks and head calculation, as well as REST list/search/trace/timelines,
+analytics/type inventory/metrics, payload access and journal-backed automation tests.
+An unavailable or forbidden payload parent is a 404; processing does not continue.
+SSE retains the existing maximum lifetime and re-authenticates on reconnect.
+
+The cursor remains the journal's global sequence: gaps and head-minus-cursor lag are not
+counts of visible or matching events. These record notifications cannot be replayed through
+generic event-ops replay; custom/connector replay is unchanged, and agent replay still reads
+only stored messages. There is no historical backfill.

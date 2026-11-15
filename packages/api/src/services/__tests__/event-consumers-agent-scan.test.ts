@@ -98,7 +98,7 @@ test('ordered union deduplicates S/A overlap and never advances past an unread m
   }
 });
 
-test('caller extra and consumer instance scopes occur only on I; S/A correlate active kind and id', async () => {
+test('new-family caller policy covers I/S/A while existing custom grants retain their scope', async () => {
   const row = consumer({ accessFilter: 'allowed', waitForReady: true });
   execute
     .mockResolvedValueOnce([row])
@@ -109,14 +109,17 @@ test('caller extra and consumer instance scopes occur only on I; S/A correlate a
   const [i, s, a] = branches();
   if (!i || !s || !a) throw new Error('Expected three branches');
   expect(i.sql).toContain('"instance_id" is not null');
-  expect(i.params.filter((value) => value === I)).toHaveLength(2);
+  expect(i.params.filter((value) => value === I)).toHaveLength(3);
   for (const grant of [s, a]) {
     expect(grant.sql).toContain('"instance_id" is null');
     expect(grant.sql).toContain('"revoked_at" is null');
     expect(grant.sql).toContain('"agent_source_grants"."agent_id" =');
     expect(grant.sql).toContain('"access_decision" =');
     expect(grant.params).toContain(A);
-    expect(grant.params).not.toContain(I);
+    expect(grant.params).toContain(I);
+    expect(grant.params).toContain('access.key_minted');
+    expect(grant.params).toContain('access.device_authorized');
+    expect(grant.sql).toContain('not (');
   }
   expect(s.sql).toContain('"source_kind" = "omni_events"."source_kind"');
   expect(s.sql).toContain('"source_id" = "omni_events"."source_id"');

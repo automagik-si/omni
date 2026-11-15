@@ -77,7 +77,7 @@ describe('POST /automations/:id/test with eventId (#1073)', () => {
       eventId: string;
       actions: Array<{ config: { message: string } }>;
     };
-    expect(getById).toHaveBeenCalledWith(EVENT_ID);
+    expect(getById).toHaveBeenCalledWith(EVENT_ID, { instanceIds: null, fullAccess: true });
     expect(body.matched).toBe(true);
     expect(body.eventId).toBe(EVENT_ID);
     expect(body.actions[0]?.config.message).toBe('opened corr-9');
