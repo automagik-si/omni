@@ -943,7 +943,7 @@ export class TelegramPlugin extends BaseChannelPlugin {
     // getStatus() and let InstanceMonitor schedule a reconnect.
     bot
       .start({
-        drop_pending_updates: true,
+        drop_pending_updates: false,
         allowed_updates: [
           'message',
           'edited_message',

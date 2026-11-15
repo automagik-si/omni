@@ -27,6 +27,7 @@ Telegram Bot API integration via [grammy](https://grammy.dev/). Supports both we
 
 ## Telegram-specific Notes
 
+- Telegram holds pending updates for up to 24 h; Omni reads them when polling starts, including after a reconnect.
 - User IDs are numeric (stored as strings: `String(user.id)`)
 - Chat types: `private` (DM), `group`, `supergroup`, `channel`
 - Bot API rate limits: ~30 messages/second globally, 1 msg/s per chat in groups
