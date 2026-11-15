@@ -1150,6 +1150,16 @@ export const ROUTE_OWNERSHIP: readonly RouteOwnershipDeclaration[] = [
       'Reads only effective process flags and no tenant row; authenticated system:read is required. ' +
       'Deployment-wide by nature, so platform-admin, like the system update status.',
   },
+  {
+    route: 'GET /api/v2/system/two-responders',
+    class: 'platform-admin',
+    justification:
+      'Read-only doctor diagnosis of instances that an Omni agent and an attached app may both answer. It joins ' +
+      'instances and agents (read through the request tenant scope) with the global durable consumer and API key ' +
+      'registries, which have no tenant-row boundary, so the answer spans the deployment. Authenticated ' +
+      'system:read is required and the caller key instance restriction still filters the list. Platform-admin, ' +
+      'like the other system routes, so the tenant scope projection is unchanged.',
+  },
   ...TENANT_SCOPED_ROUTES.map((route) => ({ route, class: 'tenant-scoped' as const })),
   ...PLATFORM_ADMIN_ROUTES.map((route) => ({
     route,

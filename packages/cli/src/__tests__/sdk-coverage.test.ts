@@ -346,6 +346,7 @@ const CLI_COMMANDS: Record<string, string> = {
   // SYSTEM
   // ============================================================================
   'system.health': 'status',
+  'system.twoResponders': 'doctor',
 };
 
 /**

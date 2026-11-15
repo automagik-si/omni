@@ -123,7 +123,7 @@ export interface EventTypeInventoryRow {
 }
 
 /** Durable-consumer type filter match: exact, or trailing-* prefix glob (#966 contract). */
-function consumerTypeMatches(filter: string, eventType: string): boolean {
+export function consumerTypeMatches(filter: string, eventType: string): boolean {
   return filter.endsWith('*') ? eventType.startsWith(filter.slice(0, -1)) : filter === eventType;
 }
 
