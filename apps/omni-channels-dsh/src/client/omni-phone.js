@@ -1,7 +1,7 @@
 import { threadReason } from './problem-words.js'
 import { createElement as h, useEffect, useMemo, useRef, useState } from 'react'
 import { ChatHead, ChatMessages, MessageBar, useOmni, useStayAtEnd } from './channels.js'
-import { POLL_MS, channelOf, chatOf } from './omni-store.js'
+import { POLL_MS, channelOf, chatOf, sentAnswered, sentMessage, withSent } from './omni-store.js'
 import { call, hostText, icons, t } from './core.js'
 
 // The chat pane (its ids still say phone): a tab of DSH's right column that shows one thread's
@@ -214,7 +214,8 @@ export function SendSwitch({ thread }) {
 /**
  * #1715: the pane's composer, on the chat view's message bar (channels.js MessageBar). Staff's
  * own text goes from the thread's channel straight to its chat (host omni-phone-send): never
- * through the thread's model, a tool or a card, and it shows above on the next poll. Enter
+ * through the thread's model, a tool or a card. It shows above at once (`sent`, the pane's) and
+ * stays until Omni's own row for it comes with a poll (#1773). Enter
  * sends, Shift+Enter adds a line, and the bar waits while one is being sent; a failed one says
  * why and keeps the text, and nothing is sent again until staff send it. An answer child's
  * draft waiting on its card shows over the bar with Edit, which puts its text in the field:
@@ -223,7 +224,7 @@ export function SendSwitch({ thread }) {
  */
 // The longest message the host sends (omni-phone-send).
 export const PHONE_TEXT_MAX = 4096
-export function PhoneComposer({ thread }) {
+export function PhoneComposer({ thread, sent }) {
   const [text, setText] = useState('')
   const [editing, setEditing] = useState(null)
   const [sending, setSending] = useState(false)
@@ -238,11 +239,14 @@ export function PhoneComposer({ thread }) {
     busy.current = true
     setSending(true)
     setProblem(null)
+    const shown = sent?.add(message)
     try {
-      await call('omni-phone-send', { threadId: thread.id, text: message, ...(editing === null ? {} : { draftId: editing }) })
+      const reply = await call('omni-phone-send', { threadId: thread.id, text: message, ...(editing === null ? {} : { draftId: editing }) })
+      sent?.answered(shown, reply?.messageId)
       setText('')
       setEditing(null)
     } catch (error) {
+      sent?.drop(shown)
       console.warn('Could not send the message:', error)
       setProblem(typeof error?.message === 'string' && error.message !== '' ? error.message : 'Could not send this message. Check your connection and access, then try again.')
     } finally {
@@ -286,7 +290,8 @@ export function PhonePane({ params, sessionId, useRoster, visible = true }) {
   const thread = useRoster(roster => phoneThreadOf(roster, params, sessionId))
   const read = useChatPoll(thread?.chatId ?? null, visible)
   const overview = useOmni()
-  const messages = read.messages ?? []
+  const sent = useSent(thread?.chatId ?? null, read.messages)
+  const messages = withSent(read.messages ?? [], sent.messages).messages
   const { scroller, onScroll, onSized } = useStayAtEnd(thread?.chatId, messages.length)
   if (!thread) {
     const named = typeof params?.threadId === 'string' || typeof params?.chatId === 'string'
@@ -302,9 +307,38 @@ export function PhonePane({ params, sessionId, useRoster, visible = true }) {
       h('div', { className: 'oc-thread-in' },
         loading ? h('div', { className: 'oc-day' }, h('span', { className: 'oc-spinner', 'aria-hidden': true }), t('Loading messages…')) : null,
         read.error ? h('p', { className: 'op-note', role: 'alert' }, hostText(read.error)) : null,
-        read.messages?.length === 0 ? h('p', { className: 'op-note' }, t('No messages yet')) : null,
+        read.messages !== null && messages.length === 0 ? h('p', { className: 'op-note' }, t('No messages yet')) : null,
         h(ChatMessages, { messages, onSized }))),
-    h(PhoneComposer, { thread }))
+    h(PhoneComposer, { thread, sent }))
+}
+
+// #1773: the messages staff sent from this pane that no row of Omni's stands for yet
+// (omni-store.js withSent): each from its send until a poll brings Omni's row for it.
+function useSent(chatId, rows) {
+  const [held, setHeld] = useState({ chatId, messages: [] })
+  const latest = useRef(rows)
+  latest.current = rows
+  const messages = held.chatId === chatId ? held.messages : []
+  // A poll's rows: the sent messages they now hold are Omni's to show.
+  useEffect(() => {
+    if (rows === null) return
+    setHeld(before => {
+      if (before.chatId !== chatId || before.messages.length === 0) return before
+      const { left } = withSent(rows, before.messages)
+      return left.length === before.messages.length ? before : { chatId, messages: left }
+    })
+  }, [chatId, rows])
+  const change = useMemo(() => (update) => setHeld(before => ({ chatId, messages: update(before.chatId === chatId ? before.messages : []) })), [chatId])
+  return useMemo(() => ({
+    messages,
+    add(text) {
+      const message = sentMessage(text, latest.current ?? [])
+      change(messages => [...messages, message])
+      return message.id
+    },
+    answered: (id, messageId) => change(messages => messages.map(message => (message.id === id ? sentAnswered(message, messageId) : message))),
+    drop: id => change(messages => messages.filter(message => message.id !== id)),
+  }), [messages, change])
 }
 
 // Each tab's last params on this page, by Session and tab, the newest KEPT_TABS of them.

@@ -153,7 +153,8 @@ test('a reply goes to the chat\'s own instance and address; refusals say why', a
     [`GET /chats/${CHAT}`]: () => [200, { data: { id: CHAT, instanceId: CHANNEL, externalId: '5511988887777@s.whatsapp.net' } }],
     'POST /messages/send': () => [200, { data: { messageId: 'x' } }],
   })
-  assert.deepEqual(await run('omni-send', { chatId: CHAT, text: 'Oi!' }), { sent: true })
+  // The channel's id for the message comes back: the chat page knows Omni's row for it by it (#1773).
+  assert.deepEqual(await run('omni-send', { chatId: CHAT, text: 'Oi!' }), { sent: true, messageId: 'x' })
   assert.deepEqual(calls[1].body, { instanceId: CHANNEL, to: '5511988887777@s.whatsapp.net', text: 'Oi!' })
   await assert.rejects(run('omni-send', { chatId: CHAT, text: '   ' }), { code: 'bot/invalid' })
 

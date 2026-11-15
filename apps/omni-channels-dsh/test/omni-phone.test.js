@@ -4,6 +4,7 @@ import { test } from 'node:test'
 import { NEEDS_NEWER_TEAM, TEAM_CONTRACT } from '../src/host/resume-hook.js'
 import { all, bundleClient, column, mount as mountWith, nodes, ofType, one, plain, react, settle, text } from './client-stand-in.js'
 import { omni } from './omni-client.js'
+import { chatBench, theirRow } from './omni-chat-bench.js'
 
 // The chat pane (omni-phone.js, its ids still say phone): a thread's chat across the whole pane,
 // drawn by the chat view of channels.js, a tab of DSH's right column opened only from the thread. Drawn with a stand-in React and a stand-in
@@ -1001,4 +1002,59 @@ test('the chat page draws the same header, log and bar; its bar sends on the pag
   assert.deepEqual(asked('omni-send'), [['omni-send', { chatId: 'c-ana', text: 'See you at 10.' }]])
   assert.equal(field().props.value, '')
   assert.deepEqual([view.keys('PlusIcon'), view.keys('MicIcon')], [[], []])
+})
+
+// #1773: a message staff send from the pane, on a stand-in Omni shaped as its routes answer
+// (omni-chat-bench.js): Omni stores the sent row only when its message.sent consumer runs,
+// after the send answered.
+test('a message sent from the pane shows at once and stays through the polls until Omni stores its row, then shows once (#1773)', async (t) => {
+  reset()
+  const bench = chatBench({ chatId: CHAT_1, rows: [theirRow(CHAT_1, 'Is the order on its way?', '2026-11-15T11:59:00.000Z')] })
+  let release = null
+  answer = (endpoint, body) => (endpoint === 'omni-phone-send'
+    ? new Promise((resolve) => { release = () => resolve(bench.call(endpoint, body)) })
+    : bench.call(endpoint, body))
+  const said = root => all(root, 'oc-bubble').map(bubble => ({ text: text(bubble).replace(text(one(bubble, 'oc-meta')), ''), sending: bubble.props['data-sending'] === true }))
+  const view = pane({ params: { threadId: 't1', chatId: CHAT_1 }, sessionId: 's1', useRoster: useRosterOf(hooked([THREAD(1)])) }, t)
+  let root = await drawn(view)
+  assert.deepEqual(said(root), [{ text: 'Is the order on its way?', sending: false }])
+  typed(root, 'On my way')
+  root = await drawn(view)
+  key(root)
+  // Shown at once, waiting on the send.
+  root = await drawn(view)
+  assert.deepEqual(said(root), [{ text: 'Is the order on its way?', sending: false }, { text: 'On my way', sending: true }])
+  release()
+  root = await drawn(view)
+  assert.equal(boxOf(root).props.value, '')
+  assert.deepEqual(said(root), [{ text: 'Is the order on its way?', sending: false }, { text: 'On my way', sending: false }])
+  // The next poll: Omni has not stored its row yet, and the message stays.
+  await nextPoll()
+  root = await drawn(view)
+  assert.equal(bench.queued.length, 1)
+  assert.deepEqual(said(root).map(line => line.text), ['Is the order on its way?', 'On my way'])
+  // Omni stores it: the next poll shows Omni's own row, once.
+  bench.persist()
+  await nextPoll()
+  root = await drawn(view)
+  assert.deepEqual(said(root).map(line => line.text), ['Is the order on its way?', 'On my way'])
+  await nextPoll()
+  root = await drawn(view)
+  assert.deepEqual(said(root).map(line => line.text), ['Is the order on its way?', 'On my way'])
+  assert.equal(asked('omni-phone-send').length, 1)
+})
+
+test('a send the host refuses takes the pane\'s message back (#1773)', async (t) => {
+  reset()
+  const bench = chatBench({ chatId: CHAT_1 })
+  answer = (endpoint, body) => (endpoint === 'omni-phone-send' ? new Error('Omni answered 503: instance not connected. Nothing was sent.') : bench.call(endpoint, body))
+  const view = pane({ params: { threadId: 't1', chatId: CHAT_1 }, sessionId: 's1', useRoster: useRosterOf(hooked([THREAD(1)])) }, t)
+  let root = await drawn(view)
+  typed(root, 'On my way')
+  root = await drawn(view)
+  key(root)
+  root = await drawn(view)
+  assert.equal(all(root, 'oc-bubble').length, 0)
+  assert.equal(boxOf(root).props.value, 'On my way')
+  assert.equal(all(root, 'op-compose-fail').length, 1)
 })

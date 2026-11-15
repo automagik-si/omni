@@ -79,6 +79,9 @@ test('messages say who wrote them: the contact, Omni through the API, or the use
   assert.equal(messageOf({ id: 'm', isFromMe: true, source: 'api', textContent: 'hi' }).from, 'omni')
   assert.equal(messageOf({ id: 'm', isFromMe: true, source: 'realtime', textContent: 'hi' }).from, 'you')
   assert.equal(messageOf({ id: 'm', isFromMe: true, source: 'api', textContent: 'hi' }).fromMe, true)
+  // The channel's id for it, when Omni has one: a chat view knows its sent message's row by it (#1773).
+  assert.equal(messageOf({ id: 'm', isFromMe: true, externalId: 'CHANNEL-MSG-1', textContent: 'hi' }).externalId, 'CHANNEL-MSG-1')
+  assert.equal(Object.hasOwn(messageOf({ id: 'm', isFromMe: true, externalId: '', textContent: 'hi' }), 'externalId'), false)
   assert.equal(messageOf({ id: 'm', isFromMe: false, hasMedia: true, messageType: 'location' }).text, '[location]')
 })
 

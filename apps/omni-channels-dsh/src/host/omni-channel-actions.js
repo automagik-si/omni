@@ -443,8 +443,10 @@ export function install(rt) {
   async function send(body) {
     const payload = parse(SendPayload, body, 'Type a message')
     const chat = parse(Chat, await must('GET', `/chats/${payload.chatId}`, undefined, FORBIDDEN_SEND), 'Omni does not know that chat')
-    await must('POST', '/messages/send', { instanceId: chat.data.instanceId, to: chat.data.externalId, text: payload.text }, FORBIDDEN_SEND)
-    return { sent: true }
+    const reply = await must('POST', '/messages/send', { instanceId: chat.data.instanceId, to: chat.data.externalId, text: payload.text }, FORBIDDEN_SEND)
+    // The channel's id for the message: the chat page knows Omni's row for it by it (#1773).
+    const messageId = reply?.data?.messageId
+    return { sent: true, ...(typeof messageId === 'string' && messageId !== '' ? { messageId } : {}) }
   }
 
   const ENDPOINTS = {

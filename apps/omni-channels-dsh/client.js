@@ -11218,20 +11218,20 @@ function omniActions(select, call2) {
       const body = text.trim();
       const before = omniStore.getSnapshot();
       if (body === "" || !canSend(before)) return;
-      const at2 = Date.now();
-      const localId = `local-${at2}`;
+      const sent = sentMessage(body, before.messages[chatId]);
+      const { id: localId, at: at2 } = sent;
       const channelId = chatOf(before, chatId)?.channelId ?? before.chatChannels?.[chatId];
       const stillExists = () => channelId ? Boolean(channelOf(omniStore.getSnapshot(), channelId)) : Boolean(chatOf(omniStore.getSnapshot(), chatId));
       set((state) => ({
-        messages: { ...state.messages, [chatId]: [...state.messages[chatId] ?? [], { id: localId, from: "you", text: body, at: at2, ...state.preview ? {} : { sending: true } }] },
+        messages: { ...state.messages, [chatId]: [...state.messages[chatId] ?? [], state.preview ? { id: localId, from: "you", text: body, at: at2 } : sent] },
         chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, preview: `You: ${body}`, at: at2 } : chat),
         sendError: null
       }));
       if (before.preview || !call2) return;
       call2("omni-send", { chatId, text: body }).then(
-        () => {
+        (reply) => {
           if (!stillExists()) return;
-          set((state) => ({ messages: { ...state.messages, [chatId]: (state.messages[chatId] ?? []).map((message) => message.id === localId ? { ...message, sending: false } : message) } }));
+          set((state) => ({ messages: { ...state.messages, [chatId]: (state.messages[chatId] ?? []).map((message) => message.id === localId ? sentAnswered(message, reply?.messageId) : message) } }));
           void loadMessages(call2, chatId);
         },
         (error) => {
@@ -11311,12 +11311,41 @@ function omniActions(select, call2) {
 var POLL_MS = 15e3;
 var polling = null;
 var markSeen = (seen, chats) => chats.map((chat) => (seen[chat.id] ?? -1) >= chat.at ? { ...chat, unread: 0 } : chat);
+var sentCount = 0;
+function sentMessage(text, shown = [], at2 = Date.now()) {
+  sentCount += 1;
+  return {
+    id: `local-${at2}-${sentCount}`,
+    from: "you",
+    fromMe: true,
+    text,
+    at: at2,
+    sending: true,
+    local: { messageId: null, before: shown.filter((message) => !message.local).map((message) => message.id) }
+  };
+}
+var sentAnswered = (message, messageId) => ({
+  ...message,
+  sending: false,
+  status: "sent",
+  local: { ...message.local, messageId: typeof messageId === "string" && messageId !== "" ? messageId : null }
+});
+function withSent(rows, sent) {
+  const taken = /* @__PURE__ */ new Set();
+  const take = (matches) => {
+    const row = rows.find((row2) => !taken.has(row2) && row2.from !== "them" && matches(row2));
+    if (row !== void 0) taken.add(row);
+    return row !== void 0;
+  };
+  const left = sent.filter((message) => !(message.local.messageId !== null && take((row) => row.externalId === message.local.messageId))).filter((message) => !take((row) => row.text === message.text && !message.local.before.includes(row.id)));
+  return { messages: left.length === 0 ? rows : [...rows, ...left].sort((a, b2) => a.at - b2.at), left };
+}
 async function loadMessages(call2, chatId) {
   const generation = dataGeneration;
   try {
     const { messages } = await call2("omni-messages", { chatId });
     if (generation !== dataGeneration || deleting.size || !chatOf(omniStore.getSnapshot(), chatId)) return;
-    set((state) => ({ messages: { ...state.messages, [chatId]: messages } }));
+    set((state) => ({ messages: { ...state.messages, [chatId]: withSent(messages, (state.messages[chatId] ?? []).filter((message) => message.local)).messages } }));
   } catch (error) {
     console.warn("Could not load messages:", error);
     if (generation !== dataGeneration || deleting.size || !chatOf(omniStore.getSnapshot(), chatId)) return;
@@ -15773,7 +15802,7 @@ function SendSwitch({ thread }) {
   );
 }
 var PHONE_TEXT_MAX = 4096;
-function PhoneComposer({ thread }) {
+function PhoneComposer({ thread, sent }) {
   const [text, setText] = (0, import_react12.useState)("");
   const [editing, setEditing] = (0, import_react12.useState)(null);
   const [sending, setSending] = (0, import_react12.useState)(false);
@@ -15787,11 +15816,14 @@ function PhoneComposer({ thread }) {
     busy.current = true;
     setSending(true);
     setProblem(null);
+    const shown = sent?.add(message);
     try {
-      await call("omni-phone-send", { threadId: thread.id, text: message, ...editing === null ? {} : { draftId: editing } });
+      const reply = await call("omni-phone-send", { threadId: thread.id, text: message, ...editing === null ? {} : { draftId: editing } });
+      sent?.answered(shown, reply?.messageId);
       setText("");
       setEditing(null);
     } catch (error) {
+      sent?.drop(shown);
       console.warn("Could not send the message:", error);
       setProblem(typeof error?.message === "string" && error.message !== "" ? error.message : "Could not send this message. Check your connection and access, then try again.");
     } finally {
@@ -15845,7 +15877,8 @@ function PhonePane({ params, sessionId, useRoster, visible = true }) {
   const thread = useRoster((roster) => phoneThreadOf(roster, params, sessionId));
   const read = useChatPoll(thread?.chatId ?? null, visible);
   const overview = useOmni();
-  const messages = read.messages ?? [];
+  const sent = useSent(thread?.chatId ?? null, read.messages);
+  const messages = withSent(read.messages ?? [], sent.messages).messages;
   const { scroller, onScroll, onSized } = useStayAtEnd(thread?.chatId, messages.length);
   if (!thread) {
     const named = typeof params?.threadId === "string" || typeof params?.chatId === "string";
@@ -15870,12 +15903,37 @@ function PhonePane({ params, sessionId, useRoster, visible = true }) {
         { className: "oc-thread-in" },
         loading ? (0, import_react12.createElement)("div", { className: "oc-day" }, (0, import_react12.createElement)("span", { className: "oc-spinner", "aria-hidden": true }), t("Loading messages…")) : null,
         read.error ? (0, import_react12.createElement)("p", { className: "op-note", role: "alert" }, hostText(read.error)) : null,
-        read.messages?.length === 0 ? (0, import_react12.createElement)("p", { className: "op-note" }, t("No messages yet")) : null,
+        read.messages !== null && messages.length === 0 ? (0, import_react12.createElement)("p", { className: "op-note" }, t("No messages yet")) : null,
         (0, import_react12.createElement)(ChatMessages, { messages, onSized })
       )
     ),
-    (0, import_react12.createElement)(PhoneComposer, { thread })
+    (0, import_react12.createElement)(PhoneComposer, { thread, sent })
   );
+}
+function useSent(chatId, rows) {
+  const [held, setHeld] = (0, import_react12.useState)({ chatId, messages: [] });
+  const latest = (0, import_react12.useRef)(rows);
+  latest.current = rows;
+  const messages = held.chatId === chatId ? held.messages : [];
+  (0, import_react12.useEffect)(() => {
+    if (rows === null) return;
+    setHeld((before) => {
+      if (before.chatId !== chatId || before.messages.length === 0) return before;
+      const { left } = withSent(rows, before.messages);
+      return left.length === before.messages.length ? before : { chatId, messages: left };
+    });
+  }, [chatId, rows]);
+  const change = (0, import_react12.useMemo)(() => (update) => setHeld((before) => ({ chatId, messages: update(before.chatId === chatId ? before.messages : []) })), [chatId]);
+  return (0, import_react12.useMemo)(() => ({
+    messages,
+    add(text) {
+      const message = sentMessage(text, latest.current ?? []);
+      change((messages2) => [...messages2, message]);
+      return message.id;
+    },
+    answered: (id, messageId) => change((messages2) => messages2.map((message) => message.id === id ? sentAnswered(message, messageId) : message)),
+    drop: (id) => change((messages2) => messages2.filter((message) => message.id !== id))
+  }), [messages, change]);
 }
 var KEPT_KEY = "omni.phone.tabs";
 var KEPT_TABS = 50;

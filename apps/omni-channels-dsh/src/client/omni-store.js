@@ -199,24 +199,24 @@ export function omniActions(select, call) {
       const body = text.trim()
       const before = omniStore.getSnapshot()
       if (body === '' || !canSend(before)) return
-      const at = Date.now()
-      const localId = `local-${at}`
+      const sent = sentMessage(body, before.messages[chatId])
+      const { id: localId, at } = sent
       const channelId = chatOf(before, chatId)?.channelId ?? before.chatChannels?.[chatId]
       // A send may finish after deletion. Bound the callback to its originating instance,
       // not overview visibility: an unrelated chat can merely fall outside the recent list.
       const stillExists = () => channelId ? Boolean(channelOf(omniStore.getSnapshot(), channelId)) : Boolean(chatOf(omniStore.getSnapshot(), chatId))
       set(state => ({
-        messages: { ...state.messages, [chatId]: [...(state.messages[chatId] ?? []), { id: localId, from: 'you', text: body, at, ...(state.preview ? {} : { sending: true }) }] },
+        messages: { ...state.messages, [chatId]: [...(state.messages[chatId] ?? []), state.preview ? { id: localId, from: 'you', text: body, at } : sent] },
         chats: state.chats.map(chat => (chat.id === chatId ? { ...chat, preview: `You: ${body}`, at } : chat)),
         sendError: null,
       }))
       if (before.preview || !call) return
-      // Shown at once; a refusal takes it back and says why. A sent one stays until the
-      // chat's messages come back from omni with it.
+      // Shown at once; a refusal takes it back and says why. A sent one stays until Omni's
+      // own row for it comes back with the chat's messages (withSent).
       call('omni-send', { chatId, text: body }).then(
-        () => {
+        (reply) => {
           if (!stillExists()) return
-          set(state => ({ messages: { ...state.messages, [chatId]: (state.messages[chatId] ?? []).map(message => (message.id === localId ? { ...message, sending: false } : message)) } }))
+          set(state => ({ messages: { ...state.messages, [chatId]: (state.messages[chatId] ?? []).map(message => (message.id === localId ? sentAnswered(message, reply?.messageId) : message)) } }))
           void loadMessages(call, chatId)
         },
         error => {
@@ -294,12 +294,41 @@ let polling = null
 
 const markSeen = (seen, chats) => chats.map(chat => ((seen[chat.id] ?? -1) >= chat.at ? { ...chat, unread: 0 } : chat))
 
+// #1773: a message sent from a chat view (the chat page's sendText, the chat pane's composer)
+// stays on screen from the send until Omni's own row for it arrives. Omni stores a sent
+// message after its send answers (its message.sent consumer), so the reads right after a send
+// do not hold it yet. The row carries the send's message id as its externalId; a send whose
+// answer named no id matches a from-me row with its text that the chat did not show when it
+// was sent. Each row stands for one sent message. One never matched stays while the view does.
+let sentCount = 0
+export function sentMessage(text, shown = [], at = Date.now()) {
+  sentCount += 1
+  return { id: `local-${at}-${sentCount}`, from: 'you', fromMe: true, text, at, sending: true,
+    local: { messageId: null, before: shown.filter(message => !message.local).map(message => message.id) } }
+}
+/** The sent message once Omni accepted it: sent, under the id its send answered with. */
+export const sentAnswered = (message, messageId) => ({ ...message, sending: false, status: 'sent',
+  local: { ...message.local, messageId: typeof messageId === 'string' && messageId !== '' ? messageId : null } })
+/** Omni's rows, with the sent messages (`local`) no row stands for yet: `left`. */
+export function withSent(rows, sent) {
+  const taken = new Set()
+  const take = (matches) => {
+    const row = rows.find(row => !taken.has(row) && row.from !== 'them' && matches(row))
+    if (row !== undefined) taken.add(row)
+    return row !== undefined
+  }
+  const left = sent
+    .filter(message => !(message.local.messageId !== null && take(row => row.externalId === message.local.messageId)))
+    .filter(message => !take(row => row.text === message.text && !message.local.before.includes(row.id)))
+  return { messages: left.length === 0 ? rows : [...rows, ...left].sort((a, b) => a.at - b.at), left }
+}
+
 export async function loadMessages(call, chatId) {
   const generation = dataGeneration
   try {
     const { messages } = await call('omni-messages', { chatId })
     if (generation !== dataGeneration || deleting.size || !chatOf(omniStore.getSnapshot(), chatId)) return
-    set(state => ({ messages: { ...state.messages, [chatId]: messages } }))
+    set(state => ({ messages: { ...state.messages, [chatId]: withSent(messages, (state.messages[chatId] ?? []).filter(message => message.local)).messages } }))
   } catch (error) {
     console.warn('Could not load messages:', error)
     if (generation !== dataGeneration || deleting.size || !chatOf(omniStore.getSnapshot(), chatId)) return

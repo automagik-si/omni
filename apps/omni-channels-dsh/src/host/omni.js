@@ -170,6 +170,8 @@ export function messageOf(message) {
     fileName: hasMedia && typeof fileName === 'string' && fileName !== '' ? fileName : null,
     at: time(message.platformTimestamp) ?? time(message.createdAt) ?? 0,
     ...(STATUSES.has(message.deliveryStatus) ? { status: message.deliveryStatus } : {}),
+    // The channel's id for it: a chat view knows its own sent message's row by it (#1773).
+    ...(typeof message.externalId === 'string' && message.externalId !== '' ? { externalId: message.externalId } : {}),
   }
 }
 
