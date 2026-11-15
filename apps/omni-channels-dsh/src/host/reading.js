@@ -278,6 +278,9 @@ export function install(rt) {
     try { json = text ? JSON.parse(text) : null } catch { /* not JSON */ }
     return { status: response.status, ok: response.ok, json }
   }
+  // Omni's answer for a chat it does not have, or that this link may not read (a key held to
+  // some channels gets it for a chat elsewhere); an Omni without a route says otherwise.
+  const chatMissing = reply => reply.status === 404 && /^Chat not found/.test(String(reply.json?.error?.message ?? ''))
   async function chatOf(chatId) {
     const reply = await omni('GET', `/chats/${encodeURIComponent(chatId)}`)
     const parsed = Chat.safeParse(reply.json)
@@ -290,7 +293,8 @@ export function install(rt) {
     if (from) query.set('from', from)
     if (to) query.set('to', to)
     const reply = await omni('GET', `/chats/${encodeURIComponent(chatId)}/coverage?${query}`)
-    // The chat was found before this: a 404 here is an Omni without the coverage read.
+    // Any other 404 is an Omni without the coverage read.
+    if (chatMissing(reply)) throw invalid(NO_CHAT)
     if (!reply.ok) throw invalid(reply.status === 404 ? NO_PAGES : `omni answered ${reply.status} for the chat's coverage`)
     const parsed = Coverage.safeParse(reply.json)
     if (!parsed.success) throw invalid(NO_PAGES)
@@ -343,7 +347,7 @@ export function install(rt) {
       if (to) query.set('before', to)
       if (next) query.set('cursor', next)
       const reply = await omni('GET', `/chats/${encodeURIComponent(chat.id)}/messages?${query}`)
-      if (!reply.ok) return { refusal: reply.status === 400 && next ? BAD_CURSOR : reply.status === 404 ? NO_CHAT : `omni answered ${reply.status} for the chat's messages` }
+      if (!reply.ok) return { refusal: reply.status === 400 && next ? BAD_CURSOR : chatMissing(reply) ? NO_CHAT : `omni answered ${reply.status} for the chat's messages` }
       const parsed = Page.safeParse(reply.json)
       return parsed.success ? { page: parsed.data } : { refusal: NO_PAGES }
     }

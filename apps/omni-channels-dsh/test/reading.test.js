@@ -41,6 +41,8 @@ const ODD = '7a1c0d2e-3b4f-4c5d-8e6f-0a1b2c3d4e04'
 const HEAVY = '7a1c0d2e-3b4f-4c5d-8e6f-0a1b2c3d4e05'
 // A chat id Omni does not know.
 const UNKNOWN = '7a1c0d2e-3b4f-4c5d-8e6f-0a1b2c3d4e99'
+// A chat the chat read finds while its history routes refuse it, as for a key held to other channels.
+const SCOPED_OUT = '7a1c0d2e-3b4f-4c5d-8e6f-0a1b2c3d4e06'
 const id = n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
 const SAME = '2026-05-10T12:00:00.000Z'
 const message = (n, platformTimestamp, extra = {}) => ({
@@ -79,6 +81,7 @@ const CHATS = {
   [ELSEWHERE]: { id: ELSEWHERE, name: 'Elsewhere', instanceId: OTHER_INSTANCE, externalId: '5511966660000@s.whatsapp.net', chatType: 'dm' },
   [ODD]: { id: ODD, name: 'Odd', instanceId: INSTANCE, externalId: '5511955550000@s.whatsapp.net', chatType: 'dm' },
   [HEAVY]: { id: HEAVY, name: 'Heavy', instanceId: INSTANCE, externalId: '5511944440000@s.whatsapp.net', chatType: 'group' },
+  [SCOPED_OUT]: { id: SCOPED_OUT, name: 'Scoped out', instanceId: INSTANCE, externalId: '5511933330000@s.whatsapp.net', chatType: 'dm' },
 }
 
 // O1's contract: GET /chats/:id/messages pages back by (platformTimestamp desc, id desc) from an
@@ -98,8 +101,9 @@ function omniO1() {
     if (method !== 'GET') return json(404, { error: { code: 'NOT_FOUND' } })
     const [, chatId, part] = /^\/chats\/([^/]+)(?:\/(messages|coverage))?$/.exec(path) ?? []
     if (chatId === undefined) return json(404, { error: { code: 'NOT_FOUND' } })
-    if (!CHATS[chatId]) return json(404, { error: { code: 'NOT_FOUND', message: 'Chat not found' } })
+    if (!CHATS[chatId]) return json(404, { error: { code: 'NOT_FOUND', message: `Chat not found: ${chatId}. Pass either a chat UUID or set the API key's active instance via POST /api/v2/context/use first.` } })
     if (part === undefined) return json(200, { data: CHATS[chatId] })
+    if (chatId === SCOPED_OUT) return json(404, { error: { code: 'NOT_FOUND', message: `Chat not found: ${chatId}. Pass either a chat UUID or set the API key's active instance via POST /api/v2/context/use first.` } })
     const query = url.searchParams
     const withDeleted = query.get('includeDeleted') === 'true'
     const own = rows.filter(row => row.chatId === chatId && (withDeleted || !row.deletedAt))
@@ -416,6 +420,8 @@ test('the kit\'s endpoint gives a note and coverage only for a chat Omni finds a
   assert.equal(await dsh.run('read_history', { chat: UNKNOWN }), NO_CHAT)
   assert.deepEqual(await dsh.endpoint('omni-reading-note', { chat: UNKNOWN }), { chat: { id: UNKNOWN }, note: null, coverage: null })
   assert.equal(coverageReads(), before)
+  // A chat whose history routes answer Omni's chat-not-found (a key held to other channels).
+  assert.equal(await dsh.run('read_history', { chat: SCOPED_OUT }), NO_CHAT)
   // Readable: the note and the coverage.
   assert.match(await dsh.run('save_reading_note', { chat: CHAT, note: 'open order', readThrough: '2026-11-01' }), /^Reading note saved/)
   const card = await dsh.endpoint('omni-reading-note', { chat: CHAT })
