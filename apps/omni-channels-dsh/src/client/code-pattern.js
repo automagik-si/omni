@@ -1,5 +1,5 @@
-// #1732: a code pattern as staff type it (host code-pattern.js reads codes by it): an optional
-// prefix, the letters and digits a code may have after it, how many, and whether look-alike
+// #1732: a code pattern as staff type it (host code-pattern.js reads codes by it): a prefix
+// (optional unless the feature needs one), the letters and digits a code may have after it, how many, and whether look-alike
 // characters read as one. One set of fields for every feature that reads codes from messages.
 import { createElement as h } from 'react'
 import { t } from './core.js'
@@ -34,14 +34,14 @@ export function patternSummary(pattern) {
   return pattern.lookAlikes ? `${shape} · ${t('look-alikes read as one')}` : shape
 }
 
-/** The fields; `locked` shows a pattern that can no longer change. */
-export function PatternFields({ value, onChange, locked = false }) {
+/** The fields; `locked` shows a pattern that can no longer change; `prefixRequired` drops "optional". */
+export function PatternFields({ value, onChange, locked = false, prefixRequired = false }) {
   const set = (key, next) => onChange({ ...value, [key]: next })
   const lookAlikes = t('Read look-alike characters as one (O and 0; I, L and 1)')
   return h('fieldset', { className: 'ot-pattern', disabled: locked, 'aria-label': t('Code pattern') },
     h('div', { className: 'ot-pattern-row' },
       h('label', { className: 'ot-answer-label ot-pattern-prefix' },
-        h('span', { className: 'bt-field-label' }, t('Prefix (optional)')),
+        h('span', { className: 'bt-field-label' }, prefixRequired ? t('Prefix') : t('Prefix (optional)')),
         h('input', { className: 'bt-input', type: 'text', value: value.prefix, maxLength: 16, spellCheck: false, autoComplete: 'off', onChange: event => set('prefix', event.target.value) })),
       h('label', { className: 'ot-answer-label ot-pattern-length' },
         h('span', { className: 'bt-field-label' }, t('Length')),

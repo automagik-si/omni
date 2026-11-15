@@ -2,9 +2,10 @@
 // answer bot's staff, in host code only, and the service's reply is relayed to the person.
 // Per bot, staff set on the omni-outside-check route (staff only): the service's URL, a secret
 // that is written only, and a code pattern (code-pattern.js; no default, so the check is off
-// until staff set one), plus three optional steps: the label staff see on a confirmed request
-// row, a tier name written on that row, and texts the person gets when the service refuses with
-// a 4xx status. A step with no value is skipped; nothing here has built-in wording.
+// until staff set one). The pattern must have a prefix: without one, ordinary words of the
+// length would go out to the service. Two optional steps: the label staff see on a confirmed
+// request row and a tier name written on that row. A step with no value is skipped; nothing here
+// has built-in wording.
 //
 // With URL, secret and pattern set, a message of a sender the answer intake refuses by default
 // (`denied`) or knows only by their lid (`unmatched`), never one a rule of its own refuses and
@@ -16,10 +17,9 @@
 // Only an HTTP 200 with a `reply` is an answer: the reply goes word for word to the person's chat
 // (Omni's send for that chat, as the stranger reply goes), once per message id, and the chat's
 // request row is marked `confirmed` (with the tier, when one is set). The person stays not let
-// in. A 4xx with a refusal text set for its status sends that text, once per message id; anything
-// else sends nothing. Whatever the outcome, the message stays on the refused path (noted, kept as
-// #1706 keeps it) but never gets the stranger reply: it carried a code (answer-strangers.js asks
-// outsideCodeIn).
+// in. Anything else sends the person nothing. Whatever the outcome, the message stays on the
+// refused path (noted, kept as #1706 keeps it) but never gets the stranger reply: it carried a
+// code (answer-strangers.js asks outsideCodeIn).
 //
 // The event handler waits for the first attempt only. On a timeout, a network error or a 503 the
 // message goes on at once, and the attempt is tried again twice in the background, after about
@@ -44,9 +44,9 @@ export const OUTSIDE_REPLY_MAX = 1000
 export const OUTSIDE_REPLIED_MAX = 5_000
 export const OUTSIDE_LABEL_MAX = 60
 export const OUTSIDE_TIER_MAX = 60
-export const OUTSIDE_TEXTS_MAX = 10
 export const OUTSIDE_URL_REFUSAL = 'Use an https:// address for the outside check.'
 export const OUTSIDE_SECRET_REFUSAL = 'Use printable characters for the secret, and no spaces.'
+export const OUTSIDE_PREFIX_REFUSAL = 'Give the pattern a prefix, so that ordinary words never go to the outside check.'
 const FUTURE_MAX_MS = 2 * 60_000
 const FROM_MAX = 256
 const MINUTE_MS = 60_000
@@ -64,9 +64,6 @@ const Settings = z.object({
   pattern: CodePattern.nullable().optional(),
   label: Words(OUTSIDE_LABEL_MAX).nullable().optional(),
   tier: Words(OUTSIDE_TIER_MAX).nullable().optional(),
-  // The text the person gets when the service answers that 4xx status; an empty map clears them.
-  refusalTexts: z.record(z.string().regex(/^4\d\d$/, 'a refusal text is for a 4xx status'), Words(OUTSIDE_REPLY_MAX))
-    .refine(texts => Object.keys(texts).length <= OUTSIDE_TEXTS_MAX, `at most ${OUTSIDE_TEXTS_MAX} refusal texts`).nullable().optional(),
 }).strict()
 const Answer = z.object({ reply: z.string().max(OUTSIDE_REPLY_MAX).refine(reply => reply.trim() !== '') }).passthrough()
 const refused = message => Object.assign(new Error(message), { code: 'bot/refused' })
@@ -86,17 +83,17 @@ export function install(rt) {
   const inFlight = new Set(), warned = new Set(), tasks = new Set()
   let calls = [], failures = 0, pausedUntil = 0, stop = new AbortController(), marking = Promise.resolve()
 
-  // The bot's check when it is on: URL, secret and pattern all set.
+  // The bot's check when it is on: URL, secret and a pattern with a prefix all set.
   const checkOf = (botId) => {
     const check = rt.state.omniOutsideCheck?.[botId]
-    return typeof check?.url === 'string' && typeof check.secret === 'string' && check.pattern ? check : undefined
+    return typeof check?.url === 'string' && typeof check.secret === 'string' && check.pattern?.prefix ? check : undefined
   }
   /** What staff and the client read of a bot's setting: everything but the secret. */
   rt.outsideCheckSettingOf = (botId) => {
     const check = rt.state.omniOutsideCheck?.[botId]
     return {
       url: check?.url ?? null, secretSet: typeof check?.secret === 'string', pattern: check?.pattern ?? null,
-      label: check?.label ?? null, tier: check?.tier ?? null, refusalTexts: check?.refusalTexts ?? {},
+      label: check?.label ?? null, tier: check?.tier ?? null,
     }
   }
   const codesOf = (check, row) => codesIn(row?.textContent, check.pattern, OUTSIDE_CODES_PER_MESSAGE)
@@ -225,11 +222,9 @@ export function install(rt) {
   }
 
   // What an attempt's outcome does: a reply is posted once per message id and the chat's request
-  // row marked; a 4xx with a refusal text set posts that text the same way; a failure is warned.
+  // row marked; anything else sends nothing, and a failure is warned.
   async function settle(row, botId, check, outcome) {
     if (outcome.reply === undefined) {
-      const refusal = textOf(check.refusalTexts?.[outcome.status])
-      if (refusal !== undefined) await post(row, botId, refusal)
       // 404 and 409 are the service's word on the code itself, not a failure.
       if (!['404', '409'].includes(outcome.status)) warn('the outside check did not confirm', botId, outcome.status)
       return
@@ -296,16 +291,14 @@ export function install(rt) {
     const url = typeof input.url === 'string' ? input.url.trim() : input.url
     if (typeof url === 'string' && url !== '' && !httpsOf(url)) throw refused(OUTSIDE_URL_REFUSAL)
     if (typeof input.secret === 'string' && input.secret !== '' && !/^[\x21-\x7e]+$/.test(input.secret)) throw refused(OUTSIDE_SECRET_REFUSAL)
+    if (input.pattern && !input.pattern.prefix) throw refused(OUTSIDE_PREFIX_REFUSAL)
     const before = checks()[input.botId]
     // A field left out keeps what was there; null or empty clears it.
     const field = (key, value) => (value === undefined ? (before?.[key] === undefined ? {} : { [key]: before[key] }) : value ? { [key]: value } : {})
-    const texts = input.refusalTexts === undefined ? undefined
-      : Object.fromEntries(Object.entries(input.refusalTexts ?? {}).map(([status, text]) => [status, textOf(text)]).filter(([, text]) => text !== undefined))
     const next = {
       ...field('url', url), ...field('secret', input.secret), ...field('pattern', input.pattern),
       ...field('label', input.label === undefined ? undefined : textOf(input.label) ?? null),
       ...field('tier', input.tier === undefined ? undefined : textOf(input.tier) ?? null),
-      ...field('refusalTexts', texts === undefined ? undefined : Object.keys(texts).length > 0 ? texts : null),
     }
     if (Object.keys(next).length === 0) delete checks()[input.botId]
     else checks()[input.botId] = next

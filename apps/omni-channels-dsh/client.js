@@ -16531,7 +16531,7 @@ function patternSummary(pattern) {
   const shape = pattern.prefix ? t("{prefix} then {length} of {characters}", { prefix: pattern.prefix, length: pattern.length, characters: pattern.characters }) : t("{length} of {characters}", { length: pattern.length, characters: pattern.characters });
   return pattern.lookAlikes ? `${shape} · ${t("look-alikes read as one")}` : shape;
 }
-function PatternFields({ value, onChange, locked = false }) {
+function PatternFields({ value, onChange, locked = false, prefixRequired = false }) {
   const set3 = (key, next) => onChange({ ...value, [key]: next });
   const lookAlikes = t("Read look-alike characters as one (O and 0; I, L and 1)");
   return (0, import_react15.createElement)(
@@ -16543,7 +16543,7 @@ function PatternFields({ value, onChange, locked = false }) {
       (0, import_react15.createElement)(
         "label",
         { className: "ot-answer-label ot-pattern-prefix" },
-        (0, import_react15.createElement)("span", { className: "bt-field-label" }, t("Prefix (optional)")),
+        (0, import_react15.createElement)("span", { className: "bt-field-label" }, prefixRequired ? t("Prefix") : t("Prefix (optional)")),
         (0, import_react15.createElement)("input", { className: "bt-input", type: "text", value: value.prefix, maxLength: 16, spellCheck: false, autoComplete: "off", onChange: (event) => set3("prefix", event.target.value) })
       ),
       (0, import_react15.createElement)(
@@ -16782,24 +16782,12 @@ var CODE_LISTS_CSS = `${CODE_PATTERN_CSS}
 
 // src/client/outside-check.js
 var import_react17 = require("react");
-function parseRefusalTexts(text) {
-  const refusalTexts = {};
-  for (const [index, line] of String(text ?? "").split(/\r?\n/).entries()) {
-    if (line.trim() === "" || line.trim().startsWith("#")) continue;
-    const match = /^\s*(4\d\d)\s*=\s*(\S.*?)\s*$/.exec(line);
-    if (!match) return { problem: t("Refusal texts line {n}: write a 4xx status = text.", { n: index + 1 }) };
-    refusalTexts[match[1]] = match[2];
-  }
-  return { refusalTexts };
-}
-var refusalTextsText = (texts = {}) => Object.entries(texts).map(([status, text]) => `${status} = ${text}`).join("\n");
 var emptyPattern = (fields) => fields.prefix.trim() === "" && fields.characters.trim() === "" && fields.length === "";
 var fieldsOf = (value) => ({
   url: value?.url ?? "",
   pattern: patternFields(value?.pattern),
   label: value?.label ?? "",
-  tier: value?.tier ?? "",
-  texts: refusalTextsText(value?.refusalTexts ?? {})
+  tier: value?.tier ?? ""
 });
 function OutsideCheck({ botId, value }) {
   const [fields, setFields] = (0, import_react17.useState)(fieldsOf(value));
@@ -16831,8 +16819,7 @@ function OutsideCheck({ botId, value }) {
   const changed = JSON.stringify(fields) !== shown || secret !== "";
   const save = () => {
     const pattern = emptyPattern(fields.pattern) ? { pattern: null } : patternOf(fields.pattern);
-    const texts = parseRefusalTexts(fields.texts);
-    const problem = pattern.problem ?? texts.problem;
+    const problem = pattern.problem ?? (pattern.pattern && !pattern.pattern.prefix ? t("Give the pattern a prefix, so that ordinary words never go to the outside check.") : void 0);
     if (problem) {
       setResult({ ok: false, text: problem });
       return;
@@ -16842,7 +16829,6 @@ function OutsideCheck({ botId, value }) {
       pattern: pattern.pattern,
       label: fields.label.trim() || null,
       tier: fields.tier.trim() || null,
-      refusalTexts: texts.refusalTexts,
       ...secret === "" ? {} : { secret }
     }, t("Saved."));
   };
@@ -16874,11 +16860,11 @@ function OutsideCheck({ botId, value }) {
         value: secret,
         spellCheck: false,
         autoComplete: "new-password",
-        placeholder: secretSet ? t("Type a new one to replace it") : "",
+        placeholder: secretSet ? t("New secret") : "",
         onChange: (event) => setSecret(event.target.value)
       })
     ),
-    (0, import_react17.createElement)(PatternFields, { value: fields.pattern, onChange: (next) => set3("pattern", next) }),
+    (0, import_react17.createElement)(PatternFields, { value: fields.pattern, onChange: (next) => set3("pattern", next), prefixRequired: true }),
     (0, import_react17.createElement)(
       "div",
       { className: "bt-field ot-answer-field" },
@@ -16900,17 +16886,6 @@ function OutsideCheck({ botId, value }) {
         (0, import_react17.createElement)("input", { className: "bt-input ot-outside-tier", type: "text", value: fields.tier, maxLength: 60, onChange: (event) => set3("tier", event.target.value) })
       ),
       (0, import_react17.createElement)("span", { className: "bt-note" }, t("Written on a request row the service confirmed. Empty: none."))
-    ),
-    (0, import_react17.createElement)(
-      "div",
-      { className: "bt-field ot-answer-field" },
-      (0, import_react17.createElement)(
-        "label",
-        { className: "ot-answer-label" },
-        (0, import_react17.createElement)("span", { className: "bt-field-label" }, t("Texts on refusal")),
-        (0, import_react17.createElement)("textarea", { className: "bt-input bt-input-area ot-outside-texts", value: fields.texts, onChange: (event) => set3("texts", event.target.value) })
-      ),
-      (0, import_react17.createElement)("span", { className: "bt-note" }, t(`One "status = text" a line, for the service's 4xx answers; the person gets that text. Empty: nothing is sent.`))
     ),
     (0, import_react17.createElement)(
       "div",
@@ -19046,6 +19021,7 @@ var STRINGS = {
   "Rule details line {n}: write key = value.": "规则详情第 {n} 行：请写成 key = value。",
   "Code pattern": "代码格式",
   "Prefix (optional)": "前缀（可选）",
+  "Prefix": "前缀",
   "Length": "长度",
   "Characters after the prefix": "前缀后的字符",
   "Read look-alike characters as one (O and 0; I, L and 1)": "把形近字符视为同一个（O 和 0；I、L 和 1）",
@@ -19061,15 +19037,13 @@ var STRINGS = {
   "A code of this pattern in the message of someone not let in is sent to this HTTPS address, and its reply goes to them. On only when the address, the secret and the pattern are all set.": "未获准加入的人在消息中附带的符合此格式的代码会发送到这个 HTTPS 地址，其回复会发给对方。只有地址、密钥和格式都设置后才会启用。",
   "Check URL": "核对地址",
   "Secret": "密钥",
-  "Type a new one to replace it": "输入新的密钥以替换",
+  "New secret": "新密钥",
   "The secret is cleared.": "密钥已清除。",
   "Label on a confirmed row": "已确认行的标签",
   "Staff see it on a request row the service confirmed. Empty: no label.": "员工会在服务已确认的请求行上看到它。留空：不显示标签。",
   "Tier name": "级别名称",
   "Written on a request row the service confirmed. Empty: none.": "写入服务已确认的请求行。留空：不写入。",
-  "Texts on refusal": "拒绝时的文本",
-  'One "status = text" a line, for the service\'s 4xx answers; the person gets that text. Empty: nothing is sent.': '每行一个 "status = text"，对应服务的 4xx 回应；对方会收到该文本。留空：不发送任何内容。',
-  "Refusal texts line {n}: write a 4xx status = text.": "拒绝文本第 {n} 行：请写成 4xx 状态码 = 文本。"
+  "Give the pattern a prefix, so that ordinary words never go to the outside check.": "请为格式设置前缀，这样普通词语永远不会发送到外部核对。"
 };
 
 // src/client/index.js

@@ -1,33 +1,15 @@
 // #1742: the bot's outside code check (host answer-outside-check.js), in the answer settings: the
-// service's HTTPS address, its secret, the code pattern (code-pattern.js), and the optional label,
-// tier and refusal texts. The secret is written only: the field starts empty every time and the
-// section says only whether one is set. The setting comes with the answer settings view
+// service's HTTPS address, its secret, the code pattern (code-pattern.js; its prefix is required
+// here, so ordinary words never go out), and the optional label and tier. The secret is written
+// only: the field starts empty every time and the section says only whether one is set. The setting comes with the answer settings view
 // (`outsideCheck`), so opening the settings reads nothing more.
 import { createElement as h, useEffect, useState } from 'react'
 import { call, hostText, t } from './core.js'
 import { PatternFields, patternFields, patternOf } from './code-pattern.js'
 
-/**
- * The refusal texts staff typed: one `status = text` a line, for a 4xx status. `{ refusalTexts }`,
- * or `{ problem }`. Empty is none.
- */
-export function parseRefusalTexts(text) {
-  const refusalTexts = {}
-  for (const [index, line] of String(text ?? '').split(/\r?\n/).entries()) {
-    if (line.trim() === '' || line.trim().startsWith('#')) continue
-    const match = /^\s*(4\d\d)\s*=\s*(\S.*?)\s*$/.exec(line)
-    if (!match) return { problem: t('Refusal texts line {n}: write a 4xx status = text.', { n: index + 1 }) }
-    refusalTexts[match[1]] = match[2]
-  }
-  return { refusalTexts }
-}
-/** The refusal texts as staff type them. */
-export const refusalTextsText = (texts = {}) => Object.entries(texts).map(([status, text]) => `${status} = ${text}`).join('\n')
-
 const emptyPattern = fields => fields.prefix.trim() === '' && fields.characters.trim() === '' && fields.length === ''
 const fieldsOf = value => ({
   url: value?.url ?? '', pattern: patternFields(value?.pattern), label: value?.label ?? '', tier: value?.tier ?? '',
-  texts: refusalTextsText(value?.refusalTexts ?? {}),
 })
 
 export function OutsideCheck({ botId, value }) {
@@ -50,12 +32,12 @@ export function OutsideCheck({ botId, value }) {
   const changed = JSON.stringify(fields) !== shown || secret !== ''
   const save = () => {
     const pattern = emptyPattern(fields.pattern) ? { pattern: null } : patternOf(fields.pattern)
-    const texts = parseRefusalTexts(fields.texts)
-    const problem = pattern.problem ?? texts.problem
+    const problem = pattern.problem ?? (pattern.pattern && !pattern.pattern.prefix
+      ? t('Give the pattern a prefix, so that ordinary words never go to the outside check.') : undefined)
     if (problem) { setResult({ ok: false, text: problem }); return }
     send({
       url: fields.url.trim() || null, pattern: pattern.pattern, label: fields.label.trim() || null, tier: fields.tier.trim() || null,
-      refusalTexts: texts.refusalTexts, ...(secret === '' ? {} : { secret }),
+      ...(secret === '' ? {} : { secret }),
     }, t('Saved.'))
   }
   const clear = () => send({ secret: null }, t('The secret is cleared.'))
@@ -72,9 +54,9 @@ export function OutsideCheck({ botId, value }) {
         h('span', { className: 'ot-picker-tag ot-outside-state', 'data-set': secretSet }, secretSet ? t('Set') : t('Not set'))),
       h('input', {
         className: 'bt-input ot-outside-secret', type: 'password', value: secret, spellCheck: false, autoComplete: 'new-password',
-        placeholder: secretSet ? t('Type a new one to replace it') : '', onChange: event => setSecret(event.target.value),
+        placeholder: secretSet ? t('New secret') : '', onChange: event => setSecret(event.target.value),
       })),
-    h(PatternFields, { value: fields.pattern, onChange: next => set('pattern', next) }),
+    h(PatternFields, { value: fields.pattern, onChange: next => set('pattern', next), prefixRequired: true }),
     h('div', { className: 'bt-field ot-answer-field' },
       h('label', { className: 'ot-answer-label' },
         h('span', { className: 'bt-field-label' }, t('Label on a confirmed row')),
@@ -85,11 +67,6 @@ export function OutsideCheck({ botId, value }) {
         h('span', { className: 'bt-field-label' }, t('Tier name')),
         h('input', { className: 'bt-input ot-outside-tier', type: 'text', value: fields.tier, maxLength: 60, onChange: event => set('tier', event.target.value) })),
       h('span', { className: 'bt-note' }, t('Written on a request row the service confirmed. Empty: none.'))),
-    h('div', { className: 'bt-field ot-answer-field' },
-      h('label', { className: 'ot-answer-label' },
-        h('span', { className: 'bt-field-label' }, t('Texts on refusal')),
-        h('textarea', { className: 'bt-input bt-input-area ot-outside-texts', value: fields.texts, onChange: event => set('texts', event.target.value) })),
-      h('span', { className: 'bt-note' }, t('One "status = text" a line, for the service\'s 4xx answers; the person gets that text. Empty: nothing is sent.'))),
     h('div', { className: 'bt-actions' },
       h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy || !secretSet, onClick: clear }, t('Clear')),
       h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy || !changed, onClick: save }, t('Save'))),

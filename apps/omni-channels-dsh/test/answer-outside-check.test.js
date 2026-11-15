@@ -1,11 +1,11 @@
 // #1742: a code in a refused sender's message is checked with the bot's outside service, in host
-// code: Omni's event envelope with the raw text, a 200's reply posted once, nothing else sent
-// unless staff set a refusal text, and the message on the refused path with no stranger reply.
+// code: Omni's event envelope with the raw text, a 200's reply posted once, nothing else sent,
+// and the message on the refused path with no stranger reply.
 // Made-up pattern, codes, URL, secret and texts only.
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
-  OUTSIDE_CALLS_PER_MINUTE, OUTSIDE_REPLIED_MAX, OUTSIDE_SECRET_REFUSAL, OUTSIDE_URL_REFUSAL,
+  OUTSIDE_CALLS_PER_MINUTE, OUTSIDE_PREFIX_REFUSAL, OUTSIDE_REPLIED_MAX, OUTSIDE_SECRET_REFUSAL, OUTSIDE_URL_REFUSAL,
 } from '../src/host/answer-outside-check.js'
 import { install } from '../src/host/omni-events.js'
 import { ANSWER_CHAT_TOOLS } from '../src/host/threads.js'
@@ -291,7 +291,7 @@ test('outside check retry: a 200 whose body times out or breaks is a network err
   assert.deepEqual([b.service.calls.length, b.omniState.sends.length], [6, 1])
 })
 
-test('outside check refusal: with no refusal texts, each non-200, a redirect and a bad body send nothing; the message goes on as refused, noted, with no stranger reply', async t => {
+test('outside check refusal: each non-200, a redirect and a bad body send the person nothing; the message goes on as refused, noted, with no stranger reply', async t => {
   const b = await bench(t, { settings: { strangerReply: STRANGER_REPLY }, service: [404] })
   const answers = [404, 409, 400, 401, 415, 429, 302, 500, 201, { status: 200, body: {} }, { status: 200, body: { reply: '   ' } }, { status: 200, body: { reply: 'x'.repeat(1001) } }, { status: 200, body: 'not json' }]
   for (const [index, answer] of answers.entries()) {
@@ -317,23 +317,6 @@ test('outside check refusal: with no refusal texts, each non-200, a redirect and
   await recheck(t, b, 8_000)
   await recheck(t, b, 20_000)
   assert.deepEqual(b.omniState.sends, [])
-})
-
-test('outside check refusal: a 4xx with a refusal text set sends that text once; other statuses still send nothing, and the row is not confirmed', async t => {
-  const texts = { 404: 'We could not find that code.', 409: 'That code was already used.' }
-  const b = await bench(t, { service: [404], check: { refusalTexts: texts } })
-  await b.deliver(stranger(1, CODE))
-  assert.deepEqual(b.omniState.sends, [replyTo(`${STRANGER}@s.whatsapp.net`, texts[404])])
-  // The same message again posts nothing; a 409 for the next message sends its own text.
-  await b.deliver(stranger(1, CODE))
-  b.service.answers = [409]
-  await b.deliver(stranger(2, CODE))
-  t.mock.timers.setTime(Date.now() + HOUR)
-  b.service.answers = [400]
-  await b.deliver(stranger(3, CODE))
-  assert.deepEqual([b.service.calls.length, b.omniState.sends.map(send => send.text)], [3, [texts[404], texts[409]]])
-  assert.deepEqual(requests(b).map(row => row.confirmed), [undefined])
-  assert.deepEqual(b.warned.filter(args => /outside check did not confirm/.test(args[0])).map(args => args.slice(1)), [[ANSWER_MASTER, '400']])
 })
 
 test('outside check off: with no secret, no URL or no pattern nothing is called, and a code message gets the stranger reply exactly as before', async t => {
@@ -439,27 +422,42 @@ test('outside check reply: a lid-only sender\'s confirmed message is kept as bef
   assert.deepEqual([b.omniState.sends.length, requests(b).map(row => row.count)], [1, [1]])
 })
 
+test('outside check pattern: a pattern with no prefix is refused and changes nothing, so ordinary words never go out', async t => {
+  const b = await bench(t, { settings: { strangerReply: STRANGER_REPLY }, service: [404] })
+  const check = () => b.channels.state.omniOutsideCheck?.[ANSWER_MASTER]
+  const before = structuredClone(check())
+  for (const pattern of [{ characters: 'ABCDEFGHJK0123456789', length: 6 }, { prefix: '   ', characters: 'ABCDEFGHJK0123456789', length: 6, lookAlikes: true }]) {
+    await assert.rejects(b.call('omni-outside-check', { botId: ANSWER_MASTER, url: SITE, pattern }), { message: OUTSIDE_PREFIX_REFUSAL })
+  }
+  assert.deepEqual(check(), before)
+  // A kept setting without a prefix, however it got there, leaves the check off: ordinary words of
+  // the length are not sent, and the stranger reply goes as before.
+  check().pattern = { characters: 'ABCDEFGHJK0123456789', length: 6 }
+  await b.deliver(stranger(1, 'Hello 7K2A90 there BADGE1'))
+  assert.deepEqual([b.service.calls.length, b.omniState.sends.map(send => send.text)], [0, [STRANGER_REPLY]])
+})
+
 test('outside check setting: staff only; https only; the secret is written, never read back, logged or put in the view; null clears, left out keeps', async t => {
   const b = await bench(t, { service: [401], set: false })
   const check = () => b.channels.state.omniOutsideCheck?.[ANSWER_MASTER]
-  const empty = { url: null, secretSet: false, pattern: null, label: null, tier: null, refusalTexts: {} }
+  const empty = { url: null, secretSet: false, pattern: null, label: null, tier: null }
   assert.deepEqual(await b.call('omni-outside-check', { botId: ANSWER_MASTER }), empty)
-  const set = await b.call('omni-outside-check', { botId: ANSWER_MASTER, url: ` ${SITE} `, secret: SECRET, pattern: { ...PATTERN, prefix: 'qq-' }, label: ' Checked ', tier: 'tier-b', refusalTexts: { 404: ' Not found. ', 409: '  ' } })
-  const full = { url: SITE, secretSet: true, pattern: PATTERN, label: 'Checked', tier: 'tier-b', refusalTexts: { 404: 'Not found.' } }
+  const set = await b.call('omni-outside-check', { botId: ANSWER_MASTER, url: ` ${SITE} `, secret: SECRET, pattern: { ...PATTERN, prefix: 'qq-' }, label: ' Checked ', tier: 'tier-b' })
+  const full = { url: SITE, secretSet: true, pattern: PATTERN, label: 'Checked', tier: 'tier-b' }
   assert.deepEqual(set, full)
   assert.deepEqual(b.view().omniAnswers[ANSWER_MASTER].outsideCheck, full)
   noSecretIn('the view', b.view())
   // Left out keeps; null or empty clears; the URL alone keeps the secret.
   assert.deepEqual(await b.call('omni-outside-check', { botId: ANSWER_MASTER, url: 'https://example.test/other' }), { ...full, url: 'https://example.test/other' })
-  assert.deepEqual(check(), { url: 'https://example.test/other', secret: SECRET, pattern: PATTERN, label: 'Checked', tier: 'tier-b', refusalTexts: { 404: 'Not found.' } })
-  assert.deepEqual(await b.call('omni-outside-check', { botId: ANSWER_MASTER, secret: null, label: '', tier: null, refusalTexts: {} }), { ...empty, url: 'https://example.test/other', pattern: PATTERN })
+  assert.deepEqual(check(), { url: 'https://example.test/other', secret: SECRET, pattern: PATTERN, label: 'Checked', tier: 'tier-b' })
+  assert.deepEqual(await b.call('omni-outside-check', { botId: ANSWER_MASTER, secret: null, label: '', tier: null }), { ...empty, url: 'https://example.test/other', pattern: PATTERN })
   assert.deepEqual(await b.call('omni-outside-check', { botId: ANSWER_MASTER, url: '', pattern: null }), empty)
   assert.equal(check(), undefined)
-  // Refused: not https, a secret with a space, a bad pattern or refusal status, another bot kind, unknown fields, a read-only window.
+  // Refused: not https, a secret with a space, a bad pattern, another bot kind, unknown fields (person-facing texts among them), a read-only window.
   for (const url of ['http://example.test/check', 'example.test/check', 'ftp://example.test/x']) await assert.rejects(b.call('omni-outside-check', { botId: ANSWER_MASTER, url }), { message: OUTSIDE_URL_REFUSAL })
   await assert.rejects(b.call('omni-outside-check', { botId: ANSWER_MASTER, secret: 'two words' }), { message: OUTSIDE_SECRET_REFUSAL })
   await assert.rejects(b.call('omni-outside-check', { botId: ANSWER_MASTER, pattern: { characters: '.*', length: 6 } }))
-  await assert.rejects(b.call('omni-outside-check', { botId: ANSWER_MASTER, refusalTexts: { 503: 'Try later.' } }))
+  await assert.rejects(b.call('omni-outside-check', { botId: ANSWER_MASTER, refusalTexts: { 404: 'Not found.' } }))
   await assert.rejects(b.call('omni-outside-check', { botId: 'm1', url: SITE }), /channel bot/)
   await assert.rejects(b.call('omni-outside-check', { botId: ANSWER_MASTER, url: SITE, reply: 'x' }))
   b.channels.readOnly = () => 'This window shows the team but cannot change it.'

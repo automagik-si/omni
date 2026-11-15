@@ -1,5 +1,5 @@
 // #1742 in the answer settings: the bot's outside code check, with a secret that is written only,
-// its pattern, label, tier and refusal texts, and the request row the check confirmed (host
+// its pattern (a prefix required), label and tier, and the request row the check confirmed (host
 // answer-outside-check.js). Made-up URL, secret, pattern and texts only.
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
@@ -17,14 +17,13 @@ const fakeCall = async (endpoint, body) => {
 }
 const ui = await bundleClient([
   'export { AnswerSettings } from \'./omni-tree.js\'',
-  'export { parseRefusalTexts, refusalTextsText } from \'./outside-check.js\'',
 ], { globals: { console, URL, URLSearchParams, setTimeout, clearTimeout, setInterval, clearInterval, document: { body: { dataset: {} }, addEventListener() {}, removeEventListener() {} } }, team: { omni: { ...omni, call: fakeCall } } })
 
 const SITE = 'https://example.test/check'
 const SECRET = 'test-secret-0001'
 const PATTERN = { prefix: 'QQ-', characters: 'ABCDEFGHJK0123456789', length: 6 }
-const SET = { url: SITE, secretSet: true, pattern: PATTERN, label: 'Checked', tier: 'tier-b', refusalTexts: { 404: 'Not found.' } }
-const EMPTY = { url: null, secretSet: false, pattern: null, label: null, tier: null, refusalTexts: {} }
+const SET = { url: SITE, secretSet: true, pattern: PATTERN, label: 'Checked', tier: 'tier-b' }
+const EMPTY = { url: null, secretSet: false, pattern: null, label: null, tier: null }
 
 function settings(t, value = {}) {
   const view = mount(() => react.createElement(ui.AnswerSettings, { bot: { id: 'dedicated' }, value }))
@@ -42,13 +41,6 @@ function settings(t, value = {}) {
   return { view, open, group, field, type, button, state }
 }
 
-test('refusal texts: one 4xx status = text a line, and back', () => {
-  assert.deepEqual(plain(ui.parseRefusalTexts('404 = Not found.\n# a comment\n\n409=Used = gone ')), { refusalTexts: { 404: 'Not found.', 409: 'Used = gone' } })
-  assert.deepEqual(plain(ui.parseRefusalTexts('  ')), { refusalTexts: {} })
-  for (const bad of ['503 = Try later.', '404 =', 'Not found.', '40 = x']) assert.match(ui.parseRefusalTexts(bad).problem, /^Refusal texts line 1: /, bad)
-  assert.equal(ui.refusalTextsText({ 404: 'Not found.', 409: 'Used.' }), '404 = Not found.\n409 = Used.')
-})
-
 test('outside check section: the setting comes with the answer settings; opening them reads nothing; the secret field starts empty', async t => {
   calls.length = 0
   const s = settings(t, { outsideCheck: SET })
@@ -56,19 +48,23 @@ test('outside check section: the setting comes with the answer settings; opening
   assert.deepEqual(calls, [])
   assert.deepEqual([s.field('Check URL').props.value, s.field('Secret').props.value, s.state()], [SITE, '', 'Set'])
   assert.deepEqual([s.field('Prefix').props.value, s.field('Characters after the prefix').props.value, s.field('Length').props.value], ['QQ-', 'ABCDEFGHJK0123456789', '6'])
-  assert.deepEqual([s.field('Label on a confirmed row').props.value, s.field('Tier name').props.value, s.field('Texts on refusal').props.value], ['Checked', 'tier-b', '404 = Not found.'])
+  assert.deepEqual([s.field('Label on a confirmed row').props.value, s.field('Tier name').props.value], ['Checked', 'tier-b'])
+  // The prefix is required here, so its label does not say optional; no field writes to the person.
+  const labels = nodes(s.group()).filter(node => node.props?.className === 'bt-field-label').map(text)
+  assert.ok(labels.includes('Prefix') && !labels.includes('Prefix (optional)'), labels.join(' | '))
+  assert.equal(nodes(s.group()).some(node => node.type === 'textarea'), false)
   // Nothing changed yet: Save waits; Clear is there for the secret.
   assert.deepEqual([s.button('Save').props.disabled, s.button('Clear').props.disabled], [true, false])
   const unset = settings(t, {})
   await unset.open()
   assert.deepEqual([unset.field('Check URL').props.value, unset.field('Secret').props.value, unset.state(), unset.button('Clear').props.disabled], ['', '', 'Not set', true])
-  for (const key of ['Outside code check', 'Check URL', 'Secret', 'Set', 'Not set', 'Type a new one to replace it', 'The secret is cleared.', 'Label on a confirmed row', 'Tier name', 'Texts on refusal']) assert.ok(Object.hasOwn(STRINGS, key), key)
+  for (const key of ['Outside code check', 'Check URL', 'Secret', 'Set', 'Not set', 'New secret', 'The secret is cleared.', 'Label on a confirmed row', 'Tier name', 'Prefix', 'Give the pattern a prefix, so that ordinary words never go to the outside check.']) assert.ok(Object.hasOwn(STRINGS, key), key)
 })
 
 test('outside check section: Save sends every field and a typed secret; the field is emptied and never shows the secret back; Clear sends null', async t => {
   calls.length = 0
   answer = (endpoint, body) => (endpoint === 'omni-outside-check'
-    ? (body.secret === null ? { ...SET, secretSet: false } : { url: body.url, secretSet: true, pattern: body.pattern, label: body.label, tier: body.tier, refusalTexts: body.refusalTexts })
+    ? (body.secret === null ? { ...SET, secretSet: false } : { url: body.url, secretSet: true, pattern: body.pattern, label: body.label, tier: body.tier })
     : {})
   const s = settings(t, { outsideCheck: EMPTY })
   await s.open()
@@ -78,10 +74,9 @@ test('outside check section: Save sends every field and a typed secret; the fiel
   s.type('Characters after the prefix', 'ABCDEFGHJK0123456789')
   s.type('Length', '6')
   s.type('Label on a confirmed row', ' Checked ')
-  s.type('Texts on refusal', '404 = Not found.')
   s.button('Save').props.onClick()
   await settle()
-  assert.deepEqual(calls, [['omni-outside-check', { botId: 'dedicated', url: SITE, pattern: PATTERN, label: 'Checked', tier: null, refusalTexts: { 404: 'Not found.' }, secret: SECRET }]])
+  assert.deepEqual(calls, [['omni-outside-check', { botId: 'dedicated', url: SITE, pattern: PATTERN, label: 'Checked', tier: null, secret: SECRET }]])
   assert.deepEqual([s.field('Secret').props.value, s.state()], ['', 'Set'])
   assert.equal(JSON.stringify(nodes(s.view.draw()).map(node => node.props)).includes(SECRET), false)
   // Without a typed secret it is left out, so the host keeps it; an emptied pattern is sent as none.
@@ -90,18 +85,17 @@ test('outside check section: Save sends every field and a typed secret; the fiel
   s.type('Length', '')
   s.button('Save').props.onClick()
   await settle()
-  assert.deepEqual(calls.at(-1), ['omni-outside-check', { botId: 'dedicated', url: SITE, pattern: null, label: 'Checked', tier: null, refusalTexts: { 404: 'Not found.' } }])
-  // A pattern or refusal text the host would refuse is said here, and nothing is sent.
+  assert.deepEqual(calls.at(-1), ['omni-outside-check', { botId: 'dedicated', url: SITE, pattern: null, label: 'Checked', tier: null }])
+  // A pattern the host would refuse is said here, and nothing is sent: a bad length, or no prefix.
   s.type('Characters after the prefix', 'AB')
   s.type('Length', '2')
   s.button('Save').props.onClick()
   await settle()
   assert.match(text(nodes(s.group()).find(node => node.props?.role === 'alert')), /^The length is a whole number/)
   s.type('Length', '6')
-  s.type('Texts on refusal', '503 = Try later.')
   s.button('Save').props.onClick()
   await settle()
-  assert.match(text(nodes(s.group()).find(node => node.props?.role === 'alert')), /^Refusal texts line 1: /)
+  assert.equal(text(nodes(s.group()).find(node => node.props?.role === 'alert')), 'Give the pattern a prefix, so that ordinary words never go to the outside check.')
   assert.equal(calls.length, 2)
   s.button('Clear').props.onClick()
   await settle()
