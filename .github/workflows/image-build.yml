@@ -17,8 +17,9 @@
 #     it — cut a fresh candidate instead.
 #   → gh workflow run image-build.yml --ref refs/tags/v<version> -f version=<version>
 #   → build-push: bind the tag/package/chart identity, refuse an existing
-#     v<version> alias, build the linux/amd64 + linux/arm64 OCI index, push
-#     ONLY ghcr.io/<owner>/omni-api:v<version>, attest it
+#     v<version> alias, build each platform on its native runner, push by digest
+#   → merge: re-check identity and alias absence, assemble the ONE immutable
+#     ghcr.io/<owner>/omni-api:v<version> index, read back and attest it
 #   → finalize: independently re-verify the digest, index, platforms, and
 #     provenance; require the active v* tag ruleset; wait for any running
 #     release.yml run at the tag, refuse a dev prerelease at the tag; dispatch
@@ -33,18 +34,18 @@
 #     derive the candidate from the tree (package version → v<version> tag →
 #     attested alias) and re-check npm themselves; nothing is hand-pasted.
 #
-# Recovery: if finalize fails after build-push succeeded (ruleset check,
+# Recovery: if finalize fails after merge succeeded (ruleset check,
 # run-resolution timeout, concurrent dispatch, a failed release.yml run), a
 # fresh dispatch is refused by design — the v<version> alias now exists. Use
 # "Re-run failed jobs" on the SAME run: it keeps GITHUB_RUN_ID (the
-# orchestrator_run_id the stable publishers re-verify), the build-push outputs,
+# orchestrator_run_id the stable publishers re-verify), the merge outputs,
 # and the in_progress state those publishers require. A failure in the stable
 # npm step leaves the release, the receipt and the pin dispatch done: the
 # re-run verifies an already published package in place (the CLI package
 # rebuilds byte-identically; scripts/pack-market.ts stamps the commit time, not
 # the clock) and re-dispatches the pin, a no-op once dev carries it.
 #
-# Both jobs run in the `release` environment. Configure it with required
+# All jobs run in the `release` environment. Configure it with required
 # reviewers (repository settings; this file cannot create it) so that a write
 # collaborator cannot publish a stable release or move npm `latest` alone.
 #
@@ -79,19 +80,23 @@ permissions: {}
 
 jobs:
   build-push:
-    name: Build and attest omni-api candidate
-    runs-on: ubuntu-latest
+    name: Build omni-api (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
     environment: release
     permissions:
       contents: read
       packages: write
-      id-token: write
-      attestations: write
-    outputs:
-      digest: ${{ steps.build.outputs.digest }}
-      version: ${{ inputs.version }}
-      source_sha: ${{ steps.source.outputs.sha }}
     env:
       IMAGE: ghcr.io/${{ github.repository_owner }}/omni-api
     steps:
@@ -153,15 +158,9 @@ jobs:
           fetch-tags: true
           persist-credentials: false
 
-      # LOW-23: arm64 is built under QEMU emulation (slow for the Bun
-      # install/build stages). The repo is public, so native
-      # `ubuntu-24.04-arm` runners are free; the upgrade path is a
-      # per-platform matrix (push-by-digest) + a `buildx imagetools`
-      # manifest merge. Deliberately not done here: the QEMU path is proven
-      # and a split cannot be validated before a candidate is minted.
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
-
+      # Each platform builds natively without cache imports or exports. The PR
+      # guard exercises the same build inputs without publishing. Digest pushes,
+      # the merged index and its attestation still need a real candidate run.
       - name: Set up Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
@@ -212,12 +211,10 @@ jobs:
         with:
           context: .
           file: deploy/Dockerfile
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ matrix.platform }}
           push: true
-          # Exactly one immutable alias. No branch or short-SHA tags: the
-          # candidate identity is the version tag plus the index digest.
-          tags: |
-            ${{ env.IMAGE }}:v${{ inputs.version }}
+          # Platform jobs publish no tags. Only merge creates the version alias.
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
           # No BuildKit cache import or export. An immutable candidate is built
           # from its source alone: the GHA cache is mutable and shared with
           # whatever else writes the scope (any branch's build, an earlier
@@ -230,10 +227,114 @@ jobs:
             org.opencontainers.image.revision=${{ steps.source.outputs.sha }}
             org.opencontainers.image.version=${{ inputs.version }}
 
+      - name: Export platform digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          [[ "${DIGEST}" =~ ^sha256:[0-9a-f]{64}$ ]] || exit 1
+          mkdir -p "${RUNNER_TEMP}/digests"
+          printf '%s\n' "${DIGEST}" > "${RUNNER_TEMP}/digests/${ARCH}"
+
+      - name: Upload platform digest
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: image-digest-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/${{ matrix.arch }}
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    name: Merge and attest omni-api candidate
+    needs: build-push
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: release
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    outputs:
+      digest: ${{ steps.merge.outputs.digest }}
+      version: ${{ inputs.version }}
+      source_sha: ${{ steps.source.outputs.sha }}
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/omni-api
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Download platform digests from this run
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: image-digest-*
+          path: ${{ runner.temp }}/digests
+          merge-multiple: true
+
+      - name: Bind source identity and refuse an existing candidate alias
+        id: source
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          source_sha=$(git rev-parse "HEAD^{commit}")
+          [[ "${source_sha}" == "${GITHUB_SHA}" ]] || {
+            echo "::error::checked-out source ${source_sha} is not the dispatched ${GITHUB_SHA}"
+            exit 1
+          }
+          scripts/release/verify-remote-tag.sh \
+            --remote origin --version "${VERSION}" --mode exact --expected-sha "${source_sha}"
+          preflight="${RUNNER_TEMP}/release-preflight.out"
+          GITHUB_OUTPUT="${preflight}" scripts/release/verify-oci-release.sh \
+            --source-dir "${GITHUB_WORKSPACE}" \
+            --ref "refs/tags/v${VERSION}" \
+            --expected-version "${VERSION}" \
+            --expected-sha "${source_sha}" \
+            --image "${IMAGE}"
+          grep -qx 'publish_required=true' "${preflight}" || {
+            echo "::error::${IMAGE}:v${VERSION} is already published; a candidate version is minted exactly once"
+            exit 1
+          }
+          echo "sha=${source_sha}" >> "$GITHUB_OUTPUT"
+
+      - name: Create the immutable version index
+        id: merge
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          refs=()
+          for arch in amd64 arm64; do
+            digest=$(cat "${RUNNER_TEMP}/digests/${arch}")
+            [[ "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]] || exit 1
+            refs+=("${IMAGE}@${digest}")
+          done
+          docker buildx imagetools create --tag "${IMAGE}:v${VERSION}" \
+            --metadata-file "${RUNNER_TEMP}/merge-metadata.json" "${refs[@]}"
+          digest=$(jq -er '."containerimage.descriptor".digest' "${RUNNER_TEMP}/merge-metadata.json")
+          [[ "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]] || exit 1
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+
       - name: Read back exact published version alias
         env:
           VERSION: ${{ inputs.version }}
-          EXPECTED_DIGEST: ${{ steps.build.outputs.digest }}
+          EXPECTED_DIGEST: ${{ steps.merge.outputs.digest }}
         run: |
           scripts/release/verify-oci-alias.sh \
             --image "${IMAGE}" --version "${VERSION}" --expected-digest "${EXPECTED_DIGEST}"
@@ -247,7 +348,7 @@ jobs:
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-name: ${{ env.IMAGE }}
-          subject-digest: ${{ steps.build.outputs.digest }}
+          subject-digest: ${{ steps.merge.outputs.digest }}
           push-to-registry: true
 
   # Independent re-verification of the minted artifact, then orchestration of
@@ -256,7 +357,7 @@ jobs:
   # two dispatches, each of which re-verifies this run before publishing.
   finalize:
     name: Verify candidate and orchestrate stable publication
-    needs: build-push
+    needs: merge
     runs-on: ubuntu-latest
     # Must outlive the stable npm retry loop: up to three dispatched publisher
     # runs (version.yml publish-stable, 40 min each) plus their backoffs, after
@@ -271,9 +372,9 @@ jobs:
       actions: write # gh workflow run release.yml / version.yml
     env:
       IMAGE: ghcr.io/${{ github.repository_owner }}/omni-api
-      DIGEST: ${{ needs.build-push.outputs.digest }}
-      VERSION: ${{ needs.build-push.outputs.version }}
-      SOURCE_SHA: ${{ needs.build-push.outputs.source_sha }}
+      DIGEST: ${{ needs.merge.outputs.digest }}
+      VERSION: ${{ needs.merge.outputs.version }}
+      SOURCE_SHA: ${{ needs.merge.outputs.source_sha }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:

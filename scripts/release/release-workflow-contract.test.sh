@@ -184,12 +184,13 @@ else:
     require(image_build, r"verify-oci-release\.sh[\s\S]{0,200}--source-dir\s+\"\$\{GITHUB_WORKSPACE\}\"", "candidate minting does not run the immutable identity preflight on the checked-out source")
     require(image_build, r"grep -qx 'publish_required=true'", "candidate minting can rebuild an already published version alias")
     require(image_build, r"docker/build-push-action@[0-9a-f]{40}", "candidate minting does not build with the pinned build-push action")
-    require(image_build, r"^\s+tags: \|\n\s+\$\{\{ env\.IMAGE \}\}:v\$\{\{ inputs\.version \}\}\n(?:\s+#[^\n]*\n)*\s+provenance: true", "candidate minting pushes a tag other than the exact v<version> alias")
+    require(image_build, r"outputs: type=image,name=\$\{\{ env\.IMAGE \}\},push-by-digest=true,name-canonical=true,push=true", "platform builders do not push only by digest")
+    forbid(image_build, r"^\s+tags:", "platform builders publish a tag before the index merge")
     # The GHA BuildKit cache is mutable and shared by scope; layers imported
     # from it would shape an immutable candidate outside its attested source.
     forbid(image_build, r"cache-(?:from|to):|type=gha", "candidate minting imports or exports a mutable BuildKit cache")
     require(image_build, r"docker buildx imagetools inspect --raw \"\$\{IMAGE\}@\$\{DIGEST\}\"[\s\S]{0,300}json\.load\([\s\S]{0,400}application/vnd\.oci\.image\.index\.v1\+json[\s\S]{0,600}\{\"linux/amd64\", \"linux/arm64\"\}", "candidate minting does not verify the raw OCI index media type and platforms as JSON")
-    require(image_build, r"platforms:\s*linux/amd64,linux/arm64", "candidate minting does not build both supported platforms")
+
     require(image_build, r"actions/attest-build-provenance@[0-9a-f]{40}[\s\S]{0,300}push-to-registry:\s*true", "candidate minting does not register GitHub provenance in the registry")
     require(image_build, r"verify-oci-alias\.sh", "candidate minting does not read back the published alias digest")
     require(image_build, r"gh attestation verify\s+\"oci://\$\{IMAGE\}@\$\{DIGEST\}\"[\s\S]{0,300}--signer-workflow\s+\"\$\{GITHUB_REPOSITORY\}/\.github/workflows/image-build\.yml\"", "candidate minting does not independently verify its own OCI provenance identity")
@@ -249,7 +250,6 @@ else:
         (r"\bgh\s+api\b[^\n]*(?:--method|-X)\s+(?:POST|PATCH|PUT|DELETE)", "candidate minting performs a mutating API call"),
         (r"\bgh\s+release\s+(?:create|edit|upload|delete)\b", "candidate minting publishes a release directly instead of through release.yml"),
         (r"\bnpm\s+(?:publish|dist-tag)\b", "candidate minting publishes npm directly instead of through version.yml"),
-        (r"imagetools\s+create", "candidate minting can retag an OCI manifest"),
         (r"\b(?:kubectl|helm\s+(?:upgrade|install)|docker\s+service\s+update|aws\s+)", "candidate minting can mutate production infrastructure"),
         (r"ref:\s*main\b", "candidate minting checks out main instead of the dispatched tag source"),
         (r"contents:\s*write", "candidate minting grants a Git-writing token"),
@@ -257,10 +257,11 @@ else:
         (r"persist-credentials:\s*true", "candidate minting persists checkout credentials"),
     ):
         forbid(image_build, pattern, message)
-    # Exact per-job grants: the builder may write packages and attestations
-    # under OIDC; the orchestrator may only dispatch. Nothing else, ever.
+    # Platform builders push digests; only merge attests the index under OIDC.
+    # The finalizer independently verifies it and dispatches publishers.
     expected_image_build_permissions = {
-        "build-push": {"contents": "read", "packages": "write", "id-token": "write", "attestations": "write"},
+        "build-push": {"contents": "read", "packages": "write"},
+        "merge": {"contents": "read", "packages": "write", "id-token": "write", "attestations": "write"},
         "finalize": {"contents": "read", "packages": "read", "attestations": "read", "actions": "write"},
     }
     image_build_permissions = effective_job_permissions(image_build)
@@ -274,6 +275,57 @@ else:
     for job_name in expected_image_build_permissions:
         block = "\n".join(image_build_jobs.get(job_name, []))
         require(block, r"^    environment:\s*release\s*$", f"candidate minting job {job_name} does not run in the release environment")
+    build_job = "\n".join(image_build_jobs["build-push"])
+    merge_job = "\n".join(image_build_jobs["merge"])
+    finalize_job = "\n".join(image_build_jobs["finalize"])
+    require(merge_job, r"^    needs: build-push$", "index merge does not wait for every platform")
+    require(finalize_job, r"^    needs: merge$", "finalization does not wait for the attested merged index")
+    for output in ("digest", "version", "source_sha"):
+        require(finalize_job, rf"needs\.merge\.outputs\.{output}", f"finalize lost merged {output} output")
+    require(merge_job, r"digest: \$\{\{ steps\.merge\.outputs\.digest \}\}", "merged digest output is not the created index digest")
+    require(merge_job, r"source_sha: \$\{\{ steps\.source\.outputs\.sha \}\}", "merge lost its validated source SHA output")
+    require(merge_job, r"verify-oci-release\.sh", "merge does not re-check alias absence before tagging")
+    require(merge_job, r"grep -qx 'publish_required=true'", "merge can overwrite an existing version alias")
+    require(merge_job, r"pattern: image-digest-\*\n\s+path: \$\{\{ runner\.temp \}\}/digests\n\s+merge-multiple: true", "merge does not download this run's platform digest artifacts")
+    require(build_job, r"name: image-digest-\$\{\{ matrix\.arch \}\}", "platform digest artifacts are not distinct")
+    forbid(build_job, r"imagetools\s+create|actions/attest-build-provenance", "a platform builder can tag or attest the combined index")
+    require(build_job, r"provenance: true", "platform builds lost BuildKit provenance")
+    require(merge_job, r"subject-digest: \$\{\{ steps\.merge\.outputs\.digest \}\}", "attestation is not bound to the merged index")
+    require(merge_job, r"EXPECTED_DIGEST: \$\{\{ steps\.merge\.outputs\.digest \}\}", "alias readback is not bound to the created index")
+    if image_build.count("docker buildx imagetools create") != 1:
+        errors.append("candidate minting must create exactly one index alias")
+    require(merge_job, r'docker buildx imagetools create --tag "\$\{IMAGE\}:v\$\{VERSION\}"', "merge does not create only the exact version alias")
+    require(merge_job, r'--metadata-file "\$\{RUNNER_TEMP\}/merge-metadata.json"', "merge does not capture the created digest independently of alias readback")
+
+    native_check = workflows.get("image-native-check.yml", "")
+    require(native_check, r"^on:\n  pull_request:\n    paths:\n      - .github/workflows/image-build.yml\n      - deploy/Dockerfile\n      - .github/workflows/image-native-check.yml\n", "native PR check trigger or path filters changed")
+    forbid(native_check, r"^  (?:workflow_dispatch|push|pull_request_target|workflow_run|schedule):", "native PR check has a non-PR trigger")
+    require(native_check, r"^permissions: \{\}$", "native PR check inherits token permissions")
+    if effective_job_permissions(native_check) != {"build": {"contents": "read"}}:
+        errors.append("native PR check must have exactly contents:read")
+    forbid(uncommented(native_check), r"docker/login-action|secrets\.|github\.token|attest|cache-(?:from|to):|type=gha|setup-qemu-action", "native PR check can authenticate, attest, cache, or emulate")
+    require(native_check, r"push: false", "native PR check can publish an image")
+    require(native_check, r"outputs: type=oci,dest=\$\{\{ runner\.temp \}\}/image-\$\{\{ matrix\.arch \}\}.tar", "native PR check does not export only a local OCI archive")
+    require(native_check, r"provenance: false\n\s+sbom: false", "native PR check produces attestations")
+    # Compare all compilation inputs, allowing only publication/metadata to differ.
+    # A new build arg, target, secret or action revision must not silently drift.
+    def build_inputs(workflow):
+        match = re.search(r"uses: (docker/build-push-action@[0-9a-f]{40})[^\n]*\n        with:\n((?:          [^\n]*\n|            [^\n]*\n)+)", workflow)
+        if not match:
+            errors.append("cannot read native image build action inputs")
+            return {}
+        inputs = dict(re.findall(r"^          ([a-z-]+): (.*)$", match[2], re.MULTILINE))
+        for field in ("push", "outputs", "provenance", "sbom", "labels"):
+            inputs.pop(field, None)
+        return {"action": match[1], **inputs}
+    expected_inputs = {"action": "docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8", "context": ".", "file": "deploy/Dockerfile", "platforms": "${{ matrix.platform }}"}
+    if build_inputs(build_job) != expected_inputs or build_inputs(native_check) != expected_inputs:
+        errors.append("release and PR compilation inputs differ from the native build contract")
+    for workflow in (build_job, native_check):
+        require(workflow, r"runs-on: \$\{\{ matrix\.runner \}\}", "native build does not use its matrix runner")
+        require(workflow, r"- arch: amd64\n\s+platform: linux/amd64\n\s+runner: ubuntu-latest\n\s+- arch: arm64\n\s+platform: linux/arm64\n\s+runner: ubuntu-24.04-arm", "native platform-to-runner mapping changed")
+        forbid(workflow, r"setup-qemu-action", "native build uses emulation")
+        require(workflow, r"docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f", "native builds use different Buildx setup actions")
     # A dev prerelease at the tag pins its channel classification forever;
     # finalize must wait for any in-flight release.yml run before reading the
     # release state, then refuse the prerelease with the recovery command.
@@ -915,3 +967,5 @@ if errors:
     raise SystemExit(1)
 print("PASS: read-only public promotion, docs topology, and PR-owned metadata contract")
 PY
+
+bash "${ROOT}/scripts/release/native-image-merge.test.sh"

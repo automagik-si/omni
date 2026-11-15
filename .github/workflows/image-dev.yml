@@ -140,8 +140,8 @@ jobs:
             exit 1
           }
 
-      # arm64 is built under QEMU emulation, exactly as image-build.yml does;
-      # both target clusters are arm64, so that platform is not optional.
+      # The dev channel still builds arm64 under QEMU; release candidates use
+      # native runners in image-build.yml. arm64 remains a required platform.
       - name: Set up QEMU
         uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
 
