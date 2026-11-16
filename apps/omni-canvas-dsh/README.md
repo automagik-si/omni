@@ -3,10 +3,10 @@
 `@automagik/omni-canvas-dsh` lets Omni, the Main Bot of the Bot team for DeepSeek Harness
 (DSH), show what it found as a canvas: an openui-lang program that the chat renders as live
 UI (an overview, a list, numbers, a channel's QR code, a chat). It sits on the team plugin
-(`@automagik/bots-dsh`, from automagik-dev/automagik) and the channels plugin
+(`@automagik/bots-dsh`, from automagik-si/automagik) and the channels plugin
 (`@automagik/omni-channels-dsh`), and needs both: a canvas reads omni through Omni's own
 reads. The team's
-[README](https://github.com/automagik-dev/automagik/tree/dev/apps/bots-dsh#three-plugins) shows how the three fit.
+[README](https://github.com/automagik-si/automagik/tree/dev/apps/bots-dsh#three-plugins) shows how the three fit.
 
 > Labs release. Features, tools and the saved data format can still change.
 
@@ -75,7 +75,7 @@ node scripts/build-client.mjs --check
 The folder's own lockfile is npm's, as the channels plugin's is: Bun resolves every peer from
 the registry, and this plugin peers on the Omni plugins, which are not on npm.
 
-The tests load the team plugin from automagik-dev/automagik at the release
+The tests load the team plugin from automagik-si/automagik at the release
 `apps/automagik.json` pins (fetched into `apps/.automagik`, or `OMNI_DSH_CORE`) and the channels
 plugin from `../omni-channels-dsh` (or `OMNI_DSH_CHANNELS`), with their committed
 `client.js` files, and check that a Main Bot's prompt with all three is the text it was
