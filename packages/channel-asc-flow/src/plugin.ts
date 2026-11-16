@@ -217,6 +217,13 @@ const UNDELIVERABLE_ERROR = 'no ASC flow turn is polling this cod_atendimento �
 const HANDOFF_REFUSED_ERROR = 'handoff refused: the transfer never held, so the turn answers without it';
 
 /**
+ * Deadline for `/sendIndicador`. The indicator carries no content, so it does
+ * not get the client's 20s: past a couple of seconds the "digitando…" is no
+ * longer worth showing.
+ */
+const TYPING_TIMEOUT_MS = 2_000;
+
+/**
  * How often `inFlight` is swept for entries past the TTL.
  *
  * The TTL alone does NOT bound the map: it is only consulted when that exact
@@ -542,7 +549,8 @@ export class AscFlowPlugin extends BaseChannelPlugin {
   /**
    * Deliberately a no-op: on this channel "digitando…" goes out ONCE per
    * beneficiary message, raised by the plugin itself when the turn lands
-   * (`raiseTyping`, on the inbound path).
+   * (`raiseTyping`, on the inbound path, once the turn is published and without
+   * holding it).
    *
    * Every other caller lands here: the dispatcher raises "composing" when the
    * agent run starts (the same instant as the inbound one), "composing" again
@@ -554,12 +562,23 @@ export class AscFlowPlugin extends BaseChannelPlugin {
    */
   async sendTyping(_instanceId: string, _chatId: string, _duration?: number): Promise<void> {}
 
-  /** `POST /sendIndicador` — the "digitando…" bubble. Never throws: it is never worth failing a turn over. */
+  /**
+   * `POST /sendIndicador` — the "digitando…" bubble. Never throws (it is never
+   * worth failing a turn over), so the inbound path fires it WITHOUT awaiting.
+   *
+   * It carries no content, so it gets a short deadline of its own instead of
+   * the client's 20s: a late "digitando…" is worth nothing, and a slow one must
+   * not keep a request open against a platform that is already struggling.
+   */
   private async raiseTyping(instanceId: string, chatId: string): Promise<void> {
     const state = this.ascFlowInstances.get(instanceId);
     if (!state) return;
     try {
-      await state.client.call('/sendIndicador', { cod: toCodAtendimento(chatId), tipo: 1 });
+      await state.client.call(
+        '/sendIndicador',
+        { cod: toCodAtendimento(chatId), tipo: 1 },
+        AbortSignal.timeout(TYPING_TIMEOUT_MS),
+      );
     } catch (err) {
       this.logger.warn('[asc-flow] sendIndicador failed', { instanceId, chatId, err: String(err) });
     }
@@ -1229,14 +1248,10 @@ export class AscFlowPlugin extends BaseChannelPlugin {
       inboundState.seenCods.add(turn.codAtendimento);
     }
 
-    // The quoted-reply read starts now and runs alongside "digitando…" and the
-    // media fetch: its time comes out of the webhook hold (`handlers/webhook.ts`).
+    // The quoted-reply read starts now and runs alongside the media fetch: its
+    // time comes out of the webhook hold (`handlers/webhook.ts`).
     const client = this.ascFlowInstances.get(instanceId)?.client;
     const quote = this.quotedReplyTo(client, instanceId, turn);
-
-    // Raise "digitando…" as soon as the turn lands: the agent run is the slow
-    // part, and the beneficiary is already waiting. The ONLY one of the turn.
-    await this.raiseTyping(instanceId, turn.codAtendimento);
 
     const externalId = turn.messageId ?? crypto.randomUUID();
 
@@ -1316,6 +1331,20 @@ export class AscFlowPlugin extends BaseChannelPlugin {
       this.dropRepublishedTurn(instanceId, turn);
       return false;
     }
+
+    // Raise "digitando…" now that the turn is PUBLISHED: the agent run is the
+    // slow part, and the beneficiary is already waiting. The ONLY one of the
+    // turn, and two things about it are deliberate:
+    //
+    // - not awaited. The message has already gone to the agent, whatever the
+    //   platform does with the indicator (awaited ahead of the publish, a slow
+    //   `/sendIndicador` held every inbound message for up to the client's 20s);
+    // - after the duplicate check, never before. A re-send the journal refuses
+    //   gets no answer, so it gets no "digitando…" either — and the platform
+    //   answers HTTP 500 to exactly those: in production on 16/11/2026, 307 of
+    //   the 374 indicator 500s in 8 minutes were raised for a re-send we then
+    //   dropped (307 of the 310 dropped re-sends).
+    void this.raiseTyping(instanceId, turn.codAtendimento);
 
     if (stamped && stamped.text === turn.text && !stamped.correlationId) stamped.correlationId = correlationId;
 

@@ -207,14 +207,14 @@ other channel leaves the field undefined and still pauses.
 
 | Endpoint | When |
 |---|---|
-| `POST /sendIndicador` | typing, on inbound arrival and after each pushed bubble |
+| `POST /sendIndicador` | typing, ONCE per beneficiary message: when the turn is published (never for a dropped re-send), not awaited, 2s deadline |
 | `POST /callbackFlowMsg` | every bubble EXCEPT the last one (plain text turns) |
 | `POST /mensagem` | media, location, contact card, and the interactive last bubble |
 | `POST /transferirHumano` | `metadata.isHandoff === true` **and** `ascFlowHandoffMode: 'service'` |
 
 One `sendMessage` is one flow turn. Blank-line-separated paragraphs become
-separate bubbles. The bubbles before the last are **pushed** (best-effort, with
-typing between them, which is what gives the turn its rhythm); the **last** one
+separate bubbles. The bubbles before the last are **pushed** (best-effort, back
+to back, with no typing between them); the **last** one
 rides back in `resposta`, the single slot the flow's `message` node renders. A
 refused push degrades to `resposta` rather than costing the beneficiary the
 answer.
