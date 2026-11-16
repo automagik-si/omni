@@ -16,8 +16,8 @@ fullnameOverride: ""
 # explicitly falls back to v<Chart.appVersion>; do not use that for releases
 # unless that image was intentionally built. The dev overlay uses local images.
 image:
-  repository: ghcr.io/automagik-dev/omni-api
-  tag: "v2.261115.8"
+  repository: ghcr.io/automagik-si/omni-api
+  tag: "v2.261116.6"
   # Optional immutable OCI index digest. When set, omni-api renders as
   # repository@digest and tag/appVersion are ignored. Only lowercase sha256
   # digests are accepted so GitOps cannot silently deploy a mutable alias.
