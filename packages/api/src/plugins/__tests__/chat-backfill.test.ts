@@ -66,6 +66,30 @@ function fixture(fetchHistory: (id: string, options: FetchHistoryOptions) => Pro
 }
 
 describe('chat backfill worker', () => {
+  test('redelivery resumes a running backfill whose last activity is stale', async () => {
+    let fetched = false;
+    const f = fixture(async () => {
+      fetched = true;
+    });
+    f.job.status = 'running';
+    f.job.startedAt = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    f.job.progress.lastProgressAt = f.job.startedAt.toISOString();
+    await processChatBackfill(f.options);
+    expect(fetched).toBe(true);
+    expect(f.job).toMatchObject({ status: 'completed' });
+  });
+  test('redelivery leaves a recently progressing backfill with its current worker', async () => {
+    let fetched = false;
+    const f = fixture(async () => {
+      fetched = true;
+    });
+    f.job.status = 'running';
+    f.job.startedAt = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    f.job.progress.lastProgressAt = new Date().toISOString();
+    await processChatBackfill(f.options);
+    expect(fetched).toBe(false);
+    expect(f.job.status).toBe('running');
+  });
   test('unanswered phone has its own terminal state and coverage', async () => {
     const f = fixture(async (_id, options) => {
       await options.onRound?.({ round: 1, received: 0, oldestReached: null });
