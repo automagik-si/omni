@@ -503,7 +503,7 @@ async function lockChatRoute(
 
 /**
  * Routes that deliver nothing to anyone and that a chat key needs: its chat's
- * row, participants and history, closing its turn, and its context. A key
+ * row, participants, history and coverage, closing its turn, and its context. A key
  * that is chat-locked as well as recipient-locked (a chat key) needs no
  * recipient on these, since the chat lock already holds it to its chat. Every
  * other route keeps the recipient lock, and one without a recipient stays
@@ -513,6 +513,7 @@ const RECIPIENT_FREE_ROUTES: ReadonlyArray<readonly [string, string]> = [
   ['GET', '/chats/:id'],
   ['GET', '/chats/:id/participants'],
   ['GET', '/chats/:id/messages'],
+  ['GET', '/chats/:id/coverage'],
   ['POST', '/turns/close'],
   ['POST', '/context'],
   ['DELETE', '/context'],

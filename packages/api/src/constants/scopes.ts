@@ -153,6 +153,7 @@ export const SCOPE_MAP: Record<string, string> = {
   'POST /chats/:id/participants': 'chats:write',
   'DELETE /chats/:id/participants/:platformUserId': 'chats:write',
   'GET /chats/:id/messages': 'chats:read',
+  'GET /chats/:id/coverage': 'chats:read',
   'GET /chats/by-external': 'chats:read',
   'POST /chats/:id/read': 'chats:write',
   'POST /chats/:id/disappearing': 'chats:write',

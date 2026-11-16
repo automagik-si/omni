@@ -114,6 +114,8 @@ const CLI_COMMANDS: Record<string, string> = {
   'chats.archive': 'chats archive',
   'chats.unarchive': 'chats unarchive',
   'chats.getMessages': 'chats messages',
+  'chats.pageMessages': 'chats messages --cursor',
+  'chats.getCoverage': 'chats coverage',
   'chats.listParticipants': 'chats participants',
   'chats.addParticipant': 'chats participants --add',
   'chats.removeParticipant': 'chats participants --remove',
