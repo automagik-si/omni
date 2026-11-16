@@ -2052,6 +2052,30 @@ export function createOmniClient(config: OmniClientConfig) {
      * Note: Uses fetch directly until SDK types are regenerated
      */
     chats: {
+      /** Queue history for just this chat and range. */
+      async backfill(id: string, body: { from: string; to: string }) {
+        const { data, error, response } = await client.POST('/chats/{id}/backfill', {
+          params: { path: { id } },
+          body,
+        });
+        if (error) throw OmniApiError.from(error, response.status);
+        return data as { jobId: string };
+      },
+      async backfillStatus(id: string, jobId: string) {
+        const { data, error, response } = await client.GET('/chats/{id}/backfill/{jobId}', {
+          params: { path: { id, jobId } },
+        });
+        if (error) throw OmniApiError.from(error, response.status);
+        return data?.data;
+      },
+      async cancelBackfill(id: string, jobId: string) {
+        const { data, error, response } = await client.POST('/chats/{id}/backfill/{jobId}/cancel', {
+          params: { path: { id, jobId } },
+        });
+        if (error) throw OmniApiError.from(error, response.status);
+        return data?.data;
+      },
+
       /**
        * List chats
        */

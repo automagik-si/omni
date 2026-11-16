@@ -1410,6 +1410,257 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/chats/{id}/backfill": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Queue a chat backfill */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        /** Format: date-time */
+                        from: string;
+                        /** Format: date-time */
+                        to: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Queued */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uuid */
+                            jobId: string;
+                        };
+                    };
+                };
+                /** @description Chat not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                /**
+                                 * @description Error code
+                                 * @example NOT_FOUND
+                                 */
+                                code: string;
+                                /** @description Human-readable error message */
+                                message: string;
+                                /** @description Additional error details */
+                                details?: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/chats/{id}/backfill/{jobId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read chat backfill progress */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    jobId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Job progress and coverage */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                /** Format: uuid */
+                                id: string;
+                                /** Format: uuid */
+                                chatId: string;
+                                /** @enum {string} */
+                                state: "queued" | "fetching" | "done" | "phone-did-not-answer" | "cancelled" | "failed";
+                                fetched: number;
+                                stored: number;
+                                duplicates: number;
+                                mediaDownloaded: number;
+                                mediaMissing: number;
+                                reactionsApplied: number;
+                                editsApplied: number;
+                                deletionsApplied: number;
+                                unmatched: number;
+                                oldestReached: string | null;
+                                outcome?: string;
+                                coverage: {
+                                    oldest: string | null;
+                                    newest: string | null;
+                                    count: number;
+                                    countInWindow: number;
+                                    deletedCount: number;
+                                    mediaMissing: number;
+                                    lastInbound: string | null;
+                                    lastOutbound: string | null;
+                                };
+                            };
+                        };
+                    };
+                };
+                /** @description Chat not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                /**
+                                 * @description Error code
+                                 * @example NOT_FOUND
+                                 */
+                                code: string;
+                                /** @description Human-readable error message */
+                                message: string;
+                                /** @description Additional error details */
+                                details?: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/chats/{id}/backfill/{jobId}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel a chat backfill */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    jobId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Cancelled job */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                /** Format: uuid */
+                                id: string;
+                                /** Format: uuid */
+                                chatId: string;
+                                /** @enum {string} */
+                                state: "queued" | "fetching" | "done" | "phone-did-not-answer" | "cancelled" | "failed";
+                                fetched: number;
+                                stored: number;
+                                duplicates: number;
+                                mediaDownloaded: number;
+                                mediaMissing: number;
+                                reactionsApplied: number;
+                                editsApplied: number;
+                                deletionsApplied: number;
+                                unmatched: number;
+                                oldestReached: string | null;
+                                outcome?: string;
+                                coverage: {
+                                    oldest: string | null;
+                                    newest: string | null;
+                                    count: number;
+                                    countInWindow: number;
+                                    deletedCount: number;
+                                    mediaMissing: number;
+                                    lastInbound: string | null;
+                                    lastOutbound: string | null;
+                                };
+                            };
+                        };
+                    };
+                };
+                /** @description Chat not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                /**
+                                 * @description Error code
+                                 * @example NOT_FOUND
+                                 */
+                                code: string;
+                                /** @description Human-readable error message */
+                                message: string;
+                                /** @description Additional error details */
+                                details?: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/chats": {
         parameters: {
             query?: never;

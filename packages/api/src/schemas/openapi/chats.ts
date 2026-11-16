@@ -10,6 +10,8 @@ import { z } from '../../lib/zod-openapi';
 import {
   ChatTypeSchema,
   addParticipantSchema,
+  chatBackfillParams,
+  chatBackfillSchema,
   chatCoverageQuerySchema,
   createChatSchema,
   listMessagesQuerySchema,
@@ -129,6 +131,70 @@ const chatData = (description: string) => ({
 });
 
 export function registerChatSchemas(registry: OpenAPIRegistry): void {
+  const backfillJob = z.object({
+    data: z.object({
+      id: z.string().uuid(),
+      chatId: z.string().uuid(),
+      state: z.enum(['queued', 'fetching', 'done', 'phone-did-not-answer', 'cancelled', 'failed']),
+      fetched: z.number(),
+      stored: z.number(),
+      duplicates: z.number(),
+      mediaDownloaded: z.number(),
+      mediaMissing: z.number(),
+      reactionsApplied: z.number(),
+      editsApplied: z.number(),
+      deletionsApplied: z.number(),
+      unmatched: z.number(),
+      oldestReached: z.string().nullable(),
+      outcome: z.string().optional(),
+      coverage: z.object({
+        oldest: z.string().nullable(),
+        newest: z.string().nullable(),
+        count: z.number(),
+        countInWindow: z.number(),
+        deletedCount: z.number(),
+        mediaMissing: z.number(),
+        lastInbound: z.string().nullable(),
+        lastOutbound: z.string().nullable(),
+      }),
+    }),
+  });
+  registry.registerPath({
+    method: 'post',
+    path: '/chats/{id}/backfill',
+    tags: ['Chats'],
+    summary: 'Queue a chat backfill',
+    request: { params: idParam, body: { content: { 'application/json': { schema: chatBackfillSchema } } } },
+    responses: {
+      202: {
+        description: 'Queued',
+        content: { 'application/json': { schema: z.object({ jobId: z.string().uuid() }) } },
+      },
+      404: notFound,
+    },
+  });
+  registry.registerPath({
+    method: 'get',
+    path: '/chats/{id}/backfill/{jobId}',
+    tags: ['Chats'],
+    summary: 'Read chat backfill progress',
+    request: { params: chatBackfillParams },
+    responses: {
+      200: { description: 'Job progress and coverage', content: { 'application/json': { schema: backfillJob } } },
+      404: notFound,
+    },
+  });
+  registry.registerPath({
+    method: 'post',
+    path: '/chats/{id}/backfill/{jobId}/cancel',
+    tags: ['Chats'],
+    summary: 'Cancel a chat backfill',
+    request: { params: chatBackfillParams },
+    responses: {
+      200: { description: 'Cancelled job', content: { 'application/json': { schema: backfillJob } } },
+      404: notFound,
+    },
+  });
   registry.register('Chat', ChatSchema);
   registry.register('ChatParticipant', ChatParticipantSchema);
   registry.register('ChatMessage', ChatMessageSchema);
