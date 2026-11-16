@@ -364,6 +364,23 @@ export class SyncJobService {
   }
 
   /**
+   * Refresh only the ownership clock; concurrent progress writes retain their counters.
+   * This internal liveness receipt does not publish a user-visible progress event.
+   */
+  async heartbeatBackfill(id: string, trustedTenantId?: string | null): Promise<SyncJob> {
+    const [updated] = await this.workDb(trustedTenantId, () =>
+      this.db
+        .update(syncJobs)
+        .set({
+          progress: sql`jsonb_set(${syncJobs.progress}, '{lastProgressAt}', to_jsonb(${new Date().toISOString()}::text), true)`,
+        })
+        .where(and(eq(syncJobs.id, id), eq(syncJobs.status, 'running')))
+        .returning(),
+    );
+    return updated ?? this.getById(id, trustedTenantId);
+  }
+
+  /**
    * Update job progress
    */
   async updateProgress(

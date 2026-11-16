@@ -41,6 +41,39 @@ function fixture() {
 }
 
 describe('passive history while a chat backfill is active', () => {
+  test('an expired fetch stops without clearing the successor callback state', async () => {
+    const f = fixture();
+    await f.initialize;
+    let requests = 0;
+    Object.assign(f.plugin, {
+      getSocket: () => ({
+        fetchMessageHistory: async () => {
+          requests++;
+        },
+      }),
+    });
+    const successor = { ...f.state, chatJid: 'chat-b@jid' };
+    await f.plugin.fetchHistory('line', {
+      since: new Date('2026-01-01'),
+      anchors: [
+        {
+          chatJid: 'chat-a@jid',
+          messageKey: { remoteJid: 'chat-a@jid', id: 'anchor', fromMe: false },
+          timestamp: 1_700_000_000,
+        },
+      ],
+      shouldCancel: async () => {
+        // The row was expired and a new owner installed its state before this check returned.
+        f.internals.historySyncCallbacks.set('line', successor);
+        return true;
+      },
+      onRound: async () => {
+        throw new Error('an expired round must not complete');
+      },
+    });
+    expect(requests).toBe(0);
+    expect(f.internals.historySyncCallbacks.get('line')).toBe(successor);
+  });
   for (const chatId of ['chat-a@jid', 'chat-b@jid']) {
     test(`passive history for ${chatId} keeps the passive path`, async () => {
       const f = fixture();

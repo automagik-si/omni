@@ -133,9 +133,18 @@ export async function processChatBackfill(options: {
   const config = job.config.backfill;
   if (!config) throw new Error('Missing chat backfill configuration');
   const progress: SyncJobProgress = { ...job.progress, state: 'fetching' };
+  let lastHeartbeatAt = Date.now();
   const cancelled = async () => {
     await assertAdmissible();
-    return (await jobs.getById(jobId, tenantId)).status === 'cancelled';
+    if ((await jobs.getById(jobId, tenantId)).status !== 'running') return true;
+    const now = Date.now();
+    if (now - lastHeartbeatAt >= 60_000) {
+      // Wait/drain polls also keep a slow round alive. Reserve the interval before
+      // awaiting, since message callbacks can check ownership concurrently.
+      lastHeartbeatAt = now;
+      return (await jobs.heartbeatBackfill(jobId, tenantId)).status !== 'running';
+    }
+    return false;
   };
   const publishProgress = () => jobs.updateProgress(jobId, progress, tenantId);
   await publishProgress();

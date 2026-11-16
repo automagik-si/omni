@@ -2932,7 +2932,9 @@ export class WhatsAppPlugin extends BaseChannelPlugin {
       this.logger.info('History fetch completed', { instanceId, totalMessages: messages.length });
       return { totalFetched: messages.length, messages };
     } finally {
-      this.historySyncCallbacks.delete(instanceId);
+      if (this.historySyncCallbacks.get(instanceId) === syncState) {
+        this.historySyncCallbacks.delete(instanceId);
+      }
     }
   }
 
