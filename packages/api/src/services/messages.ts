@@ -738,11 +738,21 @@ export class MessageService {
 
       // Update chat stats (in same transaction - ATOMIC)
       const preview = buildMessagePreview(options);
+      const timestamp = options.platformTimestamp.toISOString();
+      const newer = sql`${chats.lastMessageAt} IS NULL OR ${chats.lastMessageAt} < ${timestamp}`;
       await tx
         .update(chats)
         .set({
-          lastMessageAt: options.platformTimestamp,
-          lastMessagePreview: preview,
+          // History arrives backwards. Compare against the row being updated so
+          // an older insert cannot replace a concurrent live message's summary.
+          lastMessageAt:
+            options.source === 'sync'
+              ? sql`CASE WHEN ${newer} THEN ${timestamp} ELSE ${chats.lastMessageAt} END`
+              : options.platformTimestamp,
+          lastMessagePreview:
+            options.source === 'sync'
+              ? sql`CASE WHEN ${newer} THEN ${preview} ELSE ${chats.lastMessagePreview} END`
+              : preview,
           messageCount: sql`${chats.messageCount} + 1`,
           // Unread count is managed by platform-native events (chat.unread-updated)
           updatedAt: new Date(),
