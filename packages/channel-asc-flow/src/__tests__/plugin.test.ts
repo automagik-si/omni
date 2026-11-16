@@ -871,6 +871,42 @@ describe('one typing per beneficiary message', () => {
     expect(of('/callbackFlowMsg').map((c) => c.body.msg_usuario)).toEqual(['um', 'dois']);
   });
 
+  // Em produção o `/sendIndicador` era aguardado antes de a mensagem seguir para
+  // o agente: plataforma lenta = até 20s (o timeout do cliente) de atraso na
+  // chegada de cada mensagem, por um indicador que não carrega conteúdo.
+  it('a hung indicator does not hold the message, and gives up on its own short deadline', async () => {
+    await boot();
+    // Um indicador que só termina quando a requisição é abortada.
+    const stubbed = globalThis.fetch;
+    let abortedAt = 0;
+    globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      if (!String(input).includes('/sendIndicador')) return stubbed(input, init);
+      return new Promise<Response>((_, reject) => {
+        init?.signal?.addEventListener('abort', () => {
+          abortedAt = Date.now();
+          reject(init.signal?.reason);
+        });
+      });
+    }) as typeof fetch;
+
+    try {
+      const started = Date.now();
+      await inbound('oi');
+
+      // A mensagem já seguiu para o agente, com o indicador ainda pendurado.
+      expect(Date.now() - started).toBeLessThan(500);
+      expect(eventBus.published.some((e) => e.type.includes('received'))).toBe(true);
+      expect(abortedAt).toBe(0);
+
+      // E o indicador desiste sozinho em ~2s, não nos 20s do cliente.
+      while (abortedAt === 0 && Date.now() - started < 4_000) await new Promise((r) => setTimeout(r, 25));
+      expect(abortedAt - started).toBeGreaterThanOrEqual(1_900);
+      expect(abortedAt - started).toBeLessThan(3_500);
+    } finally {
+      globalThis.fetch = stubbed;
+    }
+  });
+
   it('still stops at the first refused bubble, so the rest never arrive out of order', async () => {
     let pushes = 0;
     await boot({

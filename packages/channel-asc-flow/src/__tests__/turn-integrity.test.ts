@@ -683,10 +683,14 @@ describe('a stale re-send carrying the opening messageId (#1159)', () => {
     restore();
     await start(context);
 
+    calls.length = 0;
     const res = await post('M1');
 
     expect(received()).toHaveLength(1);
     expect(((await res.json()) as { pronto?: number }).pronto).toBe(0);
+    // Sem turno publicado, sem "digitando…": em produção (16/11/2026) a
+    // plataforma respondia HTTP 500 ao indicador desses reenvios, 307 de 310.
+    expect(calls.filter((c) => c.path === '/sendIndicador')).toHaveLength(0);
     expect(journaled.has(`asc-flow:${instanceId}:42:M1:text`)).toBe(true);
   });
 });
