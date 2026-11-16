@@ -103,6 +103,7 @@ describe('setupSyncWorker', () => {
     expect(eventType).toBe('sync.started');
     expect(opts).toEqual({
       durable: 'sync-worker',
+      concurrency: 32,
       queue: 'sync-workers',
       startFrom: 'new',
       ackWaitMs: SYNC_WORKER_ACK_WAIT_MS,

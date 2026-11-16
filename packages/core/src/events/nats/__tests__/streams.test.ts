@@ -74,6 +74,9 @@ describe('streams', () => {
       expect(getStreamForEventType('identity.created')).toBe('IDENTITY');
       expect(getStreamForEventType('identity.linked')).toBe('IDENTITY');
       expect(getStreamForEventType('identity.merged')).toBe('IDENTITY');
+      expect(STREAM_CONFIGS[STREAM_NAMES.IDENTITY].subjects).toEqual(['identity.>', 'person.>']);
+      for (const type of ['person.created', 'person.updated', 'person.merged'])
+        expect(getStreamForEventType(type)).toBe('IDENTITY');
     });
 
     test('routes media events to MEDIA stream', () => {

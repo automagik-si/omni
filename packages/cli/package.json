@@ -1,9 +1,9 @@
 {
   "name": "@automagik/omni",
-  "version": "2.261115.8",
+  "version": "2.261116.6",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/automagik-dev/omni.git",
+    "url": "git+https://github.com/automagik-si/omni.git",
     "directory": "packages/cli"
   },
   "homepage": "https://github.com/automagik-dev/omni",

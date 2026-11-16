@@ -30,7 +30,7 @@
  *      the above exists.
  */
 
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import {
   CURRENT_ENVELOPE_VERSION,
   classifyEnvelope,
@@ -47,6 +47,11 @@ const INSTANCE = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaee1';
 
 describe('producer-side instance-owner tenant derivation', () => {
   beforeEach(() => {
+    setEnvelopeTenantResolver(null);
+    setEnvelopeInstanceTenantResolver(null);
+  });
+
+  afterEach(() => {
     setEnvelopeTenantResolver(null);
     setEnvelopeInstanceTenantResolver(null);
   });

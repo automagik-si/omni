@@ -211,6 +211,22 @@ export const AckConsumerSchema = z
     message: 'cursor or leaseId is required',
   });
 
+/** RFC-0002: seek is an explicit, audited cursor mutation. */
+export const SeekConsumerSchema = z
+  .object({
+    toSequence: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional().openapi({
+      description: 'Set the cursor to this journal_seq; the next pull starts strictly after it',
+    }),
+    toTime: z.string().datetime({ offset: true }).optional().openapi({
+      description:
+        'Resolve to the first journal row at or after this RFC 3339 timestamp and set the cursor just before it',
+    }),
+  })
+  .strict()
+  .refine((body) => (body.toSequence !== undefined) !== (body.toTime !== undefined), {
+    message: 'Exactly one of toSequence or toTime is required',
+  });
+
 /** A journal_seq position on the wire: digits only, a non-negative safe integer. */
 const JournalSeqStringSchema = z
   .string()
@@ -427,6 +443,46 @@ export function registerEventConsumerSchemas(registry: OpenAPIRegistry): void {
       404: { description: 'No such consumer', content: { 'application/json': { schema: ErrorSchema } } },
       429: {
         description: 'Too many open streams on this server or for this key (EVENT_STREAM_MAX_PER_PROCESS / _PER_KEY)',
+        content: { 'application/json': { schema: ErrorSchema } },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: 'post',
+    path: '/events/consumers/{name}/seek',
+    operationId: 'seekEventConsumer',
+    tags: ['Events'],
+    summary: 'Seek a durable consumer cursor backward or forward (audited)',
+    description:
+      'Exactly one target is required. Sequence positions must be within the tenant journal oldest row and head. ' +
+      'A time must be within the journal timestamp range and resolves to the lowest journal_seq whose receivedAt ' +
+      'is at or after that time, positioning just before it so that row is delivered. Publisher timestamps can arrive ' +
+      'out of order, so later journal rows stamped before the target may also replay; matching rows are never skipped. ' +
+      'Uses the same authorization as ack, including full-access keys, and preserves all read filters. ' +
+      'Refused while any shared lease is outstanding, even expired leases awaiting redelivery. ' +
+      'Writes a config audit entry and publishes custom.consumer.sought with from, to, by and when. ' +
+      'Pause followers and finish outstanding fan-out acks before seeking.',
+    request: {
+      params: z.object({ name: z.string() }),
+      body: { content: { 'application/json': { schema: SeekConsumerSchema } } },
+    },
+    responses: {
+      200: {
+        description: 'Cursor positioned',
+        content: { 'application/json': { schema: z.object({ data: DurableConsumerSchema }) } },
+      },
+      400: {
+        description: 'Invalid target, outside the journal bound, or empty journal',
+        content: { 'application/json': { schema: ErrorSchema } },
+      },
+      403: {
+        description: 'Restricted key cannot mutate an unscoped consumer',
+        content: { 'application/json': { schema: ErrorSchema } },
+      },
+      404: { description: 'No visible consumer', content: { 'application/json': { schema: ErrorSchema } } },
+      409: {
+        description: 'Outstanding shared leases must be acked first',
         content: { 'application/json': { schema: ErrorSchema } },
       },
     },

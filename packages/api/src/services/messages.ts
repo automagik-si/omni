@@ -7,6 +7,7 @@
  * @see unified-messages wish
  */
 
+import { type HistorySyncMutation, HistorySyncMutationSchema } from '@omni/channel-sdk';
 import type { EventBus } from '@omni/core';
 import { NotFoundError } from '@omni/core';
 import type { Database } from '@omni/db';
@@ -737,11 +738,21 @@ export class MessageService {
 
       // Update chat stats (in same transaction - ATOMIC)
       const preview = buildMessagePreview(options);
+      const timestamp = options.platformTimestamp.toISOString();
+      const newer = sql`${chats.lastMessageAt} IS NULL OR ${chats.lastMessageAt} < ${timestamp}`;
       await tx
         .update(chats)
         .set({
-          lastMessageAt: options.platformTimestamp,
-          lastMessagePreview: preview,
+          // History arrives backwards. Compare against the row being updated so
+          // an older insert cannot replace a concurrent live message's summary.
+          lastMessageAt:
+            options.source === 'sync'
+              ? sql`CASE WHEN ${newer} THEN ${timestamp} ELSE ${chats.lastMessageAt} END`
+              : options.platformTimestamp,
+          lastMessagePreview:
+            options.source === 'sync'
+              ? sql`CASE WHEN ${newer} THEN ${preview} ELSE ${chats.lastMessagePreview} END`
+              : preview,
           messageCount: sql`${chats.messageCount} + 1`,
           // Unread count is managed by platform-native events (chat.unread-updated)
           updatedAt: new Date(),
@@ -859,6 +870,7 @@ export class MessageService {
     editedAt: Date,
     editedBy?: string,
     latestEventId?: string,
+    history = false,
   ): Promise<Message> {
     const message = await this.getById(id);
 
@@ -871,7 +883,10 @@ export class MessageService {
 
     // Get current edit history or initialize
     const currentHistory = (message.editHistory as EditHistoryEntry[]) ?? [];
+    if (history && currentHistory.some((entry) => entry.at === editEntry.at && entry.text === newText)) return message;
     const newHistory = [...currentHistory, editEntry];
+    if (history) newHistory.sort((a, b) => a.at.localeCompare(b.at));
+    const keepLatest = history && message.editedAt && message.editedAt > editedAt;
 
     // If this is the first edit, save original text
     const originalText = message.editCount === 0 ? message.textContent : message.originalText;
@@ -879,12 +894,12 @@ export class MessageService {
     const [updated] = await this.db
       .update(messages)
       .set({
-        textContent: newText,
-        status: 'edited' as MessageStatus,
+        textContent: keepLatest ? message.textContent : newText,
+        status: (history && message.deletedAt ? 'deleted' : 'edited') as MessageStatus,
         editCount: message.editCount + 1,
         originalText,
         editHistory: newHistory,
-        editedAt,
+        editedAt: keepLatest ? message.editedAt : editedAt,
         latestEventId: latestEventId ?? message.latestEventId,
         updatedAt: new Date(),
       })
@@ -915,12 +930,13 @@ export class MessageService {
     reaction: Omit<ReactionInfo, 'at'>,
     latestEventId?: string,
     channel?: ChannelType,
+    at?: Date,
   ): Promise<Message> {
     const message = await this.getById(id);
 
     const reactionEntry: ReactionInfo = {
       ...reaction,
-      at: new Date().toISOString(),
+      at: (at ?? new Date()).toISOString(),
     };
 
     // Get current reactions or initialize
@@ -1099,12 +1115,12 @@ export class MessageService {
   /**
    * Mark message as deleted
    */
-  async markDeleted(id: string, latestEventId?: string): Promise<Message> {
+  async markDeleted(id: string, latestEventId?: string, deletedAt = new Date()): Promise<Message> {
     const [updated] = await this.db
       .update(messages)
       .set({
         status: 'deleted' as MessageStatus,
-        deletedAt: new Date(),
+        deletedAt,
         latestEventId,
         updatedAt: new Date(),
       })
@@ -1116,6 +1132,68 @@ export class MessageService {
     }
 
     return updated;
+  }
+
+  /** Apply a history state change and its replay receipt in ONE row-locked transaction; no events. */
+  async applyHistoryMutation(
+    chatId: string,
+    input: HistorySyncMutation,
+    channel: ChannelType,
+  ): Promise<'applied' | 'duplicate' | 'unmatched'> {
+    const mutation = HistorySyncMutationSchema.parse(input);
+    return this.db.transaction(async (tx) => {
+      const [target] = await tx
+        .select()
+        .from(messages)
+        .where(and(eq(messages.chatId, chatId), eq(messages.externalId, mutation.targetExternalId)))
+        .limit(1)
+        .for('update');
+      if (!target) return 'unmatched';
+      const raw = target.rawPayload ?? {};
+      const receipts = Array.isArray(raw.historyMutationIds)
+        ? raw.historyMutationIds.filter((id): id is string => typeof id === 'string')
+        : [];
+      const receipt = `${mutation.kind}:${mutation.id}:${mutation.actor}:${mutation.at.toISOString()}`;
+      if (receipts.includes(receipt)) return 'duplicate';
+      const parsedTimes = z.record(z.string().datetime()).safeParse(raw.historyReactionTimes);
+      const times = parsedTimes.success ? parsedTimes.data : {};
+      const currentReaction = (target.reactions ?? []).find((reaction) => reaction.platformUserId === mutation.actor);
+      const latestReaction = times[mutation.actor] ?? currentReaction?.at;
+      const stale = mutation.kind === 'reaction' && latestReaction && new Date(latestReaction) > mutation.at;
+      const service = new MessageService(tx as unknown as Database, null);
+      if (!stale) await service.applyHistoryChange(target, mutation, channel);
+      const reactionTimes =
+        mutation.kind === 'reaction' && !stale
+          ? { historyReactionTimes: { ...times, [mutation.actor]: mutation.at.toISOString() } }
+          : {};
+      await tx
+        .update(messages)
+        .set({ rawPayload: { ...raw, ...reactionTimes, historyMutationIds: [...receipts, receipt] } })
+        .where(eq(messages.id, target.id));
+      return stale ? 'duplicate' : 'applied';
+    });
+  }
+
+  private async applyHistoryChange(
+    target: Message,
+    mutation: HistorySyncMutation,
+    channel: ChannelType,
+  ): Promise<void> {
+    if (mutation.kind === 'edit') {
+      await this.recordEdit(target.id, mutation.text, mutation.at, mutation.actor, undefined, true);
+    } else if (mutation.kind === 'deletion') {
+      if (!target.deletedAt) await this.markDeleted(target.id, undefined, mutation.at);
+    } else if (mutation.emoji) {
+      await this.addReaction(
+        target.id,
+        { emoji: mutation.emoji, platformUserId: mutation.actor },
+        undefined,
+        channel,
+        mutation.at,
+      );
+    } else {
+      await this.removeReaction(target.id, mutation.actor, '');
+    }
   }
 
   // =========================================================================

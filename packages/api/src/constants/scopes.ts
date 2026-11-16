@@ -152,6 +152,9 @@ export const SCOPE_MAP: Record<string, string> = {
   'GET /chats/:id/participants': 'chats:read',
   'POST /chats/:id/participants': 'chats:write',
   'DELETE /chats/:id/participants/:platformUserId': 'chats:write',
+  'POST /chats/:id/backfill': 'chats:write',
+  'GET /chats/:id/backfill/:jobId': 'chats:read',
+  'POST /chats/:id/backfill/:jobId/cancel': 'chats:write',
   'GET /chats/:id/messages': 'chats:read',
   'GET /chats/:id/coverage': 'chats:read',
   'GET /chats/by-external': 'chats:read',
@@ -208,6 +211,7 @@ export const SCOPE_MAP: Record<string, string> = {
   'DELETE /events/consumers/:name': 'events:consume',
   'POST /events/consumers/:name/pull': 'events:consume',
   'POST /events/consumers/:name/ack': 'events:consume',
+  'POST /events/consumers/:name/seek': 'events:consume',
   'GET /events/consumers/:name/stream': 'events:consume', // same as pull
 
   // --- events ---

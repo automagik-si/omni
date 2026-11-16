@@ -28,6 +28,7 @@ import {
   AckConsumerSchema,
   CreateConsumerSchema,
   PullConsumerQuerySchema,
+  SeekConsumerSchema,
   StreamConsumerHeaderSchema,
   StreamConsumerQuerySchema,
 } from '../../schemas/openapi/event-consumers';
@@ -142,6 +143,28 @@ eventConsumersRoutes.post('/events/consumers/:name/pull', zValidator('query', Pu
   const services = c.get('services');
   const result = await services.eventConsumers.pull(name, { limit, waitMs, leaseMs }, await consumerCaller(c));
   return c.json(result);
+});
+
+/**
+ * POST /events/consumers/:name/seek - Seek the cursor backward or forward (audited, RFC-0002)
+ */
+eventConsumersRoutes.post('/events/consumers/:name/seek', zValidator('json', SeekConsumerSchema), async (c) => {
+  const name = c.req.param('name');
+  const result = await c.get('services').eventConsumers.seek(name, c.req.valid('json'), await consumerCaller(c));
+  const eventBus = c.get('eventBus');
+  if (eventBus) {
+    await eventBus
+      .publishGeneric('custom.consumer.sought', {
+        consumerId: result.data.id,
+        name,
+        from: result.from,
+        to: result.to,
+        by: result.by,
+        when: result.when,
+      })
+      .catch((error: unknown) => log.error('Failed to publish consumer seek', { error: String(error), name }));
+  }
+  return c.json({ data: result.data });
 });
 
 /**
