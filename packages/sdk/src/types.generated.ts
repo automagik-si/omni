@@ -2188,7 +2188,7 @@ export interface paths {
                         };
                         /** @description Ask the user to share their location (WhatsApp Cloud: native "Send location" button under the text) */
                         requestLocation?: boolean;
-                        /** @description Send a WhatsApp Flow (whatsapp-business and asc-flow only; asc-flow needs flowId). bodyText defaults to text. Not combinable with buttons, list or requestLocation */
+                        /** @description Send a WhatsApp Flow (whatsapp-business and asc-flow only). bodyText defaults to text. Not combinable with buttons, list or requestLocation. whatsapp-business takes data only with screen on a navigate flow. asc-flow takes flowId, cta, body, header, footer and data, and no flowName, screen, data_exchange, draft or flowToken */
                         flow?: {
                             /** @description Flow id (exactly one of flowId/flowName) */
                             flowId?: string;
@@ -2291,7 +2291,7 @@ export interface paths {
                                 senderAgentId?: string | null;
                                 /** @description Platform send time (ms since epoch), when the channel reports one */
                                 timestamp?: number;
-                                /** @description Present on a flow send: the caller's flowToken, or the one generated; the nfm_reply echoes it */
+                                /** @description Present on a whatsapp-business flow send: the caller's flowToken, or the one generated; the nfm_reply echoes it. Absent on asc-flow, which cannot carry a token */
                                 flowToken?: string;
                             };
                         };

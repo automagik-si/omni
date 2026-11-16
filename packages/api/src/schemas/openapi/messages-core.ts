@@ -38,7 +38,8 @@ const SentTextSchema = MessageResponseSchema.extend({
     .optional()
     .openapi({ description: 'Platform send time (ms since epoch), when the channel reports one' }),
   flowToken: z.string().optional().openapi({
-    description: "Present on a flow send: the caller's flowToken, or the one generated; the nfm_reply echoes it",
+    description:
+      "Present on a whatsapp-business flow send: the caller's flowToken, or the one generated; the nfm_reply echoes it. Absent on asc-flow, which cannot carry a token",
   }),
 });
 const FilteredTextSchema = z.object({

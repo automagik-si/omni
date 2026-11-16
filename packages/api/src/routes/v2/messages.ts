@@ -714,7 +714,7 @@ export const sendTextSchema = z.object({
     .optional()
     .describe('Ask the user to share their location (WhatsApp Cloud: native "Send location" button under the text)'),
   flow: WhatsAppFlowInMessageSchema.optional().describe(
-    'Send a WhatsApp Flow (whatsapp-business and asc-flow only; asc-flow needs flowId). bodyText defaults to text. Not combinable with buttons, list or requestLocation',
+    'Send a WhatsApp Flow (whatsapp-business and asc-flow only). bodyText defaults to text. Not combinable with buttons, list or requestLocation. whatsapp-business takes data only with screen on a navigate flow. asc-flow takes flowId, cta, body, header, footer and data, and no flowName, screen, data_exchange, draft or flowToken',
   ),
   sentBy: sentByField,
   pacing: pacingField,
@@ -730,7 +730,8 @@ const FLOW_CHANNELS: ReadonlySet<string> = new Set(['whatsapp-business', 'asc-fl
 /** Meta's limit on a Flow message body (`WhatsAppFlowSendSchema.bodyText`). */
 const FLOW_BODY_MAX = 1024;
 
-type FlowDescriptor = WhatsAppFlowSend & { flowToken: string };
+/** `metadata.flow`; `flowToken` is absent on asc-flow, which cannot carry it. */
+type FlowDescriptor = WhatsAppFlowSend & { flowToken?: string };
 
 /** A `flow` from the request, its body resolved and filtered. */
 type FlowDraft = z.infer<typeof WhatsAppFlowInMessageSchema> & { bodyText: string };
@@ -782,11 +783,39 @@ type FlowSendResult =
   | { ok: true; flow: FlowDescriptor | undefined }
   | { ok: false; error: { code: string; message: string } };
 
+const flowValidationError = (message: string): FlowSendResult => ({
+  ok: false,
+  error: { code: 'VALIDATION_ERROR', message },
+});
+
+/**
+ * The options asc-flow cannot carry. Its flow message (`buildFlowInteractive`
+ * in channel-asc-flow) holds the flow id, the button label, the body, header
+ * and footer, and `data` as the payload: no flow name, first screen, action,
+ * draft mode or token, so the nfm_reply cannot be correlated by token there.
+ */
+function ascFlowUnsupported(flow: FlowDraft): string[] {
+  const set = {
+    flowName: flow.flowName !== undefined,
+    screen: flow.screen !== undefined,
+    flowAction: flow.flowAction === 'data_exchange',
+    draft: flow.draft === true,
+    flowToken: flow.flowToken !== undefined,
+  };
+  return Object.entries(set)
+    .filter(([, present]) => present)
+    .map(([field]) => field);
+}
+
 /**
  * The `metadata.flow` descriptor for a Flow sent through `POST /messages/send`
  * (none when the body carries no `flow`): the same one
- * `POST /instances/:id/whatsapp-flows/send` hands the plugin, with the caller's
- * `flowToken` kept (one is generated, as on that route, when it is missing).
+ * `POST /instances/:id/whatsapp-flows/send` hands the plugin. An option the
+ * channel would drop is refused rather than lost:
+ *  - whatsapp-business sends `data` only with the first `screen` of a navigate
+ *    flow (`sendFlow`); the caller's `flowToken` is kept, or one is generated,
+ *    as on that route;
+ *  - asc-flow carries none of `ascFlowUnsupported`, and no token.
  */
 function buildFlowSend(flow: FlowDraft | undefined, channel: string): FlowSendResult {
   if (!flow) return { ok: true, flow: undefined };
@@ -799,8 +828,20 @@ function buildFlowSend(flow: FlowDraft | undefined, channel: string): FlowSendRe
       },
     };
   }
-  if (channel === 'asc-flow' && !flow.flowId) {
-    return { ok: false, error: { code: 'VALIDATION_ERROR', message: 'asc-flow sends a flow by flowId only' } };
+  if (channel === 'asc-flow') {
+    const unsupported = ascFlowUnsupported(flow);
+    if (unsupported.length > 0) {
+      return flowValidationError(
+        `asc-flow cannot carry ${unsupported.join(', ')}: it sends a flow by flowId, with cta, body, header, footer and data`,
+      );
+    }
+    return { ok: true, flow };
+  }
+  const hasData = flow.data !== undefined && Object.keys(flow.data).length > 0;
+  if (hasData && (!flow.screen || flow.flowAction === 'data_exchange')) {
+    return flowValidationError(
+      'flow.data reaches the flow only with flow.screen on a navigate flow; a data_exchange flow gets its first screen from its endpoint',
+    );
   }
   const flowToken = flow.flowToken ?? buildFlowToken(flow.flowId ?? flow.flowName ?? 'unknown');
   return { ok: true, flow: { ...flow, flowToken } };

@@ -127,24 +127,37 @@ describe('POST /messages/send with flow', () => {
     expect(json.data.flowToken).toBe(token as string);
   });
 
-  test('asc-flow takes the flow by flowId', async () => {
-    const { app, sendMessage } = mountMessagesRoutes('asc-flow');
+  test('whatsapp-business refuses data without screen, which Meta would drop', async () => {
+    const { app, sendMessage } = mountMessagesRoutes();
+    const { screen: _screen, ...noScreen } = FLOW;
 
-    const res = await postSend(app, { flow: FLOW });
+    const res = await postSend(app, { flow: { ...noScreen, data: { levels: [] } } });
 
-    expect(res.status).toBe(201);
-    expect(sentMessage(sendMessage).content.type).toBe('flow');
+    expect(res.status).toBe(400);
+    const error = await errorOf(res);
+    expect(error.code).toBe('VALIDATION_ERROR');
+    expect(error.message).toContain('screen');
+    expect(sendMessage).not.toHaveBeenCalled();
   });
 
-  test('asc-flow refuses a flow by flowName', async () => {
-    const { app, sendMessage } = mountMessagesRoutes('asc-flow');
-    const { flowId: _id, ...byName } = FLOW;
+  test('whatsapp-business refuses data on a data_exchange flow, whose endpoint decides the first screen', async () => {
+    const { app, sendMessage } = mountMessagesRoutes();
 
-    const res = await postSend(app, { flow: { ...byName, flowName: 'perfil' } });
+    const res = await postSend(app, { flow: { ...FLOW, flowAction: 'data_exchange', data: { levels: [] } } });
 
     expect(res.status).toBe(400);
     expect((await errorOf(res)).code).toBe('VALIDATION_ERROR');
     expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  test('whatsapp-business sends a flow without screen when it carries no data', async () => {
+    const { app, sendMessage } = mountMessagesRoutes();
+    const { screen: _screen, ...noScreen } = FLOW;
+
+    const res = await postSend(app, { flow: { ...noScreen, data: {} } });
+
+    expect(res.status).toBe(201);
+    expect(sentMessage(sendMessage).content.type).toBe('flow');
   });
 
   for (const channel of ['telegram', 'whatsapp-baileys', 'hermes']) {
@@ -297,4 +310,46 @@ describe('POST /messages/send with flow — the body goes through the outbound f
     expect(((await res.json()) as { data: { status: string } }).data.status).toBe('filtered');
     expect(sendMessage).not.toHaveBeenCalled();
   });
+});
+
+describe('POST /messages/send with flow on asc-flow', () => {
+  // What the ASC platform carries: the flow id, the button label, the body,
+  // header and footer, and `data` as the payload. No screen, no token.
+  const ASC_FLOW = { flowId: '1234567890', cta: 'Escolher', data: { levels: [{ id: 'level_a', title: 'Nível A' }] } };
+
+  test('takes the flow by flowId and answers 201 without a flowToken, which the platform does not carry', async () => {
+    const { app, sendMessage } = mountMessagesRoutes('asc-flow');
+
+    const res = await postSend(app, { flow: { ...ASC_FLOW, flowAction: 'navigate', draft: false } });
+
+    expect(res.status).toBe(201);
+    const message = sentMessage(sendMessage);
+    expect(message.content.type).toBe('flow');
+    expect(message.metadata?.flow).toMatchObject({ ...ASC_FLOW, bodyText: 'Qual é o seu curso?' });
+    expect(message.metadata?.flow && 'flowToken' in message.metadata.flow).toBe(false);
+    const json = (await res.json()) as { data: Record<string, unknown> };
+    expect(json.data).toMatchObject({ messageId: 'SENT-MSG-ID', status: 'sent' });
+    expect('flowToken' in json.data).toBe(false);
+  });
+
+  const unsupported: Array<[string, Record<string, unknown>]> = [
+    ['flowName', { flowId: undefined, flowName: 'perfil' }],
+    ['screen', { screen: 'PROFILE' }],
+    ['flowAction', { flowAction: 'data_exchange' }],
+    ['draft', { draft: true }],
+    ['flowToken', { flowToken: 'test-flow-token' }],
+  ];
+  for (const [field, extra] of unsupported) {
+    test(`refuses ${field}, which the platform cannot carry, with 400 VALIDATION_ERROR`, async () => {
+      const { app, sendMessage } = mountMessagesRoutes('asc-flow');
+
+      const res = await postSend(app, { flow: { ...ASC_FLOW, ...extra } });
+
+      expect(res.status).toBe(400);
+      const error = await errorOf(res);
+      expect(error.code).toBe('VALIDATION_ERROR');
+      expect(error.message).toContain(field);
+      expect(sendMessage).not.toHaveBeenCalled();
+    });
+  }
 });
