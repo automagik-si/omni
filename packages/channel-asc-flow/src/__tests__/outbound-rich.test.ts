@@ -361,6 +361,18 @@ describe('outbound WhatsApp Flow through /sendMsgInterativaAvancado', () => {
     expect(ready('42')).toMatchObject({ resposta: '' });
   });
 
+  it('keeps the flow when the emoji markers push a body within the limit past 1024 characters', async () => {
+    await boot();
+    // 1022 characters on the handset, 1029 once the emoji rides as `##1f600##`.
+    const result = await sendFlow(flow, `${'x'.repeat(1020)}😀`);
+
+    expect(result.success).toBe(true);
+    expect(of('/sendMsgInterativaAvancado')[0]?.body).toMatchObject({
+      msg_interativa_parametros: { tipo: '5', mensagem: `${'x'.repeat(1020)}##1f600##` },
+    });
+    expect(of('/callbackFlowMsg')).toHaveLength(0);
+  });
+
   it('sends the body as text when the descriptor has no flowId', async () => {
     await boot();
     const result = await sendFlow({ cta: 'Abrir' });

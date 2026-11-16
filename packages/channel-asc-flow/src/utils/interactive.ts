@@ -27,7 +27,7 @@
 
 import { planInteractive } from '@omni/channel-sdk';
 import type { InteractiveButton, InteractiveListOptions } from '@omni/channel-sdk';
-import { encodeAscEmoji } from './emoji';
+import { decodeAscEmoji, encodeAscEmoji } from './emoji';
 
 const MAX_OPTIONS = 10;
 const MAX_BODY_TEXT = 1024;
@@ -263,9 +263,12 @@ export function buildFlowInteractive(
   const trimmed = body.trim();
   const flowId = flow?.flowId?.trim();
   const cta = flow?.cta?.trim();
-  // The limit is Meta's, on what the handset shows, so it is checked before the
-  // emoji become `##codepoint##` markers.
-  if (!trimmed || trimmed.length > MAX_BODY_TEXT || !flowId || !cta || cta.length > MAX_FLOW_CTA) return null;
+  // The limit is Meta's, on what the handset shows. The body arrives already
+  // encoded (`resolveOutboundText`), so it is measured with its `##codepoint##`
+  // markers read back as the emoji they stand for: a body within the limit
+  // must not lose its Flow to the markers' length.
+  const shown = decodeAscEmoji(trimmed);
+  if (!trimmed || shown.length > MAX_BODY_TEXT || !flowId || !cta || cta.length > MAX_FLOW_CTA) return null;
 
   // The body arrives already encoded (`resolveOutboundText`); these come
   // straight from the descriptor, so they are encoded here. See `emoji.ts`.
