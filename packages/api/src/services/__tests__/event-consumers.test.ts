@@ -1,3 +1,4 @@
+import { journalVisibilityClause } from '../journal-visibility';
 /**
  * Durable event consumers — pure-logic units (#989).
  *
@@ -32,7 +33,6 @@ import {
   resolveConsumerScope,
   resolveConsumerSettleMs,
   resolveInitialCursor,
-  streamInstanceClause,
   truncateAtUnready,
 } from '../event-consumers';
 import { eventTypeFilterClause } from '../events';
@@ -198,7 +198,7 @@ function mockPool(consumer: DurableConsumer, head = 0, journal: OmniEvent[] = []
       const rows = table === durableConsumers ? [consumer] : fields && 'head' in fields ? [{ head }] : journal;
       const chain = {
         where: (cond: SQL) => {
-          if (table === omniEvents) scanWheres.push(cond);
+          if (table === omniEvents && !(fields && 'head' in fields)) scanWheres.push(cond);
           return chain;
         },
         orderBy: () => chain,
@@ -252,12 +252,12 @@ describe('scanPage access predicate (via pull)', () => {
       and(
         gt(omniEvents.journalSeq, 0),
         eventTypeFilterClause(['message.received'], undefined),
-        streamInstanceClause(instanceIds),
+        journalVisibilityClause(instanceIds === null ? undefined : { instanceIds, fullAccess: false }),
       ) as SQL,
     );
   }
 
-  test("an 'all' consumer scans with exactly the unfiltered WHERE", async () => {
+  test("an 'all' consumer applies journal visibility without an access-verdict filter", async () => {
     const pool = mockPool(consumerRow({ accessFilter: 'all' }));
     await new EventConsumerService(pool.db).pull('c1');
     expect(pool.scanWheres).toHaveLength(1);
@@ -288,7 +288,7 @@ describe('scanPage access predicate (via pull)', () => {
           gt(omniEvents.journalSeq, 0),
           eventTypeFilterClause(['message.received'], undefined),
           inArray(omniEvents.instanceId, [instanceId]),
-          streamInstanceClause([instanceId]),
+          journalVisibilityClause({ instanceIds: [instanceId], fullAccess: false }),
         ),
       ),
     );
@@ -322,8 +322,8 @@ describe('scanPage access predicate (via pull)', () => {
       await new EventConsumerService(pool.db).pull('c1');
       const { sql, params } = render(pool.scanWheres[0]);
       expect(sql).toContain('"omni_events"."access_decision" = $');
-      expect(sql.startsWith(expectedWhere().sql.slice(0, -1))).toBe(true);
-      expect(params).toEqual([...expectedWhere().params, filter]);
+      expect(sql).toContain('not "omni_events"."event_type" in');
+      expect(params).toEqual([0, 'message.received', filter, ...expectedWhere().params.slice(2)]);
     }
   });
 });

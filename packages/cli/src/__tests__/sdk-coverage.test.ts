@@ -106,6 +106,9 @@ const CLI_COMMANDS: Record<string, string> = {
   // ============================================================================
   // CHATS
   // ============================================================================
+  'chats.backfill': 'chats backfill <id> --from <date> --to <date>',
+  'chats.backfillStatus': 'chats backfill-status <id> <job-id>',
+  'chats.cancelBackfill': 'chats backfill-cancel <id> <job-id>',
   'chats.list': 'chats list',
   'chats.get': 'chats get',
   'chats.create': 'chats create',

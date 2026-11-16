@@ -1268,6 +1268,32 @@ Examples:
     });
 
   consumers
+    .command('seek <name>')
+    .description(
+      'Seek a consumer cursor backward or forward within the journal (audited; next pull is strictly after it)',
+    )
+    .option('--to-sequence <sequence>', 'Target journal sequence')
+    .option('--to-time <timestamp>', 'Resolve a target by RFC 3339 timestamp')
+    .action(async (name: string, options: { toSequence?: string; toTime?: string }) => {
+      try {
+        if ((options.toSequence !== undefined) === (options.toTime !== undefined)) {
+          throw new Error('Exactly one of --to-sequence or --to-time is required');
+        }
+        const body =
+          options.toSequence !== undefined
+            ? { toSequence: z.coerce.number().int().min(0).max(Number.MAX_SAFE_INTEGER).parse(options.toSequence) }
+            : { toTime: z.string().datetime({ offset: true }).parse(options.toTime) };
+        const result = await consumersApiRequest<{ data: ConsumerData }>(`/${encodeURIComponent(name)}/seek`, {
+          method: 'POST',
+          body: JSON.stringify(body),
+        });
+        output.data(result.data);
+      } catch (err) {
+        output.error(`Failed to seek consumer: ${errorMessage(err)}`);
+      }
+    });
+
+  consumers
     .command('rm <name>')
     .description('Delete a consumer registration (the journal itself is untouched)')
     .action(async (name: string) => {

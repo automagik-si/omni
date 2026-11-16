@@ -15,11 +15,12 @@
  * swallow these requests.
  */
 
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { consumersApiRequest, followConsumer, summarizeConsumerRow } from '../events';
+import * as output from '../../output';
+import { consumersApiRequest, createEventsCommand, followConsumer, summarizeConsumerRow } from '../events';
 
 let priorFetch: typeof globalThis.fetch;
 beforeEach(() => {
@@ -329,5 +330,57 @@ describe('omni events consumers + follow', () => {
     await expect(
       followConsumer({ consumer: 'ghost', limit: 10, waitMs: 0, ack: true, untilIdle: true }),
     ).rejects.toThrow(/API returned 404/);
+  });
+});
+
+describe('consumer seek CLI (RFC-0002)', () => {
+  test('sequence and time flags send the exact seek body to the named consumer', async () => {
+    const printed = spyOn(output, 'data').mockImplementation(() => {});
+    const sent: Array<{ url: string; method: string | undefined; body: unknown }> = [];
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      sent.push({ url: String(url), method: init?.method, body: JSON.parse(String(init?.body)) });
+      return Response.json({ data: { name: 'replay', cursor: 4 } });
+    }) as typeof fetch;
+    try {
+      await createEventsCommand().parseAsync(['consumers', 'seek', 'replay', '--to-sequence', '4'], { from: 'user' });
+      await createEventsCommand().parseAsync(['consumers', 'seek', 'replay', '--to-time', '2026-01-01T00:00:00Z'], {
+        from: 'user',
+      });
+      expect(sent.map(({ method, body }) => ({ method, body }))).toEqual([
+        { method: 'POST', body: { toSequence: 4 } },
+        { method: 'POST', body: { toTime: '2026-01-01T00:00:00Z' } },
+      ]);
+      expect(sent.every((request) => request.url.endsWith('/api/v2/events/consumers/replay/seek'))).toBe(true);
+      expect(printed).toHaveBeenCalledTimes(2);
+    } finally {
+      printed.mockRestore();
+    }
+  });
+
+  test('missing, conflicting and invalid targets fail before making an API call', async () => {
+    const error = spyOn(output, 'error').mockImplementation((message: string): never => {
+      throw new Error(message);
+    });
+    let requests = 0;
+    globalThis.fetch = (async () => {
+      requests++;
+      return Response.json({});
+    }) as typeof fetch;
+    try {
+      for (const args of [
+        [],
+        ['--to-sequence', '1', '--to-time', '2026-01-01T00:00:00Z'],
+        ['--to-sequence', '-1'],
+        ['--to-sequence', '1.5'],
+        ['--to-time', 'yesterday'],
+      ]) {
+        await expect(
+          createEventsCommand().parseAsync(['consumers', 'seek', 'replay', ...args], { from: 'user' }),
+        ).rejects.toThrow(/Failed to seek consumer/);
+      }
+      expect(requests).toBe(0);
+    } finally {
+      error.mockRestore();
+    }
   });
 });

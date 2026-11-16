@@ -77,7 +77,7 @@ describe('the agent-host device key across SCOPE_MAP', () => {
     expect(wrong).toEqual([]);
   });
 
-  test('no write route is open to it', () => {
+  test('only read-only requests and owned consumer mutations are open to it', () => {
     const openWrites = entries.filter(
       (entry) => entry.method !== 'GET' && entry.granted && entry.route !== SELF_VALIDATION,
     );
@@ -88,6 +88,7 @@ describe('the agent-host device key across SCOPE_MAP', () => {
       'POST /events/consumers',
       'POST /events/consumers/:name/ack',
       'POST /events/consumers/:name/pull',
+      'POST /events/consumers/:name/seek',
       'POST /events/schemas/:eventType/validate',
       'POST /events/search',
     ]);
@@ -116,7 +117,7 @@ describe('the agent-host device key across SCOPE_MAP', () => {
     }
   });
 
-  test('events:consume opens exactly the five consumer routes, and events:write and events:* imply it', () => {
+  test('events:consume opens exactly the six consumer routes, and events:write and events:* imply it', () => {
     expect(
       entries
         .filter((entry) => entry.scope === 'events:consume')
@@ -128,6 +129,7 @@ describe('the agent-host device key across SCOPE_MAP', () => {
       'POST /events/consumers',
       'POST /events/consumers/:name/ack',
       'POST /events/consumers/:name/pull',
+      'POST /events/consumers/:name/seek',
     ]);
     for (const scopes of [['events:write'], ['events:*'], ['*']]) {
       expect({ scopes, granted: ApiKeyService.scopeAllows(scopes, 'events:consume') }).toEqual({

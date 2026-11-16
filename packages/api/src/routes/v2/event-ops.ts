@@ -12,6 +12,7 @@ import { z } from 'zod';
 import { describeDbError } from '../../middleware/error';
 import { optionalDateParam, requiredDateParam } from '../../schemas/date-query';
 import { ApiKeyService } from '../../services/api-keys';
+import { journalReader } from '../../services/journal-visibility';
 import type { AppVariables } from '../../types';
 
 const eventOpsRoutes = new Hono<{ Variables: AppVariables }>();
@@ -57,7 +58,7 @@ eventOpsRoutes.get('/', (c) => {
  */
 eventOpsRoutes.get('/metrics', async (c) => {
   const services = c.get('services');
-  const metrics = await services.eventOps.getMetrics();
+  const metrics = await services.eventOps.getMetrics(journalReader(c.get('apiKey')));
 
   return c.json({ data: metrics });
 });

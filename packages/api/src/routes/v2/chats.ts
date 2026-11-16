@@ -12,6 +12,7 @@ import type { Context } from 'hono';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { checkInstanceAccess, resolveChatIdInKeyInstances } from '../../lib/resolve-chat-id';
+import { readBackfillCoverage } from '../../plugins/chat-backfill';
 import { clearAgentSession } from '../../plugins/session-cleaner';
 import { optionalDateParam } from '../../schemas/date-query';
 import type { Services } from '../../services';
@@ -726,6 +727,76 @@ chatsRoutes.get('/:id/coverage', zValidator('query', chatCoverageQuerySchema), a
   const coverage = await c.get('services').messages.getChatCoverage(chatId, { from, to, includeDeleted });
 
   return c.json({ data: coverage });
+});
+
+export const chatBackfillSchema = z
+  .object({
+    from: z.string().datetime({ offset: true }),
+    to: z.string().datetime({ offset: true }),
+  })
+  .strict()
+  .refine((window) => new Date(window.from) < new Date(window.to), {
+    message: 'from must be before to',
+    path: ['to'],
+  });
+export const chatBackfillParams = z.object({ id: z.string().min(1), jobId: z.string().uuid() });
+
+/** POST /chats/:id/backfill - Queue one chat history backfill for the chosen range */
+chatsRoutes.post('/:id/backfill', zValidator('json', chatBackfillSchema), async (c) => {
+  const raw = c.req.param('id');
+  const chatId = await resolveChatIdInKeyInstances(c, raw);
+  if (chatId === null) return chatNotFoundResponse(c, raw);
+  const services = c.get('services');
+  const chat = await chatForRoute(c, raw, chatId);
+  if (!chat.instanceId) return c.json({ error: 'Chat has no channel instance' }, 400);
+  checkInstanceAccess(c.get('apiKey'), chat.instanceId);
+  const instance = await services.instances.getById(chat.instanceId);
+  const { from, to } = c.req.valid('json');
+  const job = await services.syncJobs.create({
+    instanceId: chat.instanceId,
+    channelType: instance.channel,
+    type: 'messages',
+    config: { backfill: { chatId, chatJid: chat.externalId, from, to } },
+  });
+  return c.json({ jobId: job.id }, 202);
+});
+
+/** GET /chats/:id/backfill/:jobId - Read chat backfill progress and coverage */
+chatsRoutes.get('/:id/backfill/:jobId', zValidator('param', chatBackfillParams), async (c) => {
+  const { id: raw, jobId } = c.req.valid('param');
+  const chatId = await resolveChatIdInKeyInstances(c, raw);
+  if (chatId === null) return chatNotFoundResponse(c, raw);
+  const services = c.get('services');
+  const chat = await chatForRoute(c, raw, chatId);
+  if (!chat.instanceId) return c.json({ error: 'Chat has no channel instance' }, 400);
+  checkInstanceAccess(c.get('apiKey'), chat.instanceId);
+  const job = await services.syncJobs.getById(jobId);
+  if (job.instanceId !== chat.instanceId || job.config.backfill?.chatId !== chatId) {
+    return c.json({ error: { code: ERROR_CODES.NOT_FOUND, message: 'Backfill job not found for this chat' } }, 404);
+  }
+  const config = job.config.backfill;
+  const coverage = await readBackfillCoverage(services, chatId, config.from, config.to);
+  return c.json({ data: { ...job, ...job.progress, chatId, state: job.progress.state, coverage } });
+});
+
+/** POST /chats/:id/backfill/:jobId/cancel - Cancel a queued or fetching chat backfill */
+chatsRoutes.post('/:id/backfill/:jobId/cancel', zValidator('param', chatBackfillParams), async (c) => {
+  const { id: raw, jobId } = c.req.valid('param');
+  const chatId = await resolveChatIdInKeyInstances(c, raw);
+  if (chatId === null) return chatNotFoundResponse(c, raw);
+  const services = c.get('services');
+  const chat = await chatForRoute(c, raw, chatId);
+  if (!chat.instanceId) return c.json({ error: 'Chat has no channel instance' }, 400);
+  checkInstanceAccess(c.get('apiKey'), chat.instanceId);
+  const job = await services.syncJobs.getById(jobId);
+  if (job.instanceId !== chat.instanceId || job.config.backfill?.chatId !== chatId) {
+    return c.json({ error: { code: ERROR_CODES.NOT_FOUND, message: 'Backfill job not found for this chat' } }, 404);
+  }
+  const config = job.config.backfill;
+  const coverage = await readBackfillCoverage(services, chatId, config.from, config.to);
+  await services.syncJobs.updateProgress(jobId, { coverage }, undefined);
+  const cancelled = await services.syncJobs.cancel(jobId);
+  return c.json({ data: { ...cancelled, ...cancelled.progress, chatId } });
 });
 
 // Mark chat as read schema

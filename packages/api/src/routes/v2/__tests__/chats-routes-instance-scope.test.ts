@@ -12,6 +12,8 @@ const INSTANCE_B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const CHAT_A = '11111111-1111-4111-8111-111111111111';
 const CHAT_B = '22222222-2222-4222-8222-222222222222';
 const MISSING_CHAT = '33333333-3333-4333-8333-333333333333';
+const BACKFILL_JOB = '44444444-4444-4444-8444-444444444444';
+const BACKFILL_WINDOW = { from: '2026-01-01T00:00:00Z', to: '2026-02-01T00:00:00Z' };
 const NATIVE_ID = 'example-chat';
 
 interface RouteCase {
@@ -46,6 +48,9 @@ const ROUTES: RouteCase[] = [
   { method: 'POST', path: '/read', explicitInstance: true, reads: 1 },
   { method: 'POST', path: '/disappearing', body: { duration: '24h' }, explicitInstance: true, reads: 1 },
   { method: 'POST', path: '/reopen-contact', reads: 1 },
+  { method: 'POST', path: '/backfill', body: BACKFILL_WINDOW, reads: 1, status: 202 },
+  { method: 'GET', path: `/backfill/${BACKFILL_JOB}`, reads: 1 },
+  { method: 'POST', path: `/backfill/${BACKFILL_JOB}/cancel`, reads: 1 },
 ];
 
 function key(instanceIds: string[] | null): ApiKeyData {
@@ -79,6 +84,16 @@ function mount(apiKey: ApiKeyData) {
   app.onError(errorHandler);
   app.use('*', async (c, next) => {
     c.set('apiKey', apiKey);
+    const jobEffect = (name: string) => async () => {
+      effects.push(name);
+      const chat = row(c.req.param('id') ?? '');
+      return {
+        id: BACKFILL_JOB,
+        instanceId: chat.instanceId,
+        config: { backfill: { chatId: chat.id, ...BACKFILL_WINDOW } },
+        progress: { state: 'queued' },
+      };
+    };
     c.set('services', {
       chats: {
         getById: async (id: string) => {
@@ -112,6 +127,16 @@ function mount(apiKey: ApiKeyData) {
           effects.push('messages.list');
           return { items: [] };
         },
+        getChatCoverage: async () => {
+          effects.push('coverage');
+          return { count: 0 };
+        },
+      },
+      syncJobs: {
+        create: jobEffect('createJob'),
+        getById: jobEffect('getJob'),
+        updateProgress: jobEffect('updateJob'),
+        cancel: jobEffect('cancelJob'),
       },
       instances: { getById: async (id: string) => ({ id, channel: 'example' }) },
     } as never);

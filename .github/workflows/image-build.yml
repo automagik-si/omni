@@ -1,85 +1,67 @@
-# =============================================================================
-# Mint one immutable public release candidate at an exact v<version> tag.
-# =============================================================================
-# This is the only public workflow that builds the omni-api container image,
-# and it is dispatch-only. It takes over the orchestrator role that the old
-# main-push image publisher held: the stable Release (release.yml) and the
-# stable npm publication (version.yml publish-stable) both require an in-progress
-# run of THIS workflow file bound to the candidate source SHA, plus an OCI
-# attestation signed by this workflow file.
-#
-# Flow:
-#   gh workflow run version.yml --ref dev -f candidate=true
-#     cuts v<version> on dev and publishes npm `next` WITHOUT dispatching the
-#     dev prerelease. Only such a candidate cut is mintable: a merged-PR bump
-#     (or a dispatch without candidate=true) publishes a dev prerelease at the
-#     tag, and a tag's channel classification is immutable, so finalize refuses
-#     it — cut a fresh candidate instead.
-#   → gh workflow run image-build.yml --ref refs/tags/v<version> -f version=<version>
-#   → build-push: bind the tag/package/chart identity, refuse an existing
-#     v<version> alias, build each platform on its native runner, push by digest
-#   → merge: re-check identity and alias absence, assemble the ONE immutable
-#     ghcr.io/<owner>/omni-api:v<version> index, read back and attest it
-#   → finalize: independently re-verify the digest, index, platforms, and
-#     provenance; require the active v* tag ruleset; wait for any running
-#     release.yml run at the tag, refuse a dev prerelease at the tag; dispatch
-#     release.yml (channel=stable) at the tag and wait for it; write the
-#     candidate receipt and dispatch pin-candidate.yml, which commits the
-#     public channel pins (.well-known/*.json, Helm image.tag) to dev, as soon
-#     as the stable release exists; only then dispatch version.yml
-#     (stable_publish_only=true) at the same tag and wait for it. The pin
-#     needs the stable release and the attested image, not npm, so a slow or
-#     failing registry neither hides the digest nor skips the pin; the npm
-#     step still fails the run. image-publish.yml and the CI promotion gate
-#     derive the candidate from the tree (package version → v<version> tag →
-#     attested alias) and re-check npm themselves; nothing is hand-pasted.
-#
-# Recovery: if finalize fails after merge succeeded (ruleset check,
-# run-resolution timeout, concurrent dispatch, a failed release.yml run), a
-# fresh dispatch is refused by design — the v<version> alias now exists. Use
-# "Re-run failed jobs" on the SAME run: it keeps GITHUB_RUN_ID (the
-# orchestrator_run_id the stable publishers re-verify), the merge outputs,
-# and the in_progress state those publishers require. A failure in the stable
-# npm step leaves the release, the receipt and the pin dispatch done: the
-# re-run verifies an already published package in place (the CLI package
-# rebuilds byte-identically; scripts/pack-market.ts stamps the commit time, not
-# the clock) and re-dispatches the pin, a no-op once dev carries it.
-#
-# All jobs run in the `release` environment. Configure it with required
-# reviewers (repository settings; this file cannot create it) so that a write
-# collaborator cannot publish a stable release or move npm `latest` alone.
-#
-# The main-branch promotion (image-publish.yml) stays read-only: it verifies
-# the candidate this workflow minted and never builds, tags, or publishes.
-#
-# What this workflow never does: move an existing v<version> alias or tag,
-# create a Git tag, push a branch, write a production pin, or touch a
-# cluster. There is no branch tag, no `[skip ci]` path, and no PAT.
-#
-# Actions are pinned to full commit SHAs (supply-chain hardening: this
-# workflow holds `packages: write`). Bump the SHA and the trailing version
-# comment together.
-# =============================================================================
-name: Mint Release Candidate
+# Build one immutable version image intentionally. Software releases and pins
+# run independently through release-candidate.yml and release-stable.yml.
+# Native platform jobs push digests; merge creates the single version alias.
+# Existing aliases are refused. No cache, Git refs, npm, releases or cluster writes.
+name: Build release image on demand
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Exact version without the v prefix (the run must be dispatched at refs/tags/v<version>)'
-        required: true
+        description: 'Version to build (with or without v); empty selects the newest stable candidate'
+        required: false
+        default: ''
         type: string
 
 concurrency:
   # One lane per candidate version so two mints can never race the same
   # v<version> alias or stable release state. A started mint must finish.
-  group: image-build-${{ inputs.version }}
+  group: image-build-${{ inputs.version || 'latest-candidate' }}
   cancel-in-progress: false
 
 permissions: {}
 
 jobs:
+  resolve:
+    name: Resolve the requested candidate tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.source.outputs.version }}
+      sha: ${{ steps.source.outputs.sha }}
+    steps:
+      - name: Resolve version and exact source
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]] || exit 1
+          newest=$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq .tag_name)
+          tag="${REQUESTED_VERSION:-${newest}}"
+          tag="v${tag#v}"
+          [[ "${GITHUB_REF}" == "refs/tags/${tag}" ]] || {
+            echo "::error::Start this workflow at a tag: choose ${newest} in 'Use workflow from' (newest candidate), or the exact requested tag."
+            exit 1
+          }
+          version="${tag#v}"
+          [[ "${tag}" == "v${version}" ]] || exit 1
+          [[ "${version}" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || exit 1
+          sha=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${tag}" --jq .sha)
+          [[ "${sha}" =~ ^[0-9a-f]{40}$ && "${sha}" == "${GITHUB_SHA}" ]] || exit 1
+          workflow=$(gh api "repos/${GITHUB_REPOSITORY}/contents/.github/workflows/image-build.yml?ref=${tag}" --jq .content | base64 --decode)
+          grep -qx 'name: Build release image on demand' <<<"${workflow}" || {
+            echo "::error::${tag} predates the image-only workflow; select a candidate cut after on-demand images were adopted."
+            exit 1
+          }
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "sha=${sha}" >> "$GITHUB_OUTPUT"
+
   build-push:
+    needs: resolve
     name: Build omni-api (${{ matrix.arch }})
     strategy:
       fail-fast: false
@@ -100,35 +82,14 @@ jobs:
     env:
       IMAGE: ghcr.io/${{ github.repository_owner }}/omni-api
     steps:
-      - name: Require an exact dispatched release-tag identity
-        env:
-          VERSION: ${{ inputs.version }}
-        run: |
-          set -euo pipefail
-          semver='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
-          [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]] || {
-            echo "::error::candidate minting is dispatch-only"
-            exit 1
-          }
-          [[ "${VERSION}" =~ ${semver} ]] || {
-            echo "::error::version must be a canonical numeric dotted version without the v prefix"
-            exit 1
-          }
-          [[ "${GITHUB_REF}" == "refs/tags/v${VERSION}" ]] || {
-            echo "::error::mint must be dispatched at refs/tags/v${VERSION}, not ${GITHUB_REF}"
-            exit 1
-          }
-          [[ "${GITHUB_SHA}" =~ ^[0-9a-f]{40}$ ]]
-
       # A tag that already carries a public dev prerelease (a merged-PR bump,
       # or a dispatch without candidate=true) can never become stable: its
-      # channel classification is immutable. finalize re-checks this after
-      # waiting for in-flight release.yml runs; refusing here saves the full
-      # multi-arch build and attestation when the answer is already known.
+      # channel classification is immutable. Refusing here preserves the
+      # existing candidate-only image identity before a costly native build.
       - name: Refuse a tag that already carries a dev prerelease
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ inputs.version }}
+          VERSION: ${{ needs.resolve.outputs.version }}
         run: |
           set -euo pipefail
           lookup_status=$(curl -sS -o "${RUNNER_TEMP}/release.json" -w '%{http_code}' \
@@ -153,7 +114,7 @@ jobs:
 
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ needs.resolve.outputs.sha }}
           fetch-depth: 0
           fetch-tags: true
           persist-credentials: false
@@ -182,12 +143,13 @@ jobs:
       - name: Bind source identity and refuse an existing candidate alias
         id: source
         env:
-          VERSION: ${{ inputs.version }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+          EXPECTED_SHA: ${{ needs.resolve.outputs.sha }}
         run: |
           set -euo pipefail
           source_sha=$(git rev-parse "HEAD^{commit}")
-          [[ "${source_sha}" == "${GITHUB_SHA}" ]] || {
-            echo "::error::checked-out source ${source_sha} is not the dispatched ${GITHUB_SHA}"
+          [[ "${source_sha}" == "${EXPECTED_SHA}" ]] || {
+            echo "::error::checked-out source ${source_sha} is not the selected ${EXPECTED_SHA}"
             exit 1
           }
           scripts/release/verify-remote-tag.sh \
@@ -225,7 +187,7 @@ jobs:
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ steps.source.outputs.sha }}
-            org.opencontainers.image.version=${{ inputs.version }}
+            org.opencontainers.image.version=${{ needs.resolve.outputs.version }}
 
       - name: Export platform digest
         env:
@@ -247,7 +209,10 @@ jobs:
 
   merge:
     name: Merge and attest omni-api candidate
-    needs: build-push
+    needs: [resolve, build-push]
+    concurrency:
+      group: image-build-version-${{ needs.resolve.outputs.version }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: release
@@ -258,14 +223,14 @@ jobs:
       attestations: write
     outputs:
       digest: ${{ steps.merge.outputs.digest }}
-      version: ${{ inputs.version }}
+      version: ${{ needs.resolve.outputs.version }}
       source_sha: ${{ steps.source.outputs.sha }}
     env:
       IMAGE: ghcr.io/${{ github.repository_owner }}/omni-api
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ needs.resolve.outputs.sha }}
           fetch-depth: 0
           fetch-tags: true
           persist-credentials: false
@@ -290,12 +255,13 @@ jobs:
       - name: Bind source identity and refuse an existing candidate alias
         id: source
         env:
-          VERSION: ${{ inputs.version }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+          EXPECTED_SHA: ${{ needs.resolve.outputs.sha }}
         run: |
           set -euo pipefail
           source_sha=$(git rev-parse "HEAD^{commit}")
-          [[ "${source_sha}" == "${GITHUB_SHA}" ]] || {
-            echo "::error::checked-out source ${source_sha} is not the dispatched ${GITHUB_SHA}"
+          [[ "${source_sha}" == "${EXPECTED_SHA}" ]] || {
+            echo "::error::checked-out source ${source_sha} is not the selected ${EXPECTED_SHA}"
             exit 1
           }
           scripts/release/verify-remote-tag.sh \
@@ -316,7 +282,7 @@ jobs:
       - name: Create the immutable version index
         id: merge
         env:
-          VERSION: ${{ inputs.version }}
+          VERSION: ${{ needs.resolve.outputs.version }}
         run: |
           set -euo pipefail
           refs=()
@@ -333,17 +299,12 @@ jobs:
 
       - name: Read back exact published version alias
         env:
-          VERSION: ${{ inputs.version }}
+          VERSION: ${{ needs.resolve.outputs.version }}
           EXPECTED_DIGEST: ${{ steps.merge.outputs.digest }}
         run: |
           scripts/release/verify-oci-alias.sh \
             --image "${IMAGE}" --version "${VERSION}" --expected-digest "${EXPECTED_DIGEST}"
 
-      # GitHub-native provenance (Attestations API + registry referrer), so
-      # `gh attestation verify oci://…` works as deploy/README.md documents
-      # and the stable release/npm authorizers can bind the digest to this
-      # workflow file. BuildKit's inline `provenance: true` above is NOT
-      # visible to `gh`.
       - name: Attest build provenance
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
@@ -351,25 +312,17 @@ jobs:
           subject-digest: ${{ steps.merge.outputs.digest }}
           push-to-registry: true
 
-  # Independent re-verification of the minted artifact, then orchestration of
-  # the stable Release and the stable npm publication against the same tag. This
-  # job writes no Git ref and no registry alias; its only mutations are the
-  # two dispatches, each of which re-verifies this run before publishing.
   finalize:
-    name: Verify candidate and orchestrate stable publication
-    needs: merge
+    name: Verify the on-demand image
+    needs: [resolve, merge]
     runs-on: ubuntu-latest
-    # Must outlive the stable npm retry loop: up to three dispatched publisher
-    # runs (version.yml publish-stable, 40 min each) plus their backoffs, after
-    # the release.yml wait and the CLI build. The release, receipt and pin are
-    # done before that loop starts, so a timeout here loses only the npm step.
-    timeout-minutes: 180
+    timeout-minutes: 15
     environment: release
     permissions:
       contents: read
       packages: read
       attestations: read
-      actions: write # gh workflow run release.yml / version.yml
+      actions: write # dispatch only the image pin
     env:
       IMAGE: ghcr.io/${{ github.repository_owner }}/omni-api
       DIGEST: ${{ needs.merge.outputs.digest }}
@@ -395,13 +348,15 @@ jobs:
 
       - name: Verify exact digest, platforms, and GitHub provenance
         env:
+          EXPECTED_SHA: ${{ needs.resolve.outputs.sha }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           [[ "${DIGEST}" =~ ^sha256:[0-9a-f]{64}$ ]]
           [[ "${SOURCE_SHA}" =~ ^[0-9a-f]{40}$ ]]
-          [[ "${SOURCE_SHA}" == "${GITHUB_SHA}" ]]
-          [[ "${GITHUB_REF}" == "refs/tags/v${VERSION}" ]]
+          [[ "${SOURCE_SHA}" == "${EXPECTED_SHA}" ]] || exit 1
+          scripts/release/verify-remote-tag.sh \
+            --remote origin --version "${VERSION}" --mode exact --expected-sha "${SOURCE_SHA}"
           scripts/release/verify-oci-alias.sh \
             --image "${IMAGE}" --version "${VERSION}" --expected-digest "${DIGEST}"
           # --raw returns the index exactly as the registry stores it; the
@@ -432,355 +387,19 @@ jobs:
             --source-digest "${SOURCE_SHA}" \
             --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/image-build.yml"
 
-      - name: Install cosign for existing release verification
-        id: cosign-install
-        # github.com/releases flakes (403/504) must not block releases (#1140).
-        continue-on-error: true
-        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
-        with:
-          cosign-release: 'v2.4.1'
-
-      - name: Retry install cosign for existing release verification
-        if: steps.cosign-install.outcome == 'failure'
-        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
-        with:
-          cosign-release: 'v2.4.1'
-
-      - name: Require the active immutable v* tag ruleset and the existing tag
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Write image receipt
         run: |
-          set -euo pipefail
-          ref="refs/tags/v${VERSION}"
-          ruleset_ok=false
-          while IFS= read -r ruleset_id; do
-            [[ -n "${ruleset_id}" ]] || continue
-            gh api "repos/${GITHUB_REPOSITORY}/rulesets/${ruleset_id}" > "${RUNNER_TEMP}/tag-ruleset-${ruleset_id}.json"
-            if scripts/release/verify-tag-ruleset.py \
-              --ruleset-json "${RUNNER_TEMP}/tag-ruleset-${ruleset_id}.json" \
-              --tag "${ref}"; then
-              ruleset_ok=true
-              break
-            fi
-          done < <(gh api "repos/${GITHUB_REPOSITORY}/rulesets" --paginate --jq '.[] | select(.target == "tag" and .enforcement == "active") | .id')
-          [[ "${ruleset_ok}" == "true" ]] || {
-            echo "::error::an active v* tag ruleset blocking update and deletion is required before a stable candidate is finalized"
-            exit 1
-          }
-          # version.yml already created the tag; this workflow never creates
-          # or moves one. The local and remote tag must both be the source.
-          git show-ref --verify --quiet "${ref}" || {
-            echo "::error::${ref} does not exist; cut it with version.yml before minting"
-            exit 1
-          }
-          existing_sha=$(git rev-parse "${ref}^{commit}")
-          [[ "${existing_sha}" == "${SOURCE_SHA}" ]] || {
-            echo "::error::${ref} points to ${existing_sha}, not verified source ${SOURCE_SHA}"
-            exit 1
-          }
-          scripts/release/verify-remote-tag.sh \
-            --remote origin --version "${VERSION}" --mode exact --expected-sha "${SOURCE_SHA}"
-          echo "Verified remote tag target before publication"
-
-      # The run-resolution helpers are shared by the release and npm steps
-      # below; sourced per step because each `run:` is its own shell.
-      - name: Stage dispatch helpers
-        run: |
-          cat > "${RUNNER_TEMP}/dispatch-helpers.sh" <<'SH'
-          # `gh workflow run` prints no run id. Snapshot the workflow's
-          # dispatch runs on this tag before dispatching, then poll for
-          # exactly one NEW run whose head SHA is the verified source.
-          list_runs() {
-            gh run list --repo "${GITHUB_REPOSITORY}" \
-              --workflow "$1" --branch "${tag}" --event workflow_dispatch \
-              --limit 50 --json databaseId,headSha
-          }
-          resolve_new_run() {
-            local workflow="$1" before_json="$2" after_json candidates
-            for attempt in $(seq 1 30); do
-              after_json=$(list_runs "${workflow}")
-              candidates=$(jq -r --argjson before "${before_json}" --arg sha "${SOURCE_SHA}" \
-                '[.[] | select(.headSha == $sha) | .databaseId] - [$before[] | .databaseId] | map(tostring) | join(" ")' \
-                <<<"${after_json}")
-              if [[ -n "${candidates}" ]]; then
-                printf '%s\n' "${candidates}"
-                return 0
-              fi
-              sleep 10
-            done
-            return 1
-          }
-          require_single_run() {
-            local candidates="$1" workflow="$2"
-            [[ "${candidates}" =~ ^[0-9]+$ ]] || {
-              echo "::error::could not resolve exactly one new ${workflow} run for ${tag} (got: '${candidates}')"
-              exit 1
-            }
-          }
-          SH
-
-      # The dispatching identity must stay github.token: release.yml's stable
-      # authorize job and version.yml's publish-stable job both require the
-      # actor to be github-actions[bot] and re-verify this run by id.
-      - name: Verify or publish the stable release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          tag="v${VERSION}"
-          # shellcheck disable=SC1091
-          source "${RUNNER_TEMP}/dispatch-helpers.sh"
-
-          # A release.yml run still in flight at this tag (a dev prerelease
-          # cut without candidate=true, or a stable run from a re-run of this
-          # job) must settle before the release state is read, or "no
-          # release yet" is misread and a second publisher is dispatched.
-          active_release_runs() {
-            gh run list --repo "${GITHUB_REPOSITORY}" \
-              --workflow release.yml --branch "${tag}" \
-              --limit 50 --json databaseId,status \
-              --jq '[.[] | select(.status == "queued" or .status == "in_progress" or .status == "waiting" or .status == "pending" or .status == "requested")] | length'
-          }
-          release_runs_settled=false
-          for attempt in $(seq 1 60); do
-            active=$(active_release_runs)
-            if [[ "${active}" == "0" ]]; then
-              release_runs_settled=true
-              break
-            fi
-            echo "waiting for ${active} queued/in_progress release.yml run(s) at ${tag} (attempt ${attempt}/60)"
-            sleep 30
-          done
-          [[ "${release_runs_settled}" == "true" ]] || {
-            echo "::error::a release.yml run for ${tag} is still queued or in progress; re-run this job once it settles"
-            exit 1
-          }
-
-          # Fail closed on lookup errors: only an explicit 404 means "no release".
-          # A permission, rate-limit, or transient failure must not be mistaken
-          # for an absent release and start a second publication.
-          release_exists=false
-          lookup_status=$(curl -sS -o "${RUNNER_TEMP}/release.json" -w '%{http_code}' \
-            --retry 3 --retry-all-errors --connect-timeout 10 --max-time 60 \
-            -H "Authorization: Bearer ${GH_TOKEN}" \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/tags/${tag}")
-          case "${lookup_status}" in
-            200) release_exists=true ;;
-            404) release_exists=false ;;
-            *)
-              echo "::error::release lookup for ${tag} returned HTTP ${lookup_status}; refusing to guess"
-              exit 1
-              ;;
-          esac
-          if [[ "${release_exists}" == "true" ]]; then
-            release_state=$(jq -r '[.draft,.prerelease] | @tsv' "${RUNNER_TEMP}/release.json")
-            # A public dev prerelease pins the tag's channel classification
-            # forever (release-publish.yml verify-release-state.py --phase
-            # existing); no stable release can ever be published at this tag.
-            [[ "${release_state}" != $'false\ttrue' ]] || {
-              echo "::error::a dev prerelease already exists at v${VERSION}; this tag cannot become stable — cut a fresh candidate with \`gh workflow run version.yml --ref dev -f candidate=true\`"
-              exit 1
-            }
-            [[ "${release_state}" == $'false\tfalse' ]] || {
-              echo "::error::existing stable release is not public stable"
-              exit 1
-            }
-            verify_dir="${RUNNER_TEMP}/existing-release"
-            mkdir -p "${verify_dir}"
-            gh release download "${tag}" --repo "${GITHUB_REPOSITORY}" --dir "${verify_dir}"
-            scripts/release/verify-release-assets.py \
-              --version "${VERSION}" \
-              --release-json "${RUNNER_TEMP}/release.json" \
-              --dist "${verify_dir}"
-            for tarball in "${verify_dir}"/*.tar.gz; do
-              cosign verify-blob \
-                --bundle "${tarball}.bundle" \
-                --certificate-identity "https://github.com/${GITHUB_REPOSITORY}/.github/workflows/sign-attest.yml@refs/tags/v${VERSION}" \
-                --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-                "${tarball}"
-              # Offline: the shipped Sigstore bundle must bind this tarball's
-              # digest to the candidate source and the signing workflow.
-              gh attestation verify "${tarball}" \
-                --bundle "${tarball}.provenance.json" \
-                --repo "${GITHUB_REPOSITORY}" \
-                --source-digest "${SOURCE_SHA}" \
-                --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/sign-attest.yml"
-              # Online: the same attestation must be registered in the
-              # GitHub Attestations API under the candidate identity.
-              gh attestation verify "${tarball}" \
-                --repo "${GITHUB_REPOSITORY}" \
-                --source-digest "${SOURCE_SHA}" \
-                --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/sign-attest.yml"
-            done
-            echo "Existing public release assets already match immutable v${VERSION} identity"
-          else
-            release_before=$(list_runs release.yml)
-            gh workflow run release.yml \
-              --repo "${GITHUB_REPOSITORY}" \
-              --ref "refs/tags/v${VERSION}" \
-              --field version="${VERSION}" \
-              --field channel=stable \
-              --field expected_sha="${SOURCE_SHA}" \
-              --field expected_digest="${DIGEST}" \
-              --field orchestrator_run_id="${GITHUB_RUN_ID}"
-            release_run_id=$(resolve_new_run release.yml "${release_before}") || {
-              echo "::error::dispatched release.yml run for ${tag} did not appear"
-              exit 1
-            }
-            require_single_run "${release_run_id}" release.yml
-            gh run watch "${release_run_id}" --repo "${GITHUB_REPOSITORY}" --exit-status
-          fi
-
-          scripts/release/verify-remote-tag.sh \
-            --remote origin --version "${VERSION}" --mode exact --expected-sha "${SOURCE_SHA}"
-          echo "Verified remote tag target after publication"
-
-      # Written BEFORE the npm step: the stable release and the attested image
-      # are final at this point, and an npm registry race must never hide the
-      # digest (#1057). Re-running failed jobs re-emits the same receipt.
-      - name: Write candidate receipt
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          published_at=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/v${VERSION}" --jq .published_at)
-          [[ "${published_at}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || {
-            echo "::error::stable release v${VERSION} has no published_at timestamp"
-            exit 1
-          }
           {
-            echo "### Omni release candidate v${VERSION}"
+            echo "### On-demand image v${VERSION}"
             echo "- source: \`${SOURCE_SHA}\`"
-            echo "- version: \`${VERSION}\`"
-            echo "- OCI digest: \`${DIGEST}\`"
-            echo "- release published at: \`${published_at}\`"
-            echo "- next: pin-candidate.yml (dispatched below, before the stable npm step)"
-            echo "  commits the public channel pins to dev; then open the dev → main"
-            echo "  promotion. image-publish.yml and the CI promotion gate derive the"
-            echo "  candidate from the tree and re-check npm, so nothing is pasted by hand."
-            echo "- mutation boundary: no tag, branch, production pin, or cluster write"
+            echo "- digest: \`${DIGEST}\`"
+            echo "- image: \`${IMAGE}:v${VERSION}\`"
+            echo "- software publication and cluster state were not changed"
           } >> "${GITHUB_STEP_SUMMARY}"
-          echo "CANDIDATE_VERSION=${VERSION}"
-          echo "CANDIDATE_SHA=${SOURCE_SHA}"
-          echo "CANDIDATE_DIGEST=${DIGEST}"
-          echo "RELEASE_PUBLISHED_AT=${published_at}"
 
-      # Dispatched right after the receipt, BEFORE the stable npm step: the pin
-      # re-verifies the tag, the attested alias and the public stable release,
-      # none of which depend on npm, so a slow registry cannot leave a minted
-      # candidate unpinned (2.261106.8, 2.261108.2). It is idempotent: a re-run
-      # of this job dispatches it again and it commits nothing when dev already
-      # pins the candidate. The pin is a dev branch write, so it lives in its
-      # own workflow with its own credential; this job stays unable to move a
-      # Git ref. The dispatch resolves pin-candidate.yml on the default branch,
-      # so until the first promotion carrying that file lands it 404s: warn
-      # with the manual command instead of failing an otherwise complete mint.
-      - name: Dispatch the candidate pin to dev
+      - name: Pin the verified on-demand image in Helm
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          set -euo pipefail
-          gh workflow run pin-candidate.yml \
-            --repo "${GITHUB_REPOSITORY}" \
-            --ref dev \
-            --field version="${VERSION}" || {
-            echo "::warning::could not dispatch pin-candidate.yml (not on the default branch yet?); run: gh workflow run pin-candidate.yml --ref dev -f version=${VERSION}"
-          }
-
-      # Idempotent re-run (#1209): verify an already published stable package
-      # here with the same reconciler the publish job runs, in --verify-only
-      # mode (this job has no id-token and no npm credential, so it cannot
-      # publish). Exact bytes, signatures, and provenance verified -> skip the
-      # dispatch. Anything else still needing a mutation (exit 3) or a transient
-      # registry failure (exit 75) falls through to the dispatched publisher.
-      # The rebuild compares byte for byte because scripts/pack-market.ts
-      # stamps market.json with the commit time, not the build clock.
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-        with:
-          bun-version: 1.4.4
-
-      - name: Install dependencies for stable npm verification
-        run: bun install --frozen-lockfile
-
-      - name: Build stable CLI for npm verification
-        run: bunx turbo run build --filter=@automagik/omni
-
-      - name: Setup Node 24 for npm verification
-        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
-        with:
-          node-version: '24'
-          registry-url: 'https://registry.npmjs.org'
-
-      - name: Verify an existing stable npm package
-        id: npm-existing
-        env:
-          HUSKY: "0"
-        run: |
-          set -uo pipefail
-          set +e # the runner shell starts with -e; the exit code is the verdict
-          scripts/release/reconcile-npm-stable.sh \
-            --expected "${VERSION}" \
-            --package-dir "${GITHUB_WORKSPACE}/packages/cli" \
-            --verify-only
-          status=$?
-          case "${status}" in
-            0) echo "verified=true" >> "$GITHUB_OUTPUT"
-               echo "@automagik/omni@${VERSION} is already published and verified; skipping the stable npm dispatch" ;;
-            3|75) echo "verified=false" >> "$GITHUB_OUTPUT" ;;
-            *) echo "::error::existing @automagik/omni@${VERSION} failed verification (exit ${status})"
-               exit 1 ;;
-          esac
-
-      - name: Publish stable npm
-        if: steps.npm-existing.outputs.verified != 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          tag="v${VERSION}"
-          # shellcheck disable=SC1091
-          source "${RUNNER_TEMP}/dispatch-helpers.sh"
-
-          # Dispatched at the tag (not main) so the copy of version.yml that
-          # runs carries the same signer/orchestrator identity as this file.
-          # A run that failed ONLY on a transient registry 404/5xx (the
-          # reconciler's exit 75 `npm_registry_transient` marker) is
-          # re-dispatched, up to 3 attempts with backoff; any other failure
-          # fails the mint.
-          for attempt in 1 2 3; do
-            npm_before=$(list_runs version.yml)
-            gh workflow run version.yml \
-              --repo "${GITHUB_REPOSITORY}" \
-              --ref "refs/tags/v${VERSION}" \
-              --field stable_publish_only=true \
-              --field expected_version="${VERSION}" \
-              --field expected_sha="${SOURCE_SHA}" \
-              --field expected_digest="${DIGEST}" \
-              --field orchestrator_run_id="${GITHUB_RUN_ID}" \
-              --field orchestrator_control_sha="${GITHUB_SHA}"
-            npm_run_id=$(resolve_new_run version.yml "${npm_before}") || {
-              echo "::error::dispatched stable npm run for ${tag} did not appear"
-              exit 1
-            }
-            require_single_run "${npm_run_id}" version.yml
-            if gh run watch "${npm_run_id}" --repo "${GITHUB_REPOSITORY}" --exit-status; then
-              exit 0
-            fi
-            gh run view "${npm_run_id}" --repo "${GITHUB_REPOSITORY}" --log-failed \
-              > "${RUNNER_TEMP}/npm-run-${npm_run_id}.log" || true
-            grep -q 'npm_registry_transient' "${RUNNER_TEMP}/npm-run-${npm_run_id}.log" || {
-              echo "::error::stable npm run ${npm_run_id} failed for a non-registry reason; not retrying"
-              exit 1
-            }
-            [[ "${attempt}" -lt 3 ]] || break
-            echo "::warning::stable npm run ${npm_run_id} hit a transient registry failure (attempt ${attempt}/3); retrying"
-            sleep $((attempt * 120))
-          done
-          echo "::error::stable npm publication for ${tag} still failed on the registry after 3 attempts"
-          exit 1
-
-      - name: Re-check version alias after release finalization
-        run: |
-          scripts/release/verify-oci-alias.sh \
-            --image "${IMAGE}" --version "${VERSION}" --expected-digest "${DIGEST}"
+          gh workflow run pin-candidate.yml --repo "${GITHUB_REPOSITORY}" --ref dev \
+            --field version="${VERSION}" --field image_only=true

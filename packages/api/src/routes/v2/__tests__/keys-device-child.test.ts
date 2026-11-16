@@ -366,7 +366,14 @@ afterEach(() => {
 
 describe('chat key events', () => {
   test('are core event types routed to the ACCESS stream, not CUSTOM', () => {
-    for (const type of ['access.key_minted', 'access.key_revoked', 'access.key_updated']) {
+    for (const type of [
+      'access.key_minted',
+      'access.key_revoked',
+      'access.key_updated',
+      'access.rule_created',
+      'access.rule_updated',
+      'access.rule_deleted',
+    ]) {
       expect(CORE_EVENT_TYPES as readonly string[]).toContain(type);
       expect(getStreamForEventType(type)).toBe(STREAM_NAMES.ACCESS);
     }
