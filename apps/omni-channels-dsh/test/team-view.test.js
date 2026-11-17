@@ -334,6 +334,8 @@ test('apply registers its listeners, tools and effects after the team\'s, in a f
     'effect omni-channels: omni-kapso-connect',
     'effect omni-channels: omni-kapso-test',
     'effect omni-channels: omni-wab-webhook-setup',
+    'effect omni-channels: bot channels',
+    'effect omni-channels: omni-bot-chats',
     'provide omniChannels',
   ])
   assert.ok(!own.includes('on llm/stream'))
