@@ -1,8 +1,9 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, spyOn, test } from 'bun:test';
 import type { ChannelRegistry, FetchHistoryOptions, HistorySyncMutation } from '@omni/channel-sdk';
 import type { ChatCoverage } from '@omni/core/events';
 import type { SyncJob, SyncJobProgress } from '@omni/db';
 import type { Services } from '../../services';
+import { isStaleChatBackfill } from '../../services/sync-jobs';
 import { processChatBackfill, waitForBackfillTurn } from '../chat-backfill';
 
 const coverage: ChatCoverage = {
@@ -66,6 +67,101 @@ function fixture(fetchHistory: (id: string, options: FetchHistoryOptions) => Pro
 }
 
 describe('chat backfill worker', () => {
+  test('a live long round stays protected from a second request with throttled heartbeats', async () => {
+    let now = Date.now();
+    const clock = spyOn(Date, 'now').mockImplementation(() => now);
+    const heartbeats: number[] = [];
+    const f = fixture(async (_id, options) => {
+      // Model the round's 250 ms quiet-wait polls followed by a slow media drain.
+      for (const duration of [120_000, 12 * 60_000]) {
+        const until = now + duration;
+        while (now < until) {
+          now += 250;
+          expect(await options.shouldCancel?.()).toBe(false);
+          // Both competing claimBackfill and legacy start use this expiry predicate.
+          expect(isStaleChatBackfill(f.job, now)).toBe(false);
+        }
+      }
+    });
+    f.job.progress.lastProgressAt = new Date(now).toISOString();
+    Object.assign(f.options.services.syncJobs, {
+      heartbeatBackfill: async () => {
+        heartbeats.push(now);
+        f.job.progress.lastProgressAt = new Date(now).toISOString();
+        return f.job;
+      },
+    });
+    try {
+      await processChatBackfill(f.options);
+      expect(heartbeats).toHaveLength(14);
+      expect(heartbeats.every((at, index) => !index || at - heartbeats[index - 1]! >= 60_000)).toBe(true);
+      expect(f.job.status).toBe('completed');
+    } finally {
+      clock.mockRestore();
+    }
+  });
+  test('an expired owner stops at its next check and drops late writes', async () => {
+    const f = fixture(async (_id, options) => {
+      f.job.status = 'failed';
+      expect(await options.shouldCancel?.()).toBe(true);
+      await options.onMessage?.({
+        externalId: 'late',
+        chatId: 'chat@jid',
+        from: 'person',
+        timestamp: new Date('2026-01-15'),
+        content: { type: 'text' },
+        isFromMe: false,
+        rawPayload: {},
+      });
+    });
+    await processChatBackfill(f.options);
+    expect(f.job).toMatchObject({ status: 'failed' });
+    expect(f.stored).toEqual([]);
+  });
+  test('a heartbeat that loses to expiry stops the owner immediately', async () => {
+    let now = Date.now();
+    const clock = spyOn(Date, 'now').mockImplementation(() => now);
+    const f = fixture(async (_id, options) => {
+      now += 60_000;
+      expect(await options.shouldCancel?.()).toBe(true);
+    });
+    Object.assign(f.options.services.syncJobs, {
+      heartbeatBackfill: async () => {
+        f.job.status = 'failed';
+        return f.job;
+      },
+    });
+    try {
+      await processChatBackfill(f.options);
+      expect(f.job).toMatchObject({ status: 'failed' });
+    } finally {
+      clock.mockRestore();
+    }
+  });
+  test('redelivery resumes a running backfill whose last activity is stale', async () => {
+    let fetched = false;
+    const f = fixture(async () => {
+      fetched = true;
+    });
+    f.job.status = 'running';
+    f.job.startedAt = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    f.job.progress.lastProgressAt = f.job.startedAt.toISOString();
+    await processChatBackfill(f.options);
+    expect(fetched).toBe(true);
+    expect(f.job).toMatchObject({ status: 'completed' });
+  });
+  test('redelivery leaves a recently progressing backfill with its current worker', async () => {
+    let fetched = false;
+    const f = fixture(async () => {
+      fetched = true;
+    });
+    f.job.status = 'running';
+    f.job.startedAt = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    f.job.progress.lastProgressAt = new Date().toISOString();
+    await processChatBackfill(f.options);
+    expect(fetched).toBe(false);
+    expect(f.job.status).toBe('running');
+  });
   test('unanswered phone has its own terminal state and coverage', async () => {
     const f = fixture(async (_id, options) => {
       await options.onRound?.({ round: 1, received: 0, oldestReached: null });

@@ -4551,6 +4551,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/events/consumers/{name}/seek": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Seek a durable consumer cursor backward or forward (audited)
+         * @description Exactly one target is required. Sequence positions must be within the tenant journal oldest row and head. A time must be within the journal timestamp range and resolves to the lowest journal_seq whose receivedAt is at or after that time, positioning just before it so that row is delivered. Publisher timestamps can arrive out of order, so later journal rows stamped before the target may also replay; matching rows are never skipped. Uses the same authorization as ack, including full-access keys, and preserves all read filters. Refused while any shared lease is outstanding, even expired leases awaiting redelivery. Writes a config audit entry and publishes custom.consumer.sought with from, to, by and when. Pause followers and finish outstanding fan-out acks before seeking.
+         */
+        post: operations["seekEventConsumer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/events/consumers/{name}/ack": {
         parameters: {
             query?: never;
@@ -25936,6 +25956,196 @@ export interface operations {
             };
             /** @description Too many open streams on this server or for this key (EVENT_STREAM_MAX_PER_PROCESS / _PER_KEY) */
             429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            /**
+                             * @description Error code
+                             * @example NOT_FOUND
+                             */
+                            code: string;
+                            /** @description Human-readable error message */
+                            message: string;
+                            /** @description Additional error details */
+                            details?: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    seekEventConsumer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Set the cursor to this journal_seq; the next pull starts strictly after it */
+                    toSequence?: number;
+                    /**
+                     * Format: date-time
+                     * @description Resolve to the first journal row at or after this RFC 3339 timestamp and set the cursor just before it
+                     */
+                    toTime?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Cursor positioned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            /**
+                             * Format: uuid
+                             * @description Owning agent, or null for a legacy consumer. Only its proven keys and admin-tier keys can access it.
+                             */
+                            agentId: string | null;
+                            /**
+                             * Format: uuid
+                             * @description Consumer UUID
+                             */
+                            id: string;
+                            /**
+                             * Format: uuid
+                             * @description Authenticated creator tenant. Tenant keys see only their own stamped consumers; unstamped legacy rows are hidden from tenant keys.
+                             */
+                            tenantId: string | null;
+                            /** @description Unique consumer name (the follow/ack handle) */
+                            name: string;
+                            /** @description Type filter: exact event type or trailing-* prefix glob */
+                            eventType: string;
+                            /** @description Type globs dropped from the stream (exclusion wins over eventType), or null */
+                            excludeTypes: string[] | null;
+                            /** @description Payload conditions (AND), or null */
+                            filters: {
+                                /** @description Dot-notation path into the event's rawPayload (e.g. user.id) */
+                                field: string;
+                                /**
+                                 * @description Comparison operator (same matcher as automation trigger conditions)
+                                 * @enum {string}
+                                 */
+                                operator: "eq" | "neq" | "gt" | "lt" | "gte" | "lte" | "contains" | "not_contains" | "exists" | "not_exists" | "regex";
+                                /** @description Comparison value. Ignored for 'exists'/'not_exists' */
+                                value?: unknown;
+                            }[] | null;
+                            /** @description Last acked journal_seq; delivery resumes strictly after it */
+                            cursor: number;
+                            /** @description true = competing consumers (pullers on this name split the stream); false = own cursor (fan-out) */
+                            shared: boolean;
+                            /**
+                             * @description Access filter over the ingest access verdict: 'all' (default, every row) or only rows whose access_decision is 'allowed' / 'denied'
+                             * @enum {string}
+                             */
+                            accessFilter: "all" | "allowed" | "denied";
+                            /** @description true = opt-in journal readiness gate: claimed-but-unfilled rows are held (not delivered, cursor not moved past them) until filled or older than the settle window; false = today's behaviour */
+                            waitForReady: boolean;
+                            /** @description true = instance-scoped consumer: pulls only its instanceIds, visible only to its owner key and to instance-unrestricted keys within its tenant. Restricted keys always create scoped consumers; false = no instance restriction for unrestricted keys; tenant ownership still applies */
+                            scoped: boolean;
+                            /** @description Scoped consumers: the instances whose journal rows it pages; null when unscoped */
+                            instanceIds: string[] | null;
+                            /**
+                             * Format: uuid
+                             * @description Id of the API key that owns it: set for scoped consumers and for every consumer created by a key with events:consume but not events:write; null otherwise
+                             */
+                            ownerKeyId: string | null;
+                            /** @description Highest journal_seq currently in the journal */
+                            head: number;
+                            /** @description head - cursor (all journal rows past the cursor, not only matches) */
+                            lag: number;
+                            /** @description No type-matching journal row past the cursor (lag may still count other types) */
+                            caughtUp: boolean;
+                            /**
+                             * Format: date-time
+                             * @description Creation timestamp
+                             */
+                            createdAt: string;
+                            /**
+                             * Format: date-time
+                             * @description Last cursor/registry update timestamp
+                             */
+                            updatedAt: string;
+                        };
+                    };
+                };
+            };
+            /** @description Invalid target, outside the journal bound, or empty journal */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            /**
+                             * @description Error code
+                             * @example NOT_FOUND
+                             */
+                            code: string;
+                            /** @description Human-readable error message */
+                            message: string;
+                            /** @description Additional error details */
+                            details?: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Restricted key cannot mutate an unscoped consumer */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            /**
+                             * @description Error code
+                             * @example NOT_FOUND
+                             */
+                            code: string;
+                            /** @description Human-readable error message */
+                            message: string;
+                            /** @description Additional error details */
+                            details?: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description No visible consumer */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            /**
+                             * @description Error code
+                             * @example NOT_FOUND
+                             */
+                            code: string;
+                            /** @description Human-readable error message */
+                            message: string;
+                            /** @description Additional error details */
+                            details?: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Outstanding shared leases must be acked first */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

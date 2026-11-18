@@ -36,11 +36,19 @@ export const CORE_EVENT_TYPES = [
   'identity.linked',
   'identity.merged',
   'identity.unlinked',
+  // Person records (distinct from platform identity links)
+  'person.created',
+  'person.updated',
+  'person.merged',
   // Instance lifecycle
   'instance.connected',
   'instance.disconnected',
   'instance.qr_code',
   'instance.updated',
+  // Access rule records
+  'access.rule_created',
+  'access.rule_updated',
+  'access.rule_deleted',
   // Access control
   'access.allowed',
   'access.denied',
@@ -101,6 +109,10 @@ export const CORE_EVENT_TYPES = [
   'conversation.created',
   'conversation.updated',
   'conversation.deleted',
+  // Chat records
+  'chat.created',
+  'chat.updated',
+  'chat.deleted',
   // Idle-chat follow-up sequences
   'chat.idle_timeout',
   'chat.handoff_activated',
@@ -470,6 +482,30 @@ export interface MediaProcessingFailedPayload {
   model?: string;
   /** Number of retry attempts made before giving up */
   retryAttempts?: number;
+}
+
+/** Change notifications contain internal IDs and field names only. Values are re-read through the API. */
+export interface PersonChangedPayload {
+  personId: string;
+  changedKeys: string[];
+}
+
+export interface PersonMergedPayload {
+  sourcePersonId: string;
+  targetPersonId: string;
+  mergedIdentityIds: string[];
+}
+
+export interface ChatChangedPayload {
+  chatId: string;
+  instanceId: string | null;
+  changedKeys: string[];
+}
+
+export interface AccessRuleChangedPayload {
+  ruleId: string;
+  instanceId: string | null;
+  changedKeys: string[];
 }
 
 /**
@@ -1312,6 +1348,15 @@ export interface EventPayloadMap {
   'media.received': MediaReceivedPayload;
   'media.processed': MediaProcessedPayload;
   'media.processing.failed': MediaProcessingFailedPayload;
+  'person.created': PersonChangedPayload;
+  'person.updated': PersonChangedPayload;
+  'person.merged': PersonMergedPayload;
+  'chat.created': ChatChangedPayload;
+  'chat.updated': ChatChangedPayload;
+  'chat.deleted': ChatChangedPayload;
+  'access.rule_created': AccessRuleChangedPayload;
+  'access.rule_updated': AccessRuleChangedPayload;
+  'access.rule_deleted': AccessRuleChangedPayload;
   'identity.created': IdentityCreatedPayload;
   'identity.linked': IdentityLinkedPayload;
   'identity.merged': IdentityMergedPayload;

@@ -58,9 +58,11 @@ The linked DESIGN owns the C0–C20 conditions and exact gate for dependent work
   stamp causation depth; sends accept idempotency keys. Legacy paths remain as
   specified in the DESIGN rather than acquiring agent authority implicitly.
 - Planned pairing extends device consent with the declared sources and constrained
-  verbs; approval replaces grants atomically with key minting. `omni agents graph`,
-  a default 10,000-row report-only backlog limit and an audited forward seek expose
-  subscriber progress without silently replaying skipped work.
+  verbs; approval replaces grants atomically with key minting. `omni agents graph`
+  and a default 10,000-row report-only backlog limit expose subscriber progress.
+- Done: audited backward/forward consumer seek by sequence or time (#1737), bounded
+  by the journal, with ack-equivalent access, config audit, `custom.consumer.sought`,
+  and refusal while any shared lease is outstanding. See the [runbook](../runbooks/durable-consumers.md#audited-cursor-seek-rfc-0002).
 
 ## Threat model
 

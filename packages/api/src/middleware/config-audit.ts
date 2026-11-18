@@ -22,6 +22,7 @@ import {
   configAuditLogs,
   connectorEventSubscriptions,
   connectors,
+  durableConsumers,
   globalSettings,
   instances,
 } from '@omni/db';
@@ -50,6 +51,13 @@ interface Resource {
 
 // Order matters: routes live under /instances/:id/routes.
 const RESOURCES: Resource[] = [
+  {
+    type: 'consumer',
+    // Only explicit seeks are config mutations; pulls/acks are routine progress.
+    pattern: /^\/events\/consumers\/([^/]+)\/(seek)$/,
+    table: durableConsumers,
+    idColumn: durableConsumers.name,
+  },
   {
     type: 'connector_event_subscription',
     // The CONNECTOR id is deliberately non-capturing: the audit target is the

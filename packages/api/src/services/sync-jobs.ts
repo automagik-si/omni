@@ -51,6 +51,16 @@ export interface SyncJobWithStats extends SyncJob {
 /** A history-push job with no progress for this long is considered done (#1123) */
 export const HISTORY_PUSH_STALE_MS = 10 * 60 * 1000;
 
+/** Several quiet rounds fit inside this window; a fresh progress receipt keeps ownership. */
+export const CHAT_BACKFILL_STALE_MS = 10 * 60 * 1000;
+type Tx = Parameters<Parameters<Database['transaction']>[0]>[0];
+
+export function isStaleChatBackfill(job: SyncJob, now = Date.now()): boolean {
+  if (job.status !== 'running' || !job.config?.backfill) return false;
+  const lastActivity = new Date(job.progress?.lastProgressAt ?? job.startedAt ?? job.createdAt).getTime();
+  return now - lastActivity >= CHAT_BACKFILL_STALE_MS;
+}
+
 export class SyncJobService {
   /**
    * The handle every query in this service uses.
@@ -227,30 +237,90 @@ export class SyncJobService {
     };
   }
 
+  /** End abandoned blockers under the line lock, without overwriting a concurrent heartbeat or cancel. */
+  private async expireStaleBackfills(
+    tx: Tx,
+    jobs: SyncJob[],
+    ownerId: string,
+    expired: SyncJob[],
+    now: Date,
+  ): Promise<SyncJob[]> {
+    const active: SyncJob[] = [];
+    for (const job of jobs) {
+      if (job.id !== ownerId && isStaleChatBackfill(job, now.getTime())) {
+        const outcome = 'Backfill stopped after its progress became stale';
+        const [ended] = await tx
+          .update(syncJobs)
+          .set({
+            status: 'failed',
+            completedAt: now,
+            errorMessage: outcome,
+            progress: { ...job.progress, state: 'failed', outcome },
+          })
+          .where(and(eq(syncJobs.id, job.id), eq(syncJobs.status, 'running'), eq(syncJobs.progress, job.progress)))
+          .returning();
+        if (ended) {
+          expired.push(ended);
+          continue;
+        }
+      }
+      active.push(job);
+    }
+    return active;
+  }
+
+  /** Each expiration publish follows its committed database block, as with fail(). */
+  private async publishExpiredBackfills(expired: SyncJob[]): Promise<void> {
+    if (!this.eventBus) return;
+    for (const job of expired) {
+      await this.eventBus.publish(
+        'sync.failed',
+        {
+          jobId: job.id,
+          instanceId: job.instanceId,
+          type: job.type,
+          error: job.errorMessage ?? 'Backfill progress became stale',
+        },
+        { instanceId: job.instanceId, channelType: job.channel, tenantId: job.tenantId ?? undefined },
+      );
+    }
+  }
+
   /** Claim the oldest pending chat backfill atomically across worker processes. */
   async claimBackfill(id: string, trustedTenantId?: string | null): Promise<SyncJob | null> {
     const job = await this.getById(id, trustedTenantId);
-    return this.workDb(trustedTenantId, () =>
+    const expired: SyncJob[] = [];
+    const result = await this.workDb(trustedTenantId, () =>
       this.db.transaction(async (tx) => {
         // Short transaction only: no lock or connection is held across phone I/O.
         await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${job.instanceId}))`);
-        const active = await tx
+        const now = new Date();
+        const rows = await tx
           .select()
           .from(syncJobs)
           .where(and(eq(syncJobs.instanceId, job.instanceId), inArray(syncJobs.status, ['pending', 'running'])))
           .orderBy(asc(syncJobs.createdAt), asc(syncJobs.id));
+        const active = await this.expireStaleBackfills(tx, rows, id, expired, now);
+        const current = active.find((row) => row.id === id);
         const prior =
           active[0]?.id !== id ||
           active.some((other) => other.id !== id && (other.status === 'running' || !other.config.backfill));
-        if (prior) return null;
+        if (!current || prior || (current.status !== 'pending' && !isStaleChatBackfill(current, now.getTime())))
+          return null;
         const [claimed] = await tx
           .update(syncJobs)
-          .set({ status: 'running', startedAt: new Date() })
-          .where(and(eq(syncJobs.id, id), eq(syncJobs.status, 'pending')))
+          .set({
+            status: 'running',
+            startedAt: now,
+            progress: { ...current.progress, lastProgressAt: now.toISOString() },
+          })
+          .where(and(eq(syncJobs.id, id), eq(syncJobs.status, current.status), eq(syncJobs.progress, current.progress)))
           .returning();
         return claimed ?? null;
       }),
     );
+    await this.publishExpiredBackfills(expired);
+    return result;
   }
 
   /**
@@ -258,14 +328,16 @@ export class SyncJobService {
    */
   async start(id: string, trustedTenantId?: string | null): Promise<SyncJob> {
     const job = await this.getById(id, trustedTenantId);
+    const expired: SyncJob[] = [];
     const [updated] = await this.workDb(trustedTenantId, () =>
       this.db.transaction(async (tx) => {
         if (job.type === 'messages' || job.type === 'all') {
           await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${job.instanceId}))`);
-          const active = await tx
+          const rows = await tx
             .select()
             .from(syncJobs)
             .where(and(eq(syncJobs.instanceId, job.instanceId), eq(syncJobs.status, 'running')));
+          const active = await this.expireStaleBackfills(tx, rows, id, expired, new Date());
           // Legacy history jobs and chat backfills share the line's history callback slot.
           if (
             active.some(
@@ -283,11 +355,29 @@ export class SyncJobService {
       }),
     );
 
+    await this.publishExpiredBackfills(expired);
     if (!updated) {
       return this.getById(id, trustedTenantId);
     }
 
     return updated;
+  }
+
+  /**
+   * Refresh only the ownership clock; concurrent progress writes retain their counters.
+   * This internal liveness receipt does not publish a user-visible progress event.
+   */
+  async heartbeatBackfill(id: string, trustedTenantId?: string | null): Promise<SyncJob> {
+    const [updated] = await this.workDb(trustedTenantId, () =>
+      this.db
+        .update(syncJobs)
+        .set({
+          progress: sql`jsonb_set(${syncJobs.progress}, '{lastProgressAt}', to_jsonb(${new Date().toISOString()}::text), true)`,
+        })
+        .where(and(eq(syncJobs.id, id), eq(syncJobs.status, 'running')))
+        .returning(),
+    );
+    return updated ?? this.getById(id, trustedTenantId);
   }
 
   /**

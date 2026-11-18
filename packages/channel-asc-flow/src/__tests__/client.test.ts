@@ -67,6 +67,26 @@ describe('auth', () => {
   });
 });
 
+describe('caller deadline', () => {
+  it("a caller's signal cancels the POST before the client's own timeout", async () => {
+    const stub = stubPlatform();
+    restore = stub.restore;
+    const stubbed = globalThis.fetch;
+    globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      if (!String(input).includes('/sendIndicador')) return stubbed(input, init);
+      return new Promise<Response>((_, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(init.signal?.reason));
+      });
+    }) as typeof fetch;
+
+    const started = Date.now();
+    await expect(client().call('/sendIndicador', { cod: 1, tipo: 1 }, AbortSignal.timeout(50))).rejects.toMatchObject({
+      channelCode: AscFlowErrorCode.UPSTREAM_ERROR,
+    });
+    expect(Date.now() - started).toBeLessThan(1_000);
+  });
+});
+
 describe('the overloaded 401', () => {
   it('re-authenticates and retries ONCE on a 401 with no cod_error', async () => {
     let attempts = 0;

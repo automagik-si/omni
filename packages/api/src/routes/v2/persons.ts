@@ -7,6 +7,7 @@ import type { ChannelTypeSchema } from '@omni/core';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { optionalDateParam } from '../../schemas/date-query';
+import { journalReader } from '../../services/journal-visibility';
 import type { AppVariables } from '../../types';
 
 const personsRoutes = new Hono<{ Variables: AppVariables }>();
@@ -157,6 +158,7 @@ personsRoutes.get('/:id/timeline', zValidator('query', timelineQuerySchema), asy
   const services = c.get('services');
 
   const result = await services.events.getTimeline(id, {
+    reader: journalReader(c.get('apiKey')),
     channels: query.channels,
     since: query.since,
     until: query.until,

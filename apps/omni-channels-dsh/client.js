@@ -10689,6 +10689,12 @@ var createDataURL = function(width, height, getPixel) {
 var qrcode_default = qrcode;
 var stringToBytes = qrcode.stringToBytes;
 
+// ../../docs/brand/logo/svg/omni-mark-ink-32.svg
+var omni_mark_ink_32_default = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="Omni"><path fill="#3c3049" fill-rule="evenodd" d="M73.86 61.49a2.51 2.51 0 0 0-2.67 2.44a2.51 2.51 0 0 0 2.43 2.57c4.11 .11 7.54-2.92 10.01-5.9c5.29-6.38 6.92-15.19 5.68-23.25c-.93-6.03-3.25-11.57-6.65-16.62c-4.44-6.59-10.59-11.84-17.45-15.78c-.53-.31-1.07-.61-1.6-.92c-.1-.06-.2-.1-.29-.16c-.06-.04-.12-.09-.18-.13l-2.09-.66l-2.19 .01l-2.08 .69l-1.76 1.3l-1.28 1.78l-.66 2.09l.01 2.19l.69 2.08l1.3 1.76l1.78 1.28c1.51 .61 3.04 1.17 4.53 1.83c1.06 .47 2.08 .96 3.1 1.51c6.8 3.67 12.47 9.2 15.52 16.38c3.03 7.15 3.09 15.86-1.8 22.21c-.94 1.21-2.62 3.08-4.23 3.29c-.04 .01-.08 .01-.12 .01ZM68.66 70.78a2.5 2.5 0 0 0-3.53-.09a2.5 2.5 0 0 0-.09 3.54c2.82 2.98 7.39 3.26 11.24 2.91c5.7-.52 11.16-3.22 15.44-6.96c9.34-8.17 13.45-20.91 12.86-33.08c-.17-3.44-.64-6.78-1.42-10.14c-.28-1.22-.61-2.43-.94-3.64c-.08-.29-.17-.58-.22-.88l-1.01-1.95l-1.56-1.53l-1.95-.99l-2.17-.33l-2.16 .36l-1.95 1.01l-1.53 1.56l-.99 1.95l-.32 2.17l.35 2.16c.67 1.6 1.41 3.15 2.02 4.77c1.97 5.25 2.96 10.64 2.54 16.25c-.49 6.48-2.9 12.88-7.46 17.6c-3.4 3.52-7.8 5.91-12.73 6.23c-1.3 .08-3.28 .06-4.33-.84c-.03-.03-.06-.05-.09-.08ZM58.51 73.86a2.51 2.51 0 0 0-2.44-2.67a2.51 2.51 0 0 0-2.57 2.43c-.11 4.11 2.92 7.54 5.9 10.01c6.38 5.29 15.19 6.92 23.25 5.68c6.03-.93 11.57-3.25 16.62-6.65c6.59-4.44 11.84-10.59 15.78-17.45c.31-.53 .61-1.07 .92-1.6c.06-.1 .1-.2 .16-.29c.04-.06 .09-.12 .13-.18l.66-2.09l-.01-2.19l-.69-2.08l-1.3-1.76l-1.78-1.28l-2.09-.66l-2.19 .01l-2.08 .69l-1.76 1.3l-1.28 1.78c-.61 1.51-1.17 3.04-1.83 4.53c-.47 1.06-.96 2.08-1.51 3.1c-3.67 6.8-9.2 12.47-16.38 15.52c-7.15 3.03-15.86 3.09-22.21-1.8c-1.21-.94-3.08-2.62-3.29-4.23c-.01-.04-.01-.08-.01-.12ZM49.22 68.66a2.5 2.5 0 0 0 .09-3.53a2.5 2.5 0 0 0-3.54-.09c-2.98 2.82-3.26 7.39-2.91 11.24c.52 5.7 3.22 11.16 6.96 15.44c8.17 9.34 20.91 13.45 33.08 12.86c3.44-.17 6.78-.64 10.14-1.42c1.22-.28 2.43-.61 3.64-.94c.29-.08 .58-.17 .88-.22l1.95-1.01l1.53-1.56l.99-1.95l.33-2.17l-.36-2.16l-1.01-1.95l-1.56-1.53l-1.95-.99l-2.17-.32l-2.16 .35c-1.6 .67-3.15 1.41-4.77 2.02c-5.25 1.97-10.64 2.96-16.25 2.54c-6.48-.49-12.88-2.9-17.6-7.46c-3.52-3.4-5.91-7.8-6.23-12.73c-.08-1.3-.06-3.28 .84-4.33c.03-.03 .05-.06 .08-.09ZM46.14 58.51a2.51 2.51 0 0 0 2.67-2.44a2.51 2.51 0 0 0-2.43-2.57c-4.11-.11-7.54 2.92-10.01 5.9c-5.29 6.38-6.92 15.19-5.68 23.25c.93 6.03 3.25 11.57 6.65 16.62c4.44 6.59 10.59 11.84 17.45 15.78c.53 .31 1.07 .61 1.6 .92c.1 .06 .2 .1 .29 .16c.06 .04 .12 .09 .18 .13l2.09 .66l2.19-.01l2.08-.69l1.76-1.3l1.28-1.78l.66-2.09l-.01-2.19l-.69-2.08l-1.3-1.76l-1.78-1.28c-1.51-.61-3.04-1.17-4.53-1.83c-1.06-.47-2.08-.96-3.1-1.51c-6.8-3.67-12.47-9.2-15.52-16.38c-3.03-7.15-3.09-15.86 1.8-22.21c.94-1.21 2.62-3.08 4.23-3.29c.04-.01 .08-.01 .12-.01ZM51.34 49.22a2.5 2.5 0 0 0 3.53 .09a2.5 2.5 0 0 0 .09-3.54c-2.82-2.98-7.39-3.26-11.24-2.91c-5.7 .52-11.16 3.22-15.44 6.96c-9.34 8.17-13.45 20.91-12.86 33.08c.17 3.44 .64 6.78 1.42 10.14c.28 1.22 .61 2.43 .94 3.64c.08 .29 .17 .58 .22 .88l1.01 1.95l1.56 1.53l1.95 .99l2.17 .33l2.16-.36l1.95-1.01l1.53-1.56l.99-1.95l.32-2.17l-.35-2.16c-.67-1.6-1.41-3.15-2.02-4.77c-1.97-5.25-2.96-10.64-2.54-16.25c.49-6.48 2.9-12.88 7.46-17.6c3.4-3.52 7.8-5.91 12.73-6.23c1.3-.08 3.28-.06 4.33 .84c.03 .03 .06 .05 .09 .08ZM61.49 46.14a2.51 2.51 0 0 0 2.44 2.67a2.51 2.51 0 0 0 2.57-2.43c.11-4.11-2.92-7.54-5.9-10.01c-6.38-5.29-15.19-6.92-23.25-5.68c-6.03 .93-11.57 3.25-16.62 6.65c-6.59 4.44-11.84 10.59-15.78 17.45c-.31 .53-.61 1.07-.92 1.6c-.06 .1-.1 .2-.16 .29c-.04 .06-.09 .12-.13 .18l-.66 2.09l.01 2.19l.69 2.08l1.3 1.76l1.78 1.28l2.09 .66l2.19-.01l2.08-.69l1.76-1.3l1.28-1.78c.61-1.51 1.17-3.04 1.83-4.53c.47-1.06 .96-2.08 1.51-3.1c3.67-6.8 9.2-12.47 16.38-15.52c7.15-3.03 15.86-3.09 22.21 1.8c1.21 .94 3.08 2.62 3.29 4.23c.01 .04 .01 .08 .01 .12ZM70.78 51.34a2.5 2.5 0 0 0-.09 3.53a2.5 2.5 0 0 0 3.54 .09c2.98-2.82 3.26-7.39 2.91-11.24c-.52-5.7-3.22-11.16-6.96-15.44c-8.17-9.34-20.91-13.45-33.08-12.86c-3.44 .17-6.78 .64-10.14 1.42c-1.22 .28-2.43 .61-3.64 .94c-.29 .08-.58 .17-.88 .22l-1.95 1.01l-1.53 1.56l-.99 1.95l-.33 2.17l.36 2.16l1.01 1.95l1.56 1.53l1.95 .99l2.17 .32l2.16-.35c1.6-.67 3.15-1.41 4.77-2.02c5.25-1.97 10.64-2.96 16.25-2.54c6.48 .49 12.88 2.9 17.6 7.46c3.52 3.4 5.91 7.8 6.23 12.73c.08 1.3 .06 3.28-.84 4.33c-.03 .03-.05 .06-.08 .09Z"/></svg>\n';
+
+// ../../docs/brand/logo/svg/omni-mark-cream-32.svg
+var omni_mark_cream_32_default = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="Omni"><path fill="#f3e9dd" fill-rule="evenodd" d="M73.86 61.49a2.51 2.51 0 0 0-2.67 2.44a2.51 2.51 0 0 0 2.43 2.57c4.11 .11 7.54-2.92 10.01-5.9c5.29-6.38 6.92-15.19 5.68-23.25c-.93-6.03-3.25-11.57-6.65-16.62c-4.44-6.59-10.59-11.84-17.45-15.78c-.53-.31-1.07-.61-1.6-.92c-.1-.06-.2-.1-.29-.16c-.06-.04-.12-.09-.18-.13l-2.09-.66l-2.19 .01l-2.08 .69l-1.76 1.3l-1.28 1.78l-.66 2.09l.01 2.19l.69 2.08l1.3 1.76l1.78 1.28c1.51 .61 3.04 1.17 4.53 1.83c1.06 .47 2.08 .96 3.1 1.51c6.8 3.67 12.47 9.2 15.52 16.38c3.03 7.15 3.09 15.86-1.8 22.21c-.94 1.21-2.62 3.08-4.23 3.29c-.04 .01-.08 .01-.12 .01ZM68.66 70.78a2.5 2.5 0 0 0-3.53-.09a2.5 2.5 0 0 0-.09 3.54c2.82 2.98 7.39 3.26 11.24 2.91c5.7-.52 11.16-3.22 15.44-6.96c9.34-8.17 13.45-20.91 12.86-33.08c-.17-3.44-.64-6.78-1.42-10.14c-.28-1.22-.61-2.43-.94-3.64c-.08-.29-.17-.58-.22-.88l-1.01-1.95l-1.56-1.53l-1.95-.99l-2.17-.33l-2.16 .36l-1.95 1.01l-1.53 1.56l-.99 1.95l-.32 2.17l.35 2.16c.67 1.6 1.41 3.15 2.02 4.77c1.97 5.25 2.96 10.64 2.54 16.25c-.49 6.48-2.9 12.88-7.46 17.6c-3.4 3.52-7.8 5.91-12.73 6.23c-1.3 .08-3.28 .06-4.33-.84c-.03-.03-.06-.05-.09-.08ZM58.51 73.86a2.51 2.51 0 0 0-2.44-2.67a2.51 2.51 0 0 0-2.57 2.43c-.11 4.11 2.92 7.54 5.9 10.01c6.38 5.29 15.19 6.92 23.25 5.68c6.03-.93 11.57-3.25 16.62-6.65c6.59-4.44 11.84-10.59 15.78-17.45c.31-.53 .61-1.07 .92-1.6c.06-.1 .1-.2 .16-.29c.04-.06 .09-.12 .13-.18l.66-2.09l-.01-2.19l-.69-2.08l-1.3-1.76l-1.78-1.28l-2.09-.66l-2.19 .01l-2.08 .69l-1.76 1.3l-1.28 1.78c-.61 1.51-1.17 3.04-1.83 4.53c-.47 1.06-.96 2.08-1.51 3.1c-3.67 6.8-9.2 12.47-16.38 15.52c-7.15 3.03-15.86 3.09-22.21-1.8c-1.21-.94-3.08-2.62-3.29-4.23c-.01-.04-.01-.08-.01-.12ZM49.22 68.66a2.5 2.5 0 0 0 .09-3.53a2.5 2.5 0 0 0-3.54-.09c-2.98 2.82-3.26 7.39-2.91 11.24c.52 5.7 3.22 11.16 6.96 15.44c8.17 9.34 20.91 13.45 33.08 12.86c3.44-.17 6.78-.64 10.14-1.42c1.22-.28 2.43-.61 3.64-.94c.29-.08 .58-.17 .88-.22l1.95-1.01l1.53-1.56l.99-1.95l.33-2.17l-.36-2.16l-1.01-1.95l-1.56-1.53l-1.95-.99l-2.17-.32l-2.16 .35c-1.6 .67-3.15 1.41-4.77 2.02c-5.25 1.97-10.64 2.96-16.25 2.54c-6.48-.49-12.88-2.9-17.6-7.46c-3.52-3.4-5.91-7.8-6.23-12.73c-.08-1.3-.06-3.28 .84-4.33c.03-.03 .05-.06 .08-.09ZM46.14 58.51a2.51 2.51 0 0 0 2.67-2.44a2.51 2.51 0 0 0-2.43-2.57c-4.11-.11-7.54 2.92-10.01 5.9c-5.29 6.38-6.92 15.19-5.68 23.25c.93 6.03 3.25 11.57 6.65 16.62c4.44 6.59 10.59 11.84 17.45 15.78c.53 .31 1.07 .61 1.6 .92c.1 .06 .2 .1 .29 .16c.06 .04 .12 .09 .18 .13l2.09 .66l2.19-.01l2.08-.69l1.76-1.3l1.28-1.78l.66-2.09l-.01-2.19l-.69-2.08l-1.3-1.76l-1.78-1.28c-1.51-.61-3.04-1.17-4.53-1.83c-1.06-.47-2.08-.96-3.1-1.51c-6.8-3.67-12.47-9.2-15.52-16.38c-3.03-7.15-3.09-15.86 1.8-22.21c.94-1.21 2.62-3.08 4.23-3.29c.04-.01 .08-.01 .12-.01ZM51.34 49.22a2.5 2.5 0 0 0 3.53 .09a2.5 2.5 0 0 0 .09-3.54c-2.82-2.98-7.39-3.26-11.24-2.91c-5.7 .52-11.16 3.22-15.44 6.96c-9.34 8.17-13.45 20.91-12.86 33.08c.17 3.44 .64 6.78 1.42 10.14c.28 1.22 .61 2.43 .94 3.64c.08 .29 .17 .58 .22 .88l1.01 1.95l1.56 1.53l1.95 .99l2.17 .33l2.16-.36l1.95-1.01l1.53-1.56l.99-1.95l.32-2.17l-.35-2.16c-.67-1.6-1.41-3.15-2.02-4.77c-1.97-5.25-2.96-10.64-2.54-16.25c.49-6.48 2.9-12.88 7.46-17.6c3.4-3.52 7.8-5.91 12.73-6.23c1.3-.08 3.28-.06 4.33 .84c.03 .03 .06 .05 .09 .08ZM61.49 46.14a2.51 2.51 0 0 0 2.44 2.67a2.51 2.51 0 0 0 2.57-2.43c.11-4.11-2.92-7.54-5.9-10.01c-6.38-5.29-15.19-6.92-23.25-5.68c-6.03 .93-11.57 3.25-16.62 6.65c-6.59 4.44-11.84 10.59-15.78 17.45c-.31 .53-.61 1.07-.92 1.6c-.06 .1-.1 .2-.16 .29c-.04 .06-.09 .12-.13 .18l-.66 2.09l.01 2.19l.69 2.08l1.3 1.76l1.78 1.28l2.09 .66l2.19-.01l2.08-.69l1.76-1.3l1.28-1.78c.61-1.51 1.17-3.04 1.83-4.53c.47-1.06 .96-2.08 1.51-3.1c3.67-6.8 9.2-12.47 16.38-15.52c7.15-3.03 15.86-3.09 22.21 1.8c1.21 .94 3.08 2.62 3.29 4.23c.01 .04 .01 .08 .01 .12ZM70.78 51.34a2.5 2.5 0 0 0-.09 3.53a2.5 2.5 0 0 0 3.54 .09c2.98-2.82 3.26-7.39 2.91-11.24c-.52-5.7-3.22-11.16-6.96-15.44c-8.17-9.34-20.91-13.45-33.08-12.86c-3.44 .17-6.78 .64-10.14 1.42c-1.22 .28-2.43 .61-3.64 .94c-.29 .08-.58 .17-.88 .22l-1.95 1.01l-1.53 1.56l-.99 1.95l-.33 2.17l.36 2.16l1.01 1.95l1.56 1.53l1.95 .99l2.17 .32l2.16-.35c1.6-.67 3.15-1.41 4.77-2.02c5.25-1.97 10.64-2.96 16.25-2.54c6.48 .49 12.88 2.9 17.6 7.46c3.52 3.4 5.91 7.8 6.23 12.73c.08 1.3 .06 3.28-.84 4.33c-.03 .03-.05 .06-.08 .09Z"/></svg>\n';
+
 // src/client/onboarding.js
 var CONNECT_STEP = Object.freeze({ id: "omni-connect", order: -250 });
 var SKIPPED_KEY = "omni-ui:connect-omni-skipped";
@@ -11218,20 +11224,20 @@ function omniActions(select, call2) {
       const body = text.trim();
       const before = omniStore.getSnapshot();
       if (body === "" || !canSend(before)) return;
-      const at2 = Date.now();
-      const localId = `local-${at2}`;
+      const sent = sentMessage(body, before.messages[chatId]);
+      const { id: localId, at: at2 } = sent;
       const channelId = chatOf(before, chatId)?.channelId ?? before.chatChannels?.[chatId];
       const stillExists = () => channelId ? Boolean(channelOf(omniStore.getSnapshot(), channelId)) : Boolean(chatOf(omniStore.getSnapshot(), chatId));
       set((state) => ({
-        messages: { ...state.messages, [chatId]: [...state.messages[chatId] ?? [], { id: localId, from: "you", text: body, at: at2, ...state.preview ? {} : { sending: true } }] },
+        messages: { ...state.messages, [chatId]: [...state.messages[chatId] ?? [], state.preview ? { id: localId, from: "you", text: body, at: at2 } : sent] },
         chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, preview: `You: ${body}`, at: at2 } : chat),
         sendError: null
       }));
       if (before.preview || !call2) return;
       call2("omni-send", { chatId, text: body }).then(
-        () => {
+        (reply) => {
           if (!stillExists()) return;
-          set((state) => ({ messages: { ...state.messages, [chatId]: (state.messages[chatId] ?? []).map((message) => message.id === localId ? { ...message, sending: false } : message) } }));
+          set((state) => ({ messages: { ...state.messages, [chatId]: (state.messages[chatId] ?? []).map((message) => message.id === localId ? sentAnswered(message, reply?.messageId) : message) } }));
           void loadMessages(call2, chatId);
         },
         (error) => {
@@ -11311,12 +11317,42 @@ function omniActions(select, call2) {
 var POLL_MS = 15e3;
 var polling = null;
 var markSeen = (seen, chats) => chats.map((chat) => (seen[chat.id] ?? -1) >= chat.at ? { ...chat, unread: 0 } : chat);
+var sentCount = 0;
+function sentMessage(text, shown = [], at2 = Date.now()) {
+  sentCount += 1;
+  return {
+    id: `local-${at2}-${sentCount}`,
+    from: "you",
+    fromMe: true,
+    text,
+    at: at2,
+    sending: true,
+    local: { messageId: null, before: shown.filter((message) => !message.local).map((message) => message.id) }
+  };
+}
+var sentAnswered = (message, messageId) => ({
+  ...message,
+  sending: false,
+  status: "sent",
+  local: { ...message.local, messageId: typeof messageId === "string" && messageId !== "" ? messageId : null }
+});
+function withSent(rows, sent) {
+  const taken = [];
+  const take = (message, matches) => {
+    const row = rows.find((row2) => !taken.includes(row2.id) && row2.from !== "them" && !message.local.before.includes(row2.id) && matches(row2));
+    if (row !== void 0) taken.push(row.id);
+    return row !== void 0;
+  };
+  const kept = sent.filter((message) => !(message.local.messageId !== null && take(message, (row) => row.externalId === message.local.messageId))).filter((message) => !(message.local.messageId === null && take(message, (row) => row.text === message.text)));
+  const left = taken.length === 0 ? kept : kept.map((message) => ({ ...message, local: { ...message.local, before: [...message.local.before, ...taken] } }));
+  return { messages: left.length === 0 ? rows : [...rows, ...left].sort((a, b2) => a.at - b2.at), left };
+}
 async function loadMessages(call2, chatId) {
   const generation = dataGeneration;
   try {
     const { messages } = await call2("omni-messages", { chatId });
     if (generation !== dataGeneration || deleting.size || !chatOf(omniStore.getSnapshot(), chatId)) return;
-    set((state) => ({ messages: { ...state.messages, [chatId]: messages } }));
+    set((state) => ({ messages: { ...state.messages, [chatId]: withSent(messages, (state.messages[chatId] ?? []).filter((message) => message.local)).messages } }));
   } catch (error) {
     console.warn("Could not load messages:", error);
     if (generation !== dataGeneration || deleting.size || !chatOf(omniStore.getSnapshot(), chatId)) return;
@@ -12681,7 +12717,17 @@ function TickMark({ status }) {
     tick.marks.map((Mark, index) => (0, import_react5.createElement)(Mark, { key: index }))
   );
 }
-function ChatMessages({ messages, onSized }) {
+function SenderPhoto({ message, chat }) {
+  const group = chat?.kind === "group";
+  const name = (group ? message.author : chat?.name ?? message.author) || "?";
+  const photo = message.authorPhoto ?? (group ? null : chat?.avatarUrl ?? null);
+  return (0, import_react5.createElement)(
+    "span",
+    { className: "oc-msg-ava", "aria-hidden": true },
+    (0, import_react5.createElement)(ChatAvatar, { chat: { name, initials: !group && chat?.initials ? chat.initials : initialsOf(name), avatarUrl: photo }, size: 28 })
+  );
+}
+function ChatMessages({ messages, onSized, chat }) {
   return messages.map((message, index) => {
     const mine = message.from !== "them";
     const newDay = index === 0 || dayKey(messages[index - 1].at) !== dayKey(message.at);
@@ -12690,6 +12736,7 @@ function ChatMessages({ messages, onSized }) {
       "div",
       { className: `oc-msg oc-msg-${message.from}${first ? " oc-msg-first" : ""}` },
       first && !mine && message.author ? (0, import_react5.createElement)("span", { className: "oc-msg-author" }, message.author) : null,
+      first && !mine ? (0, import_react5.createElement)(SenderPhoto, { message, chat }) : null,
       first && message.from === "omni" ? (0, import_react5.createElement)("span", { className: "oc-msg-author oc-msg-omni" }, (0, import_react5.createElement)(OmniMark, { size: 12 }), "Omni") : null,
       (0, import_react5.createElement)(
         "div",
@@ -12865,7 +12912,7 @@ function ChatPage({ actions }) {
         "div",
         { className: "oc-thread-in" },
         loading ? (0, import_react5.createElement)("div", { className: "oc-day" }, (0, import_react5.createElement)("span", { className: "oc-spinner", "aria-hidden": true }), t("Loading messages…")) : null,
-        (0, import_react5.createElement)(ChatMessages, { messages, onSized })
+        (0, import_react5.createElement)(ChatMessages, { messages, onSized, chat })
       )
     ),
     (0, import_react5.createElement)(
@@ -13286,6 +13333,10 @@ function SampleQr({ seed = 1 }) {
   return (0, import_react5.createElement)("svg", { viewBox: `-1 -1 ${N + 2} ${N + 2}`, width: 196, height: 196, "aria-hidden": true }, (0, import_react5.createElement)("g", { fill: "currentColor" }, cells, eyes));
 }
 var TONES = "[data-tone=ok]{--oc-tone:#16a34a}[data-tone=busy]{--oc-tone:#0ea5e9}[data-tone=warn]{--oc-tone:#f59e0b}[data-tone=off]{--oc-tone:#94a3b8}";
+var VORTEX = {
+  ink: "data:image/svg+xml;charset=utf-8," + encodeURIComponent(omni_mark_ink_32_default),
+  cream: "data:image/svg+xml;charset=utf-8," + encodeURIComponent(omni_mark_cream_32_default)
+};
 function ChannelsFooter({ wide, actions }) {
   const state = useOmni();
   (0, import_react5.useEffect)(() => {
@@ -13297,16 +13348,25 @@ function ChannelsFooter({ wide, actions }) {
   return (0, import_react5.createElement)("span", { className: "bt-connect-wrap" }, (0, import_react5.createElement)(
     "button",
     { type: "button", className: "bt-connect bt-connect-foot bt-channels-foot", title: label, "aria-label": `${t("Channels")}, ${label}`, onClick: () => actions.selectPanel(CHANNELS_PANEL) },
-    (0, import_react5.createElement)("span", { className: "bt-channels-tiles", "aria-hidden": true }, state.channels.slice(0, 4).map((channel) => (0, import_react5.createElement)(Tile, { key: channel.id, type: channel.type, size: 18 }))),
+    (0, import_react5.createElement)(
+      "span",
+      { className: "bt-channels-mark", "aria-hidden": true },
+      (0, import_react5.createElement)("img", { className: "oc-vortex oc-vortex-ink", src: VORTEX.ink, alt: "", width: 32, height: 32 }),
+      (0, import_react5.createElement)("img", { className: "oc-vortex oc-vortex-cream", src: VORTEX.cream, alt: "", width: 32, height: 32 })
+    ),
     t("Channels"),
     summary.attention > 0 ? (0, import_react5.createElement)("span", { className: "oc-warn-dot", "aria-hidden": true }) : (0, import_react5.createElement)("span", { className: "bt-channels-count" }, `${summary.connected}/${summary.total}`)
   ));
 }
 var CHANNELS_CSS = `
 .bt-channels-foot{gap:8px;justify-content:flex-start;padding:0 12px 0 8px}
-.bt-channels-tiles{display:inline-flex}
-.bt-channels-tiles .oc-tile{margin-left:-5px;box-shadow:0 0 0 1.5px var(--bt-main)}
-.bt-channels-tiles .oc-tile:first-child{margin-left:0}
+/* The control keeps the bar's own row height, so the mark and the update button sit on one line. */
+.bt-channels-foot{min-height:36px;gap:8px}
+.bt-channels-mark{display:inline-flex;align-items:center;justify-content:center;flex:none;width:32px;height:32px}
+.bt-channels-mark .oc-vortex{display:block;width:32px;height:32px}
+.bt-channels-mark .oc-vortex-cream{display:none}
+body[data-ds-dark-theme] .bt-channels-mark .oc-vortex-ink{display:none}
+body[data-ds-dark-theme] .bt-channels-mark .oc-vortex-cream{display:block}
 .bt-channels-count{margin-left:auto;font-size:12px;color:var(--bt-ink-3)}
 .bt-channels-foot .oc-warn-dot{margin-left:auto}
 ${TONES}
@@ -13354,8 +13414,8 @@ body[data-ds-dark-theme] .oc-ava{background:hsl(var(--oc-hue) 30% 26%);color:hsl
    same header, log and bar from the DSH tokens alone. Light: white bubbles in from the person
    on a soft wallpaper, accent-tinted bubbles out; dark: the team's bubble surface in, its accent
    tint out. The wallpaper's pattern is two staggered dot grids of the ink. */
-.oc-chat,.op-pane{--oc-wall:color-mix(in srgb,var(--bt-ink) 4%,var(--bt-main));--oc-in:var(--bt-card);--oc-out:color-mix(in srgb,var(--bt-accent) 14%,var(--bt-card));--oc-dot:color-mix(in srgb,var(--bt-ink) 9%,transparent);--oc-shade:color-mix(in srgb,var(--bt-ink) 12%,transparent)}
-body[data-ds-dark-theme] :is(.oc-chat,.op-pane){--oc-wall:var(--bt-main);--oc-in:var(--bt-bubble);--oc-out:color-mix(in srgb,var(--bt-accent) 26%,var(--bt-bubble));--oc-dot:color-mix(in srgb,var(--bt-ink) 6%,transparent);--oc-shade:color-mix(in srgb,var(--bt-main) 70%,transparent)}
+.oc-chat,.op-pane{--oc-me:var(--bt-accent);--oc-them:var(--bt-magic-pink);--oc-wall:color-mix(in srgb,var(--bt-ink) 4%,var(--bt-main));--oc-in:color-mix(in srgb,var(--oc-them) 16%,var(--bt-card));--oc-out:color-mix(in srgb,var(--oc-me) 20%,var(--bt-card));--oc-dot:color-mix(in srgb,var(--bt-ink) 9%,transparent);--oc-shade:color-mix(in srgb,var(--bt-ink) 12%,transparent)}
+body[data-ds-dark-theme] :is(.oc-chat,.op-pane){--oc-wall:var(--bt-main);--oc-in:color-mix(in srgb,var(--oc-them) 26%,var(--bt-bubble));--oc-out:color-mix(in srgb,var(--oc-me) 34%,var(--bt-bubble));--oc-dot:color-mix(in srgb,var(--bt-ink) 6%,transparent);--oc-shade:color-mix(in srgb,var(--bt-main) 70%,transparent)}
 .oc-chat{container:oc-chat/inline-size}
 .oc-chat-empty{align-items:center;justify-content:center;gap:12px;color:var(--bt-ink-3)}
 .oc-chat-head{position:relative;z-index:1;flex:none;display:grid;grid-template-columns:auto minmax(0,1fr) auto;grid-template-rows:auto auto;column-gap:12px;align-items:center;min-height:60px;padding:8px 12px 8px 16px;box-sizing:border-box;border-bottom:.5px solid var(--bt-line-2);background:var(--bt-main)}
@@ -13380,7 +13440,9 @@ body[data-ds-dark-theme] :is(.oc-chat,.op-pane){--oc-wall:var(--bt-main);--oc-in
 .oc-msg{display:flex;flex-direction:column;max-width:min(80%,560px);animation:oc-msg-in .2s cubic-bezier(.2,0,0,1)}
 @keyframes oc-msg-in{from{opacity:0;transform:translateY(4px)}}
 .oc-msg-first{margin-top:8px}
-.oc-msg-them{align-self:flex-start;align-items:flex-start}
+.oc-msg-them{align-self:flex-start;align-items:flex-start;position:relative;box-sizing:border-box;padding-left:36px;max-width:min(calc(80% + 36px),596px)}
+.oc-msg-ava{position:absolute;left:0;top:0;display:flex}
+.oc-msg-author~.oc-msg-ava{top:18px}
 .oc-msg-omni,.oc-msg-you{align-self:flex-end;align-items:flex-end}
 .oc-msg-author{display:inline-flex;align-items:center;gap:4px;margin:0 10px 2px;font-size:12px;line-height:16px;font-weight:600;color:var(--bt-ink-2)}
 .oc-msg-omni .oc-msg-author{color:var(--bt-accent)}
@@ -13391,7 +13453,7 @@ body[data-ds-dark-theme] :is(.oc-chat,.op-pane){--oc-wall:var(--bt-main);--oc-in
 .oc-msg-them.oc-msg-first .oc-bubble::before{left:-7px;clip-path:polygon(0 0,100% 0,100% 100%)}
 :is(.oc-msg-omni,.oc-msg-you).oc-msg-first .oc-bubble{border-top-right-radius:0}
 :is(.oc-msg-omni,.oc-msg-you).oc-msg-first .oc-bubble::before{right:-7px;clip-path:polygon(0 0,100% 0,0 100%)}
-.oc-meta{float:right;position:relative;display:inline-flex;align-items:center;gap:3px;margin:6px -2px -5px 12px;font-size:11px;line-height:15px;white-space:nowrap;color:var(--bt-ink-2)}
+.oc-meta{float:right;position:relative;display:inline-flex;align-items:center;gap:3px;margin:6px -2px -5px 12px;font-size:11px;line-height:15px;white-space:nowrap;color:color-mix(in srgb,var(--bt-ink) 70%,transparent)}
 .oc-meta time{font-variant-numeric:tabular-nums}
 .oc-tick{display:inline-flex;align-items:center}
 .oc-tick svg{width:15px;height:15px}
@@ -15773,7 +15835,7 @@ function SendSwitch({ thread }) {
   );
 }
 var PHONE_TEXT_MAX = 4096;
-function PhoneComposer({ thread }) {
+function PhoneComposer({ thread, sent }) {
   const [text, setText] = (0, import_react12.useState)("");
   const [editing, setEditing] = (0, import_react12.useState)(null);
   const [sending, setSending] = (0, import_react12.useState)(false);
@@ -15787,11 +15849,14 @@ function PhoneComposer({ thread }) {
     busy.current = true;
     setSending(true);
     setProblem(null);
+    const shown = sent?.add(message);
     try {
-      await call("omni-phone-send", { threadId: thread.id, text: message, ...editing === null ? {} : { draftId: editing } });
+      const reply = await call("omni-phone-send", { threadId: thread.id, text: message, ...editing === null ? {} : { draftId: editing } });
+      sent?.answered(shown, reply?.messageId);
       setText("");
       setEditing(null);
     } catch (error) {
+      sent?.drop(shown);
       console.warn("Could not send the message:", error);
       setProblem(typeof error?.message === "string" && error.message !== "" ? error.message : "Could not send this message. Check your connection and access, then try again.");
     } finally {
@@ -15845,7 +15910,8 @@ function PhonePane({ params, sessionId, useRoster, visible = true }) {
   const thread = useRoster((roster) => phoneThreadOf(roster, params, sessionId));
   const read = useChatPoll(thread?.chatId ?? null, visible);
   const overview = useOmni();
-  const messages = read.messages ?? [];
+  const sent = useSent(thread?.chatId ?? null, read.messages);
+  const messages = withSent(read.messages ?? [], sent.messages).messages;
   const { scroller, onScroll, onSized } = useStayAtEnd(thread?.chatId, messages.length);
   if (!thread) {
     const named = typeof params?.threadId === "string" || typeof params?.chatId === "string";
@@ -15854,12 +15920,13 @@ function PhonePane({ params, sessionId, useRoster, visible = true }) {
   const loading = read.messages === null && read.error === null;
   const name = threadName(thread);
   const cut = thread.connected === false && Boolean(thread.reason);
+  const chat = chatOf(overview, thread.chatId);
   return (0, import_react12.createElement)(
     "div",
     { className: "op-pane", "data-thread-id": thread.id, role: "region", "aria-label": t("Chat with {name}", { name }) },
     (0, import_react12.createElement)(
       ChatHead,
-      { className: "op-head", chat: chatOf(overview, thread.chatId), name, status: cut ? threadReason(thread) : channelOf(overview, thread.channelId)?.name ?? null, off: cut },
+      { className: "op-head", chat, name, status: cut ? threadReason(thread) : channelOf(overview, thread.channelId)?.name ?? null, off: cut },
       (0, import_react12.createElement)(SendSwitch, { thread })
     ),
     (0, import_react12.createElement)(
@@ -15870,12 +15937,37 @@ function PhonePane({ params, sessionId, useRoster, visible = true }) {
         { className: "oc-thread-in" },
         loading ? (0, import_react12.createElement)("div", { className: "oc-day" }, (0, import_react12.createElement)("span", { className: "oc-spinner", "aria-hidden": true }), t("Loading messages…")) : null,
         read.error ? (0, import_react12.createElement)("p", { className: "op-note", role: "alert" }, hostText(read.error)) : null,
-        read.messages?.length === 0 ? (0, import_react12.createElement)("p", { className: "op-note" }, t("No messages yet")) : null,
-        (0, import_react12.createElement)(ChatMessages, { messages, onSized })
+        read.messages !== null && messages.length === 0 ? (0, import_react12.createElement)("p", { className: "op-note" }, t("No messages yet")) : null,
+        (0, import_react12.createElement)(ChatMessages, { messages, onSized, chat: chat ?? { name, kind: thread.kind === "group" ? "group" : "direct" } })
       )
     ),
-    (0, import_react12.createElement)(PhoneComposer, { thread })
+    (0, import_react12.createElement)(PhoneComposer, { thread, sent })
   );
+}
+function useSent(chatId, rows) {
+  const [held, setHeld] = (0, import_react12.useState)({ chatId, messages: [] });
+  const latest = (0, import_react12.useRef)(rows);
+  latest.current = rows;
+  const messages = held.chatId === chatId ? held.messages : [];
+  (0, import_react12.useEffect)(() => {
+    if (rows === null) return;
+    setHeld((before) => {
+      if (before.chatId !== chatId || before.messages.length === 0) return before;
+      const { left } = withSent(rows, before.messages);
+      return left.length === before.messages.length ? before : { chatId, messages: left };
+    });
+  }, [chatId, rows]);
+  const change = (0, import_react12.useMemo)(() => (update) => setHeld((before) => ({ chatId, messages: update(before.chatId === chatId ? before.messages : []) })), [chatId]);
+  return (0, import_react12.useMemo)(() => ({
+    messages,
+    add(text) {
+      const message = sentMessage(text, latest.current ?? []);
+      change((messages2) => [...messages2, message]);
+      return message.id;
+    },
+    answered: (id, messageId) => change((messages2) => messages2.map((message) => message.id === id ? sentAnswered(message, messageId) : message)),
+    drop: (id) => change((messages2) => messages2.filter((message) => message.id !== id))
+  }), [messages, change]);
 }
 var KEPT_KEY = "omni.phone.tabs";
 var KEPT_TABS = 50;

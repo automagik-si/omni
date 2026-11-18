@@ -139,6 +139,7 @@ export const SOURCE_ROUTES = [
   {"method":"GET","path":"/events/consumers/{name}","summary":"Inspect one consumer (filter + cursor + lag)","tag":"event-consumers"},
   {"method":"POST","path":"/events/consumers/{name}/ack","summary":"Advance the cursor (monotonic)","tag":"event-consumers","body":"AckConsumerSchema"},
   {"method":"POST","path":"/events/consumers/{name}/pull","summary":"Page events from the stored cursor","tag":"event-consumers","query":"PullConsumerQuerySchema"},
+  {"method":"POST","path":"/events/consumers/{name}/seek","summary":"Seek the cursor backward or forward (audited, RFC-0002)","tag":"event-consumers","body":"SeekConsumerSchema"},
   {"method":"GET","path":"/events/consumers/{name}/stream","summary":"SSE push from the journal (opt-in)","tag":"event-consumers"},
   {"method":"GET","path":"/events/schemas","summary":"List registered event schemas","tag":"event-schemas","query":"z.object({ enabled: z.coerce.boolean().optional(), })"},
   {"method":"POST","path":"/events/schemas","summary":"Register or (compatibly) revise an event schema","tag":"event-schemas","body":"RegisterEventSchemaSchema"},

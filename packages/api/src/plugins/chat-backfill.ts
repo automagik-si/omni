@@ -2,6 +2,7 @@ import type { ChannelRegistry, HistorySyncMessage, HistorySyncMutation } from '@
 import type { ChatCoverage } from '@omni/core/events';
 import type { SyncJob, SyncJobProgress } from '@omni/db';
 import type { Services } from '../services';
+import { isStaleChatBackfill } from '../services/sync-jobs';
 
 type WorkScope = <T>(fn: () => Promise<T>) => Promise<T>;
 
@@ -31,7 +32,7 @@ export async function waitForBackfillTurn(options: {
 }): Promise<SyncJob | null> {
   for (;;) {
     const current = await options.get();
-    if (current.status !== 'pending') return null;
+    if (current.status !== 'pending' && !isStaleChatBackfill(current)) return null;
     if (!(await options.historyPushBlocking())) {
       const claimed = await options.claim();
       if (claimed) return claimed;
@@ -132,9 +133,18 @@ export async function processChatBackfill(options: {
   const config = job.config.backfill;
   if (!config) throw new Error('Missing chat backfill configuration');
   const progress: SyncJobProgress = { ...job.progress, state: 'fetching' };
+  let lastHeartbeatAt = Date.now();
   const cancelled = async () => {
     await assertAdmissible();
-    return (await jobs.getById(jobId, tenantId)).status === 'cancelled';
+    if ((await jobs.getById(jobId, tenantId)).status !== 'running') return true;
+    const now = Date.now();
+    if (now - lastHeartbeatAt >= 60_000) {
+      // Wait/drain polls also keep a slow round alive. Reserve the interval before
+      // awaiting, since message callbacks can check ownership concurrently.
+      lastHeartbeatAt = now;
+      return (await jobs.heartbeatBackfill(jobId, tenantId)).status !== 'running';
+    }
+    return false;
   };
   const publishProgress = () => jobs.updateProgress(jobId, progress, tenantId);
   await publishProgress();

@@ -40,10 +40,14 @@ import {
   applyTenancyRoles,
   applyTenantRlsEnforcement,
   createDbHandle,
+  syncJobs,
 } from '@omni/db';
 import { assertPgTestRole, driverRejection, pgRoleUrl, provisionMigratedDatabase } from '@omni/db/pg-migrated-template';
 import { dropDatabaseOrThrow } from '@omni/db/pg-testing';
-import { SyncJobService } from '../sync-jobs';
+import { eq } from 'drizzle-orm';
+import { scopedHandle } from '../../tenancy/tenant-scope';
+import { runInWorkerTenantScope } from '../../tenancy/worker-tenant-context';
+import { CHAT_BACKFILL_STALE_MS, SyncJobService } from '../sync-jobs';
 
 const superUrl = process.env.OMNI_G4_POSTGRES_URL ?? '';
 const postgresDescribe = superUrl.length > 0 ? describe : describe.skip;
@@ -215,6 +219,7 @@ postgresDescribe('two-tenant sync-job containment (real PostgreSQL)', () => {
     await expect(service.complete(aJob.id, TENANT_B)).rejects.toThrow(/not found/i);
     await expect(service.fail(aJob.id, 'forged', TENANT_B)).rejects.toThrow(/not found/i);
     await expect(service.updateProgress(aJob.id, { fetched: 99 }, TENANT_B)).rejects.toThrow(/not found/i);
+    await expect(service.heartbeatBackfill(aJob.id, TENANT_B)).rejects.toThrow(/not found/i);
 
     // A's own job is untouched and still advances normally.
     expect((await service.getById(aJob.id, TENANT_A)).status).toBe('pending');
@@ -291,4 +296,132 @@ postgresDescribe('two-tenant sync-job containment (real PostgreSQL)', () => {
       await service.complete(waiting.id, TENANT_B);
     });
   }
+  const makeRecoverableJob = () =>
+    service.create({
+      instanceId: INSTANCE_B,
+      channelType: 'whatsapp-baileys',
+      type: 'messages',
+      tenantId: TENANT_B,
+      config: {
+        backfill: {
+          chatId: '33333333-3333-4333-8333-333333333333',
+          chatJid: 'chat@jid',
+          from: '2026-01-01T00:00:00Z',
+          to: '2026-02-01T00:00:00Z',
+        },
+      },
+    });
+
+  async function setActivity(id: string, recentProgress = false) {
+    const job = await service.getById(id, TENANT_B);
+    const old = new Date(Date.now() - CHAT_BACKFILL_STALE_MS - 60_000);
+    await runInWorkerTenantScope(runtimeDb, TENANT_B, () =>
+      scopedHandle(runtimeDb)
+        .update(syncJobs)
+        .set({
+          startedAt: old,
+          progress: { ...job.progress, lastProgressAt: (recentProgress ? new Date() : old).toISOString() },
+        })
+        .where(eq(syncJobs.id, id)),
+    );
+    return old;
+  }
+
+  test('a redelivered stale running backfill is reclaimed only once', async () => {
+    const job = await makeRecoverableJob();
+    await service.claimBackfill(job.id, TENANT_B);
+    const old = await setActivity(job.id);
+    const attempts = await Promise.all([
+      service.claimBackfill(job.id, TENANT_B),
+      service.claimBackfill(job.id, TENANT_B),
+    ]);
+    const reclaimed = attempts.filter((attempt) => attempt !== null);
+    expect(reclaimed).toHaveLength(1);
+    expect(reclaimed[0]?.status).toBe('running');
+    expect(reclaimed[0]!.startedAt!.getTime()).toBeGreaterThan(old.getTime());
+    expect(new Date(reclaimed[0]!.progress.lastProgressAt!).getTime()).toBeGreaterThan(old.getTime());
+    await service.complete(job.id, TENANT_B);
+  });
+
+  test('the next backfill releases an abandoned blocker and reports its failure', async () => {
+    const abandoned = await makeRecoverableJob();
+    await service.claimBackfill(abandoned.id, TENANT_B);
+    await setActivity(abandoned.id);
+    const next = await makeRecoverableJob();
+    published.length = 0;
+    expect((await service.claimBackfill(next.id, TENANT_B))?.id).toBe(next.id);
+    const ended = await service.getById(abandoned.id, TENANT_B);
+    expect(ended.status).toBe('failed');
+    expect(ended.progress.state).toBe('failed');
+    expect(published.some((event) => event.type === 'sync.failed' && event.metadata?.tenantId === TENANT_B)).toBe(true);
+    await service.complete(next.id, TENANT_B);
+  });
+
+  for (const type of ['messages', 'all'] as const) {
+    test(`a legacy ${type} request releases an abandoned backfill`, async () => {
+      const abandoned = await makeRecoverableJob();
+      await service.claimBackfill(abandoned.id, TENANT_B);
+      await setActivity(abandoned.id);
+      const legacy = await service.create({
+        instanceId: INSTANCE_B,
+        channelType: 'whatsapp-baileys',
+        type,
+        tenantId: TENANT_B,
+      });
+      expect((await service.start(legacy.id, TENANT_B)).status).toBe('running');
+      expect((await service.getById(abandoned.id, TENANT_B)).status).toBe('failed');
+      await service.complete(legacy.id, TENANT_B);
+    });
+  }
+
+  test('a heartbeat preserves counters and protects a long round from competing requests', async () => {
+    const active = await makeRecoverableJob();
+    await service.claimBackfill(active.id, TENANT_B);
+    await service.updateProgress(active.id, { fetched: 7, stored: 5, mediaDownloaded: 2 }, TENANT_B);
+    const old = await setActivity(active.id);
+    const heartbeat = await service.heartbeatBackfill(active.id, TENANT_B);
+    expect(heartbeat.progress).toMatchObject({ fetched: 7, stored: 5, mediaDownloaded: 2 });
+    expect(new Date(heartbeat.progress.lastProgressAt!).getTime()).toBeGreaterThan(old.getTime());
+    const next = await makeRecoverableJob();
+    const legacy = await service.create({
+      instanceId: INSTANCE_B,
+      channelType: 'whatsapp-baileys',
+      type: 'messages',
+      tenantId: TENANT_B,
+    });
+    expect(await service.claimBackfill(next.id, TENANT_B)).toBeNull();
+    expect((await service.start(legacy.id, TENANT_B)).status).toBe('pending');
+    expect((await service.getById(active.id, TENANT_B)).status).toBe('running');
+    await service.fail(active.id, 'owner expired', TENANT_B);
+    const failed = await service.getById(active.id, TENANT_B);
+    const late = await service.heartbeatBackfill(active.id, TENANT_B);
+    expect(late.status).toBe('failed');
+    expect(late.progress).toEqual(failed.progress);
+    await service.start(legacy.id, TENANT_B);
+    await service.complete(legacy.id, TENANT_B);
+    expect((await service.claimBackfill(next.id, TENANT_B))?.id).toBe(next.id);
+    await service.complete(next.id, TENANT_B);
+  });
+
+  test('recent progress keeps an older running backfill protected', async () => {
+    const active = await makeRecoverableJob();
+    await service.claimBackfill(active.id, TENANT_B);
+    await setActivity(active.id, true);
+    const next = await makeRecoverableJob();
+    const legacy = await service.create({
+      instanceId: INSTANCE_B,
+      channelType: 'whatsapp-baileys',
+      type: 'messages',
+      tenantId: TENANT_B,
+    });
+    expect(await service.claimBackfill(active.id, TENANT_B)).toBeNull();
+    expect(await service.claimBackfill(next.id, TENANT_B)).toBeNull();
+    expect((await service.start(legacy.id, TENANT_B)).status).toBe('pending');
+    expect((await service.getById(active.id, TENANT_B)).status).toBe('running');
+    await service.complete(active.id, TENANT_B);
+    await service.start(legacy.id, TENANT_B);
+    await service.complete(legacy.id, TENANT_B);
+    expect((await service.claimBackfill(next.id, TENANT_B))?.id).toBe(next.id);
+    await service.complete(next.id, TENANT_B);
+  });
 });

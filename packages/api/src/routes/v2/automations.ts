@@ -8,6 +8,7 @@ import { type Env, Hono } from 'hono';
 import { z } from 'zod';
 import { strictConfig } from '../../lib/strict-config';
 import type { AutomationTestEvent } from '../../services/automations';
+import { type JournalReader, journalReader } from '../../services/journal-visibility';
 import type { AppVariables } from '../../types';
 
 const automationsRoutes = new Hono<{ Variables: AppVariables }>();
@@ -279,9 +280,10 @@ const testAutomationSchema = z
 async function resolveTestEvent(
   services: AppVariables['services'],
   body: z.infer<typeof testAutomationSchema>,
+  reader: JournalReader,
 ): Promise<AutomationTestEvent> {
   if (body.event) return body.event;
-  const row = await services.events.getById(body.eventId as string);
+  const row = await services.events.getById(body.eventId as string, reader);
   return {
     id: row.id,
     type: row.eventType,
@@ -468,7 +470,7 @@ automationsRoutes.post('/:id/disable', async (c) => {
 automationsRoutes.post('/:id/test', zValidator('json', testAutomationSchema), async (c) => {
   const id = c.req.param('id');
   const services = c.get('services');
-  const event = await resolveTestEvent(services, c.req.valid('json'));
+  const event = await resolveTestEvent(services, c.req.valid('json'), journalReader(c.get('apiKey')));
 
   const result = await services.automations.test(id, event);
 
@@ -481,7 +483,7 @@ automationsRoutes.post('/:id/test', zValidator('json', testAutomationSchema), as
 automationsRoutes.post('/:id/execute', zValidator('json', testAutomationSchema), async (c) => {
   const id = c.req.param('id');
   const services = c.get('services');
-  const event = await resolveTestEvent(services, c.req.valid('json'));
+  const event = await resolveTestEvent(services, c.req.valid('json'), journalReader(c.get('apiKey')));
 
   const result = await services.automations.execute(id, event, {
     eventBus: services.eventBus,

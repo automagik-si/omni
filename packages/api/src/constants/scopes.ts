@@ -211,6 +211,7 @@ export const SCOPE_MAP: Record<string, string> = {
   'DELETE /events/consumers/:name': 'events:consume',
   'POST /events/consumers/:name/pull': 'events:consume',
   'POST /events/consumers/:name/ack': 'events:consume',
+  'POST /events/consumers/:name/seek': 'events:consume',
   'GET /events/consumers/:name/stream': 'events:consume', // same as pull
 
   // --- events ---

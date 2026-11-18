@@ -2932,7 +2932,9 @@ export class WhatsAppPlugin extends BaseChannelPlugin {
       this.logger.info('History fetch completed', { instanceId, totalMessages: messages.length });
       return { totalFetched: messages.length, messages };
     } finally {
-      this.historySyncCallbacks.delete(instanceId);
+      if (this.historySyncCallbacks.get(instanceId) === syncState) {
+        this.historySyncCallbacks.delete(instanceId);
+      }
     }
   }
 
@@ -4457,6 +4459,25 @@ export class WhatsAppPlugin extends BaseChannelPlugin {
     // TODO: Emit media.update event
   }
 
+  private historyStateForBatch(instanceId: string, syncType: proto.HistorySync.HistorySyncType | null | undefined) {
+    const state = this.historySyncCallbacks.get(instanceId);
+    return state?.chatJid && syncType !== proto.HistorySync.HistorySyncType.ON_DEMAND ? undefined : state;
+  }
+
+  private historyStateForMessage(msg: WAMessage, state: ReturnType<WhatsAppPlugin['historyStateForBatch']>) {
+    return state?.chatJid && msg.key.remoteJid !== state.chatJid ? undefined : state;
+  }
+
+  private keepHistoryReply(
+    instanceId: string,
+    msg: WAMessage,
+    state: ReturnType<WhatsAppPlugin['historyStateForBatch']>,
+  ): boolean {
+    if (state && !state.chatJid) return true;
+    if (msg.key.remoteJid === state?.chatJid) return true;
+    return !this.backfillChats.get(instanceId)?.has(msg.key.remoteJid ?? '');
+  }
+
   /**
    * Handle history sync (initial load)
    * Processes messages from `messaging-history.set` event
@@ -4474,10 +4495,10 @@ export class WhatsAppPlugin extends BaseChannelPlugin {
     },
   ): Promise<void> {
     const { contacts, messages: incomingMessages, progress, isLatest, syncType } = history;
-    const syncState = this.historySyncCallbacks.get(instanceId);
+    const syncState = this.historyStateForBatch(instanceId, syncType);
     const messages =
-      !syncState && syncType === proto.HistorySync.HistorySyncType.ON_DEMAND
-        ? incomingMessages.filter((msg) => !this.backfillChats.get(instanceId)?.has(msg.key.remoteJid ?? ''))
+      syncType === proto.HistorySync.HistorySyncType.ON_DEMAND
+        ? incomingMessages.filter((msg) => this.keepHistoryReply(instanceId, msg, syncState))
         : incomingMessages;
 
     this.logger.debug('Processing history sync batch', {
@@ -4506,9 +4527,9 @@ export class WhatsAppPlugin extends BaseChannelPlugin {
     const skippedBefore = syncState?.skippedBeforeSince ?? 0;
     for (let i = 0; i < messages.length; i += BATCH_SIZE) {
       const batch = messages.slice(i, i + BATCH_SIZE);
-      const work = Promise.all(batch.map((msg) => this.processHistoryMessage(instanceId, msg, syncState))).then(
-        () => undefined,
-      );
+      const work = Promise.all(
+        batch.map((msg) => this.processHistoryMessage(instanceId, msg, this.historyStateForMessage(msg, syncState))),
+      ).then(() => undefined);
       syncState?.pending?.add(work);
       try {
         await work;
