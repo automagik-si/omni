@@ -6,8 +6,14 @@
  */
 
 import type { Boom } from '@hapi/boom';
-import type { AuthenticationState, GroupMetadata, WAMessageKey, WASocket, proto } from 'baileys';
-import { Browsers, DisconnectReason, fetchLatestBaileysVersion, default as makeWASocket } from 'baileys';
+import type { AuthenticationState, GroupMetadata, WAMessageKey, WASocket, WAVersion, proto } from 'baileys';
+import {
+  Browsers,
+  DEFAULT_CONNECTION_CONFIG,
+  DisconnectReason,
+  fetchLatestBaileysVersion,
+  default as makeWASocket,
+} from 'baileys';
 import NodeCache from 'node-cache';
 import pino from 'pino';
 
@@ -168,6 +174,34 @@ function createLogger(level: string) {
   });
 }
 
+const VERSION_LOOKUP_TIMEOUT_MS = 5_000;
+let lastGoodVersion = DEFAULT_CONNECTION_CONFIG.version;
+let pendingVersion: Promise<WAVersion> | undefined;
+
+function socketVersion(): Promise<WAVersion> {
+  if (pendingVersion) return pendingVersion;
+
+  // The vendored helper cannot abort its fetch. Keep sharing the bounded result
+  // while the request is outstanding so reconnects don't pile up stuck fetches.
+  const lookup = fetchLatestBaileysVersion()
+    .then(
+      ({ version, isLatest }) => {
+        if (isLatest) lastGoodVersion = version;
+        return lastGoodVersion;
+      },
+      () => lastGoodVersion,
+    )
+    .finally(() => {
+      pendingVersion = undefined;
+    });
+  let timer: ReturnType<typeof setTimeout>;
+  const deadline = new Promise<WAVersion>((resolve) => {
+    timer = setTimeout(() => resolve(lastGoodVersion), VERSION_LOOKUP_TIMEOUT_MS);
+  });
+  pendingVersion = Promise.race([lookup, deadline]).finally(() => clearTimeout(timer));
+  return pendingVersion;
+}
+
 /**
  * Create a new Baileys WASocket with the given configuration
  *
@@ -180,8 +214,7 @@ export async function createSocket(config: SocketConfig): Promise<WASocket> {
   const logger = createLogger(mergedConfig.logLevel);
   const { browser, supportGroupHistory } = resolveHistoryIdentity(mergedConfig);
 
-  // Get latest Baileys version for compatibility
-  const { version } = await fetchLatestBaileysVersion();
+  const version = await socketVersion();
 
   // Create message retry counter cache
   const msgRetryCounterCache = new NodeCache();
