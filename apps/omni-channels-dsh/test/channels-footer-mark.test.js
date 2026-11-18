@@ -9,7 +9,8 @@ import { omni } from './omni-client.js'
 // The team's OmniMark, counted: the control must draw it (at 16) and nothing else where the
 // channel logos used to be.
 const seen = []
-const team = { omni: { ...omni, ui: { ...omni.ui, OmniMark: props => { seen.push(props); return null } } } }
+const OMNI_MARK_ATTR = 'data-omni-mark'
+const team = { omni: { ...omni, ui: { ...omni.ui, OmniMark: props => { seen.push(props); return react.createElement('svg', { [OMNI_MARK_ATTR]: String(props.size) }, []) } } } }
 const ui = await bundleClient([
   "export { ChannelsFooter, CHANNELS_CSS } from './channels.js'",
 ], {
@@ -26,7 +27,11 @@ test('the Channels control draws the Omni mark, not the channels logos', () => {
     assert.ok(button, 'the footer control draws its button')
     assert.equal(seen.length, 1, 'the button draws one mark')
     assert.equal(Number(seen[0].size), 16, 'at the size the bar uses for a control icon')
-    assert.equal(nodes(button).some(node => String(node.props?.className ?? '') === 'bt-channels-mark'), true, 'in the mark slot the app styles')
+    const slot = nodes(button).find(node => String(node.props?.className ?? '') === 'bt-channels-mark')
+    assert.ok(slot, 'the button draws the mark slot the app styles')
+    const drawn = nodes(slot).find(node => node.props?.[OMNI_MARK_ATTR] !== undefined)
+    assert.ok(drawn, 'the mark element itself sits inside that slot')
+    assert.equal(drawn.props[OMNI_MARK_ATTR], '16', 'drawn from the 16px props, not from a stray child')
     // The old shape: the connected channels as overlapping tiles. It must not come back.
     const inside = nodes(button)
     assert.equal(inside.some(node => String(node.props?.className ?? '').includes('bt-channels-tiles')), false, 'no tile stack in the control')
