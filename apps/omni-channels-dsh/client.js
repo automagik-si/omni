@@ -8976,7 +8976,7 @@ module.exports = __toCommonJS(index_exports);
 
 // src/client/core.js
 var import_client = require("@automagik/bots-dsh/client");
-var { call, t, hostText, addStrings, onShell, toolCards, nav, badges, botChildren, headerButtons, botSettings, chatSuggestions } = import_client.omni;
+var { call, t, hostText, addStrings, onShell, toolCards, nav, badges, botChildren, botChannels, headerButtons, botSettings, chatSuggestions, face } = import_client.omni;
 var { OmniMark, BotMark, MAIN_LOOK, CHARACTERS, relativeShort, createSource } = import_client.omni.ui;
 var icons = import_client.omni.ui.icons;
 
@@ -11361,7 +11361,8 @@ async function loadMessages(call2, chatId) {
 }
 async function refreshLive(call2) {
   const generation = dataGeneration;
-  const reply = await call2("omni-overview");
+  const { preview, chatId } = omniStore.getSnapshot();
+  const reply = await (preview || chatId === null ? call2("omni-overview") : call2("omni-overview", { chatId }));
   if (generation !== dataGeneration || deleting.size) return;
   if (!reply.configured) {
     set((state) => state.preview ? { source: { kind: "preview", missing: reply.missing } } : {});
@@ -15732,10 +15733,10 @@ function phoneSurfaceIs(right, thread) {
   const screen = right.screen();
   return screen !== void 0 && screen.sessionId === thread.sessionId;
 }
-function installPhone(ctx, face) {
+function installPhone(ctx, face2) {
   const fiber = ctx.inject(["sidebarRight", "sidebarRightTabs"], (scope) => {
     scope.effect(() => scope.sidebarRightTabs.register(phoneTabDefinition()), "ds-bot: phone tab type");
-    scope.effect(() => ctx.slots.inject("sidebar.right.pane.tab", () => ctx.slots.register({ name: "sidebar.right.pane.tab", key: PHONE_TAB_ID, inject: face }, PhoneTab)), "ds-bot: phone tab");
+    scope.effect(() => ctx.slots.inject("sidebar.right.pane.tab", () => ctx.slots.register({ name: "sidebar.right.pane.tab", key: PHONE_TAB_ID, inject: face2 }, PhoneTab)), "ds-bot: phone tab");
     scope.effect(() => {
       phoneRight = scope.sidebarRight;
       return () => {
@@ -16599,8 +16600,77 @@ var AUTOMATIONS_CSS = `
 @media (max-width:720px){.oa-in{padding:20px 16px 40px}}
 `;
 
-// src/client/code-pattern.js
+// src/client/bot-channels.js
 var import_react15 = require("react");
+var SOURCE_ID = "omni-channels";
+var CHATS_FRESH_MS = 1e4;
+var CHATS_POLL_MS = 15e3;
+var BOT_CHANNELS_CSS = `
+body{--oc-in:color-mix(in srgb,var(--bt-magic-pink) 16%,var(--bt-card));--oc-out:color-mix(in srgb,var(--bt-accent) 20%,var(--bt-card))}
+body[data-ds-dark-theme]{--oc-in:color-mix(in srgb,var(--bt-magic-pink) 26%,var(--bt-bubble));--oc-out:color-mix(in srgb,var(--bt-accent) 34%,var(--bt-bubble))}
+`;
+var NONE = Object.freeze({});
+var noSubscribe = () => () => {
+};
+var rosterOf = () => face?.()?.hooks?.roster ?? null;
+var channelsNow = () => rosterOf()?.getSnapshot?.()?.omniBotChannels ?? NONE;
+var ownsBot = (bot) => typeof bot?.id === "string" && Object.hasOwn(channelsNow(), bot.id);
+var chatsStore = createSource({});
+var reading = /* @__PURE__ */ new Map();
+function readChats(botId, { now = Date.now() } = {}) {
+  const kept = chatsStore.getSnapshot()[botId];
+  if (kept !== void 0 && now - kept.at < CHATS_FRESH_MS) return Promise.resolve(kept);
+  if (reading.has(botId)) return reading.get(botId);
+  const read = call("omni-bot-chats", { botId }).then((answer) => {
+    const byChannel = Object.fromEntries((Array.isArray(answer?.channels) ? answer.channels : []).map((channel) => [channel.channelId, Array.isArray(channel.chats) ? channel.chats : []]));
+    const next = { at: Date.now(), byChannel };
+    chatsStore.set((all) => ({ ...all, [botId]: next }));
+    return next;
+  }, (error) => {
+    console.warn("Could not read this Bot's chats:", error);
+    return kept ?? null;
+  }).finally(() => {
+    reading.delete(botId);
+  });
+  reading.set(botId, read);
+  return read;
+}
+var readOf = (chats, seen = {}) => chats?.map((chat) => chat.unread > 0 && (seen[chat.id] ?? -1) >= chat.lastAt ? { ...chat, unread: 0 } : chat);
+function useBotChannels(botId, { open = false } = {}) {
+  const roster = rosterOf();
+  const channels2 = (0, import_react15.useSyncExternalStore)(roster?.subscribe ?? noSubscribe, () => roster?.getSnapshot?.()?.omniBotChannels?.[botId]);
+  const loads = open === true && channels2 !== void 0;
+  const chats = (0, import_react15.useSyncExternalStore)(chatsStore.subscribe, () => chatsStore.getSnapshot()[botId]);
+  const seen = (0, import_react15.useSyncExternalStore)(omniStore.subscribe, () => omniStore.getSnapshot().seen);
+  (0, import_react15.useEffect)(() => {
+    if (!loads) return void 0;
+    void readChats(botId);
+    const timer = setInterval(() => {
+      if (typeof document === "undefined" || !document.hidden) void readChats(botId);
+    }, CHATS_POLL_MS);
+    return () => clearInterval(timer);
+  }, [botId, loads]);
+  return (0, import_react15.useMemo)(() => channels2 === void 0 ? void 0 : channels2.map((channel) => loads ? { ...channel, chats: readOf(chats?.byChannel?.[channel.id], seen) } : channel), [channels2, chats, loads, seen]);
+}
+async function openBotChat(chatId) {
+  const actions = face?.()?.actions;
+  if (typeof chatId !== "string" || typeof actions?.selectPanel !== "function") return;
+  const warn = (error) => console.warn("Could not read Omni:", error);
+  if (omniStore.getSnapshot().preview) await refreshLive(call).catch(warn);
+  if (!omniStore.getSnapshot().preview && !omniStore.getSnapshot().chats.some((chat) => chat.id === chatId)) {
+    omniStore.set((state) => ({ ...state, chatId }));
+    await refreshLive(call).catch(warn);
+  }
+  startLive(call);
+  omniActions((id) => actions.selectPanel(id), call).openChat(chatId);
+}
+function registerBotChannels(registry) {
+  if (typeof registry?.register !== "function") return void 0;
+  return registry.register({ id: SOURCE_ID, owns: ownsBot, useChannels: useBotChannels, open: (chatId) => void openBotChat(chatId) });
+}
+
+// src/client/code-pattern.js
+var import_react16 = require("react");
 var PATTERN_LENGTH_MIN = 4;
 var PATTERN_LENGTH_MAX = 64;
 var patternFields = (pattern) => ({
@@ -16626,43 +16696,43 @@ function patternSummary(pattern) {
 function PatternFields({ value, onChange, locked = false, prefixRequired = false }) {
   const set3 = (key, next) => onChange({ ...value, [key]: next });
   const lookAlikes = t("Read look-alike characters as one (O and 0; I, L and 1)");
-  return (0, import_react15.createElement)(
+  return (0, import_react16.createElement)(
     "fieldset",
     { className: "ot-pattern", disabled: locked, "aria-label": t("Code pattern") },
-    (0, import_react15.createElement)(
+    (0, import_react16.createElement)(
       "div",
       { className: "ot-pattern-row" },
-      (0, import_react15.createElement)(
+      (0, import_react16.createElement)(
         "label",
         { className: "ot-answer-label ot-pattern-prefix" },
-        (0, import_react15.createElement)("span", { className: "bt-field-label" }, prefixRequired ? t("Prefix") : t("Prefix (optional)")),
-        (0, import_react15.createElement)("input", { className: "bt-input", type: "text", value: value.prefix, maxLength: 16, spellCheck: false, autoComplete: "off", onChange: (event) => set3("prefix", event.target.value) })
+        (0, import_react16.createElement)("span", { className: "bt-field-label" }, prefixRequired ? t("Prefix") : t("Prefix (optional)")),
+        (0, import_react16.createElement)("input", { className: "bt-input", type: "text", value: value.prefix, maxLength: 16, spellCheck: false, autoComplete: "off", onChange: (event) => set3("prefix", event.target.value) })
       ),
-      (0, import_react15.createElement)(
+      (0, import_react16.createElement)(
         "label",
         { className: "ot-answer-label ot-pattern-length" },
-        (0, import_react15.createElement)("span", { className: "bt-field-label" }, t("Length")),
-        (0, import_react15.createElement)("input", { className: "bt-input", type: "number", min: PATTERN_LENGTH_MIN, max: PATTERN_LENGTH_MAX, step: 1, inputMode: "numeric", value: value.length, onChange: (event) => set3("length", event.target.value) })
+        (0, import_react16.createElement)("span", { className: "bt-field-label" }, t("Length")),
+        (0, import_react16.createElement)("input", { className: "bt-input", type: "number", min: PATTERN_LENGTH_MIN, max: PATTERN_LENGTH_MAX, step: 1, inputMode: "numeric", value: value.length, onChange: (event) => set3("length", event.target.value) })
       )
     ),
-    (0, import_react15.createElement)(
+    (0, import_react16.createElement)(
       "label",
       { className: "ot-answer-label" },
-      (0, import_react15.createElement)("span", { className: "bt-field-label" }, t("Characters after the prefix")),
-      (0, import_react15.createElement)("input", { className: "bt-input ot-pattern-characters", type: "text", value: value.characters, maxLength: 72, spellCheck: false, autoComplete: "off", onChange: (event) => set3("characters", event.target.value) })
+      (0, import_react16.createElement)("span", { className: "bt-field-label" }, t("Characters after the prefix")),
+      (0, import_react16.createElement)("input", { className: "bt-input ot-pattern-characters", type: "text", value: value.characters, maxLength: 72, spellCheck: false, autoComplete: "off", onChange: (event) => set3("characters", event.target.value) })
     ),
     // The Bot team's switch, as the answer settings draw it.
-    (0, import_react15.createElement)(
+    (0, import_react16.createElement)(
       "div",
       { className: "ot-answer-switch" },
-      (0, import_react15.createElement)("span", null, lookAlikes),
-      (0, import_react15.createElement)(
+      (0, import_react16.createElement)("span", null, lookAlikes),
+      (0, import_react16.createElement)(
         "button",
         { type: "button", role: "switch", className: "bt-switch", disabled: locked, "aria-checked": value.lookAlikes, "aria-label": lookAlikes, onClick: () => set3("lookAlikes", !value.lookAlikes) },
-        (0, import_react15.createElement)("span", { className: "bt-switch-knob", "aria-hidden": true })
+        (0, import_react16.createElement)("span", { className: "bt-switch-knob", "aria-hidden": true })
       )
     ),
-    (0, import_react15.createElement)("span", { className: "bt-note" }, locked ? t("This list's pattern is set; new codes must fit it.") : t("Case never matters. A code stands alone in the message, not inside a longer word or number."))
+    (0, import_react16.createElement)("span", { className: "bt-note" }, locked ? t("This list's pattern is set; new codes must fit it.") : t("Case never matters. A code stands alone in the message, not inside a longer word or number."))
   );
 }
 var CODE_PATTERN_CSS = `
@@ -16676,7 +16746,7 @@ var CODE_PATTERN_CSS = `
 `;
 
 // src/client/code-lists.js
-var import_react16 = require("react");
+var import_react17 = require("react");
 var pad2 = (value) => String(value).padStart(2, "0");
 var endOfDay = (year, month, day) => {
   const at2 = new Date(year, month - 1, day, 23, 59, 59, 999);
@@ -16735,16 +16805,16 @@ var ruleDetailsText = (metadata = {}) => Object.values(metadata).every((value) =
 var stateText = (state) => state === "open" ? t("Open") : state === "used" ? t("Used") : state === "expired" ? t("Expired") : state;
 var detailsLine = (metadata) => Object.entries(metadata ?? {}).map(([key, value]) => `${key} = ${typeof value === "string" ? value : JSON.stringify(value)}`).join(" · ");
 function CodeLists() {
-  const [shown, setShown] = (0, import_react16.useState)(false);
-  const [view, setView] = (0, import_react16.useState)(null);
-  const [read, setRead] = (0, import_react16.useState)(0);
-  const [name, setName] = (0, import_react16.useState)("");
-  const [fields, setFields] = (0, import_react16.useState)(patternFields());
-  const [details, setDetails] = (0, import_react16.useState)("");
-  const [text, setText] = (0, import_react16.useState)("");
-  const [busy, setBusy] = (0, import_react16.useState)(false);
-  const [result, setResult] = (0, import_react16.useState)(null);
-  (0, import_react16.useEffect)(() => {
+  const [shown, setShown] = (0, import_react17.useState)(false);
+  const [view, setView] = (0, import_react17.useState)(null);
+  const [read, setRead] = (0, import_react17.useState)(0);
+  const [name, setName] = (0, import_react17.useState)("");
+  const [fields, setFields] = (0, import_react17.useState)(patternFields());
+  const [details, setDetails] = (0, import_react17.useState)("");
+  const [text, setText] = (0, import_react17.useState)("");
+  const [busy, setBusy] = (0, import_react17.useState)(false);
+  const [result, setResult] = (0, import_react17.useState)(null);
+  (0, import_react17.useEffect)(() => {
     if (!shown) return void 0;
     let alive = true;
     call("omni-code-lists", {}).then(
@@ -16760,7 +16830,7 @@ function CodeLists() {
     };
   }, [shown, read]);
   const known = view?.lists.find((list) => list.name === name.trim());
-  (0, import_react16.useEffect)(() => {
+  (0, import_react17.useEffect)(() => {
     if (!known) return;
     setFields(patternFields(known.pattern));
     setDetails(ruleDetailsText(known.metadata));
@@ -16789,69 +16859,69 @@ function CodeLists() {
     }
   };
   const label = t("Code lists");
-  return (0, import_react16.createElement)(
+  return (0, import_react17.createElement)(
     "div",
     { className: "ot-codes", role: "group", "aria-label": label },
-    (0, import_react16.createElement)(
+    (0, import_react17.createElement)(
       "div",
       { className: "ot-codes-head" },
-      (0, import_react16.createElement)("span", { className: "bt-field-label" }, shown && view !== null ? t("Code lists ({n})", { n: view.lists.length }) : label),
-      (0, import_react16.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", "aria-expanded": shown, onClick: () => setShown((before) => !before) }, shown ? t("Hide") : t("Show"))
+      (0, import_react17.createElement)("span", { className: "bt-field-label" }, shown && view !== null ? t("Code lists ({n})", { n: view.lists.length }) : label),
+      (0, import_react17.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", "aria-expanded": shown, onClick: () => setShown((before) => !before) }, shown ? t("Hide") : t("Show"))
     ),
-    shown ? (0, import_react16.createElement)("span", { className: "bt-note" }, t("A person whose first message carries an open code from a list is let in, once. Each code admits one person.")) : null,
-    shown ? (0, import_react16.createElement)(
+    shown ? (0, import_react17.createElement)("span", { className: "bt-note" }, t("A person whose first message carries an open code from a list is let in, once. Each code admits one person.")) : null,
+    shown ? (0, import_react17.createElement)(
       "label",
       { className: "ot-answer-label" },
-      (0, import_react16.createElement)("span", { className: "bt-field-label" }, t("List name")),
-      (0, import_react16.createElement)("input", { className: "bt-input", type: "text", value: name, maxLength: 60, list: "ot-code-list-names", spellCheck: false, autoComplete: "off", onChange: (event) => setName(event.target.value) }),
-      (0, import_react16.createElement)("datalist", { id: "ot-code-list-names" }, (view?.lists ?? []).map((list) => (0, import_react16.createElement)("option", { key: list.name, value: list.name })))
+      (0, import_react17.createElement)("span", { className: "bt-field-label" }, t("List name")),
+      (0, import_react17.createElement)("input", { className: "bt-input", type: "text", value: name, maxLength: 60, list: "ot-code-list-names", spellCheck: false, autoComplete: "off", onChange: (event) => setName(event.target.value) }),
+      (0, import_react17.createElement)("datalist", { id: "ot-code-list-names" }, (view?.lists ?? []).map((list) => (0, import_react17.createElement)("option", { key: list.name, value: list.name })))
     ) : null,
-    shown ? (0, import_react16.createElement)(PatternFields, { value: fields, onChange: setFields, locked: known !== void 0 }) : null,
-    shown ? (0, import_react16.createElement)(
+    shown ? (0, import_react17.createElement)(PatternFields, { value: fields, onChange: setFields, locked: known !== void 0 }) : null,
+    shown ? (0, import_react17.createElement)(
       "div",
       { className: "bt-field ot-answer-field" },
-      (0, import_react16.createElement)(
+      (0, import_react17.createElement)(
         "label",
         { className: "ot-answer-label" },
-        (0, import_react16.createElement)("span", { className: "bt-field-label" }, t("Rule details")),
-        (0, import_react16.createElement)("textarea", { className: "bt-input bt-input-area ot-codes-details", value: details, spellCheck: false, autoComplete: "off", onChange: (event) => setDetails(event.target.value) })
+        (0, import_react17.createElement)("span", { className: "bt-field-label" }, t("Rule details")),
+        (0, import_react17.createElement)("textarea", { className: "bt-input bt-input-area ot-codes-details", value: details, spellCheck: false, autoComplete: "off", onChange: (event) => setDetails(event.target.value) })
       ),
-      (0, import_react16.createElement)("span", { className: "bt-note" }, t('Copied into the allow rule of each person a code from this list admits. One "key = value" a line, or a JSON object.'))
+      (0, import_react17.createElement)("span", { className: "bt-note" }, t('Copied into the allow rule of each person a code from this list admits. One "key = value" a line, or a JSON object.'))
     ) : null,
-    shown ? (0, import_react16.createElement)(
+    shown ? (0, import_react17.createElement)(
       "div",
       { className: "bt-field ot-answer-field" },
-      (0, import_react16.createElement)(
+      (0, import_react17.createElement)(
         "label",
         { className: "ot-answer-label" },
-        (0, import_react16.createElement)("span", { className: "bt-field-label" }, t("Codes to add")),
-        (0, import_react16.createElement)("textarea", { className: "bt-input bt-input-area ot-codes-paste", value: text, spellCheck: false, autoComplete: "off", onChange: (event) => setText(event.target.value) })
+        (0, import_react17.createElement)("span", { className: "bt-field-label" }, t("Codes to add")),
+        (0, import_react17.createElement)("textarea", { className: "bt-input bt-input-area ot-codes-paste", value: text, spellCheck: false, autoComplete: "off", onChange: (event) => setText(event.target.value) })
       ),
-      (0, import_react16.createElement)("span", { className: "bt-note" }, t("One code a line: code, expires YYYY-MM-DD. Or paste a JSON list."))
+      (0, import_react17.createElement)("span", { className: "bt-note" }, t("One code a line: code, expires YYYY-MM-DD. Or paste a JSON list."))
     ) : null,
-    shown ? (0, import_react16.createElement)(
+    shown ? (0, import_react17.createElement)(
       "div",
       { className: "bt-actions" },
-      (0, import_react16.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: busy || text.trim() === "", onClick: add }, t("Add codes"))
+      (0, import_react17.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: busy || text.trim() === "", onClick: add }, t("Add codes"))
     ) : null,
-    shown && result ? (0, import_react16.createElement)("p", { className: result.ok ? "ot-picker-note" : "ot-picker-problem", role: result.ok ? "status" : "alert" }, result.text) : null,
-    !shown || view === null ? null : view.codes.length === 0 ? (0, import_react16.createElement)("span", { className: "bt-note" }, t("No codes yet.")) : (0, import_react16.createElement)(
+    shown && result ? (0, import_react17.createElement)("p", { className: result.ok ? "ot-picker-note" : "ot-picker-problem", role: result.ok ? "status" : "alert" }, result.text) : null,
+    !shown || view === null ? null : view.codes.length === 0 ? (0, import_react17.createElement)("span", { className: "bt-note" }, t("No codes yet.")) : (0, import_react17.createElement)(
       "div",
       { className: "ot-codes-view" },
-      (0, import_react16.createElement)("ul", { className: "ot-code-lists" }, view.lists.map((list) => (0, import_react16.createElement)(
+      (0, import_react17.createElement)("ul", { className: "ot-code-lists" }, view.lists.map((list) => (0, import_react17.createElement)(
         "li",
         { key: list.name, className: "ot-code-list" },
-        (0, import_react16.createElement)("span", { className: "ot-code-list-name" }, list.name),
-        (0, import_react16.createElement)("span", { className: "ot-code-list-count" }, t("{open} open of {count}", { open: list.open, count: list.count })),
-        (0, import_react16.createElement)("span", { className: "ot-code-list-meta" }, patternSummary(list.pattern)),
-        Object.keys(list.metadata ?? {}).length > 0 ? (0, import_react16.createElement)("span", { className: "ot-code-list-meta" }, detailsLine(list.metadata)) : null
+        (0, import_react17.createElement)("span", { className: "ot-code-list-name" }, list.name),
+        (0, import_react17.createElement)("span", { className: "ot-code-list-count" }, t("{open} open of {count}", { open: list.open, count: list.count })),
+        (0, import_react17.createElement)("span", { className: "ot-code-list-meta" }, patternSummary(list.pattern)),
+        Object.keys(list.metadata ?? {}).length > 0 ? (0, import_react17.createElement)("span", { className: "ot-code-list-meta" }, detailsLine(list.metadata)) : null
       ))),
-      (0, import_react16.createElement)("ul", { className: "ot-code-items" }, view.codes.map((code) => (0, import_react16.createElement)(
+      (0, import_react17.createElement)("ul", { className: "ot-code-items" }, view.codes.map((code) => (0, import_react17.createElement)(
         "li",
         { key: code.code, className: "ot-code", "data-state": code.state },
-        (0, import_react16.createElement)("span", { className: "ot-code-text" }, code.code),
-        (0, import_react16.createElement)("span", { className: "ot-code-state" }, stateText(code.state)),
-        (0, import_react16.createElement)("span", { className: "ot-code-meta" }, t("{list} · expires {day}", { list: code.list, day: dayOf(code.expiresAt) }))
+        (0, import_react17.createElement)("span", { className: "ot-code-text" }, code.code),
+        (0, import_react17.createElement)("span", { className: "ot-code-state" }, stateText(code.state)),
+        (0, import_react17.createElement)("span", { className: "ot-code-meta" }, t("{list} · expires {day}", { list: code.list, day: dayOf(code.expiresAt) }))
       )))
     )
   );
@@ -16873,7 +16943,7 @@ var CODE_LISTS_CSS = `${CODE_PATTERN_CSS}
 `;
 
 // src/client/outside-check.js
-var import_react17 = require("react");
+var import_react18 = require("react");
 var emptyPattern = (fields) => fields.prefix.trim() === "" && fields.characters.trim() === "" && fields.length === "";
 var fieldsOf = (value) => ({
   url: value?.url ?? "",
@@ -16882,13 +16952,13 @@ var fieldsOf = (value) => ({
   tier: value?.tier ?? ""
 });
 function OutsideCheck({ botId, value }) {
-  const [fields, setFields] = (0, import_react17.useState)(fieldsOf(value));
-  const [secretSet, setSecretSet] = (0, import_react17.useState)(value?.secretSet === true);
-  const [secret, setSecret] = (0, import_react17.useState)("");
-  const [busy, setBusy] = (0, import_react17.useState)(false);
-  const [result, setResult] = (0, import_react17.useState)(null);
+  const [fields, setFields] = (0, import_react18.useState)(fieldsOf(value));
+  const [secretSet, setSecretSet] = (0, import_react18.useState)(value?.secretSet === true);
+  const [secret, setSecret] = (0, import_react18.useState)("");
+  const [busy, setBusy] = (0, import_react18.useState)(false);
+  const [result, setResult] = (0, import_react18.useState)(null);
   const shown = JSON.stringify(fieldsOf(value));
-  (0, import_react17.useEffect)(() => {
+  (0, import_react18.useEffect)(() => {
     setFields(fieldsOf(value));
     setSecretSet(value?.secretSet === true);
   }, [shown, value?.secretSet]);
@@ -16926,27 +16996,27 @@ function OutsideCheck({ botId, value }) {
   };
   const clear = () => send({ secret: null }, t("The secret is cleared."));
   const label = t("Outside code check");
-  return (0, import_react17.createElement)(
+  return (0, import_react18.createElement)(
     "div",
     { className: "ot-outside", role: "group", "aria-label": label },
-    (0, import_react17.createElement)("span", { className: "bt-field-label" }, label),
-    (0, import_react17.createElement)("p", { className: "bt-note" }, t("A code of this pattern in the message of someone not let in is sent to this HTTPS address, and its reply goes to them. On only when the address, the secret and the pattern are all set.")),
-    (0, import_react17.createElement)(
+    (0, import_react18.createElement)("span", { className: "bt-field-label" }, label),
+    (0, import_react18.createElement)("p", { className: "bt-note" }, t("A code of this pattern in the message of someone not let in is sent to this HTTPS address, and its reply goes to them. On only when the address, the secret and the pattern are all set.")),
+    (0, import_react18.createElement)(
       "label",
       { className: "ot-answer-label" },
-      (0, import_react17.createElement)("span", { className: "bt-field-label" }, t("Check URL")),
-      (0, import_react17.createElement)("input", { className: "bt-input ot-outside-url", type: "url", value: fields.url, title: fields.url || void 0, spellCheck: false, autoComplete: "off", onChange: (event) => set3("url", event.target.value) })
+      (0, import_react18.createElement)("span", { className: "bt-field-label" }, t("Check URL")),
+      (0, import_react18.createElement)("input", { className: "bt-input ot-outside-url", type: "url", value: fields.url, title: fields.url || void 0, spellCheck: false, autoComplete: "off", onChange: (event) => set3("url", event.target.value) })
     ),
-    (0, import_react17.createElement)(
+    (0, import_react18.createElement)(
       "label",
       { className: "ot-answer-label" },
-      (0, import_react17.createElement)(
+      (0, import_react18.createElement)(
         "span",
         { className: "ot-outside-secret-head" },
-        (0, import_react17.createElement)("span", { className: "bt-field-label" }, t("Secret")),
-        (0, import_react17.createElement)("span", { className: "ot-picker-tag ot-outside-state", "data-set": secretSet }, secretSet ? t("Set") : t("Not set"))
+        (0, import_react18.createElement)("span", { className: "bt-field-label" }, t("Secret")),
+        (0, import_react18.createElement)("span", { className: "ot-picker-tag ot-outside-state", "data-set": secretSet }, secretSet ? t("Set") : t("Not set"))
       ),
-      (0, import_react17.createElement)("input", {
+      (0, import_react18.createElement)("input", {
         className: "bt-input ot-outside-secret",
         type: "password",
         value: secret,
@@ -16956,36 +17026,36 @@ function OutsideCheck({ botId, value }) {
         onChange: (event) => setSecret(event.target.value)
       })
     ),
-    (0, import_react17.createElement)(PatternFields, { value: fields.pattern, onChange: (next) => set3("pattern", next), prefixRequired: true }),
-    (0, import_react17.createElement)(
+    (0, import_react18.createElement)(PatternFields, { value: fields.pattern, onChange: (next) => set3("pattern", next), prefixRequired: true }),
+    (0, import_react18.createElement)(
       "div",
       { className: "bt-field ot-answer-field" },
-      (0, import_react17.createElement)(
+      (0, import_react18.createElement)(
         "label",
         { className: "ot-answer-label" },
-        (0, import_react17.createElement)("span", { className: "bt-field-label" }, t("Label on a confirmed row")),
-        (0, import_react17.createElement)("input", { className: "bt-input ot-outside-label", type: "text", value: fields.label, maxLength: 60, onChange: (event) => set3("label", event.target.value) })
+        (0, import_react18.createElement)("span", { className: "bt-field-label" }, t("Label on a confirmed row")),
+        (0, import_react18.createElement)("input", { className: "bt-input ot-outside-label", type: "text", value: fields.label, maxLength: 60, onChange: (event) => set3("label", event.target.value) })
       ),
-      (0, import_react17.createElement)("span", { className: "bt-note" }, t("Staff see it on a request row the service confirmed. Empty: no label."))
+      (0, import_react18.createElement)("span", { className: "bt-note" }, t("Staff see it on a request row the service confirmed. Empty: no label."))
     ),
-    (0, import_react17.createElement)(
+    (0, import_react18.createElement)(
       "div",
       { className: "bt-field ot-answer-field" },
-      (0, import_react17.createElement)(
+      (0, import_react18.createElement)(
         "label",
         { className: "ot-answer-label" },
-        (0, import_react17.createElement)("span", { className: "bt-field-label" }, t("Tier name")),
-        (0, import_react17.createElement)("input", { className: "bt-input ot-outside-tier", type: "text", value: fields.tier, maxLength: 60, onChange: (event) => set3("tier", event.target.value) })
+        (0, import_react18.createElement)("span", { className: "bt-field-label" }, t("Tier name")),
+        (0, import_react18.createElement)("input", { className: "bt-input ot-outside-tier", type: "text", value: fields.tier, maxLength: 60, onChange: (event) => set3("tier", event.target.value) })
       ),
-      (0, import_react17.createElement)("span", { className: "bt-note" }, t("Written on a request row the service confirmed. Empty: none."))
+      (0, import_react18.createElement)("span", { className: "bt-note" }, t("Written on a request row the service confirmed. Empty: none."))
     ),
-    (0, import_react17.createElement)(
+    (0, import_react18.createElement)(
       "div",
       { className: "bt-actions" },
-      (0, import_react17.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: busy || !secretSet, onClick: clear }, t("Clear")),
-      (0, import_react17.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: busy || !changed, onClick: save }, t("Save"))
+      (0, import_react18.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: busy || !secretSet, onClick: clear }, t("Clear")),
+      (0, import_react18.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: busy || !changed, onClick: save }, t("Save"))
     ),
-    result ? (0, import_react17.createElement)("p", { className: result.ok ? "ot-picker-note" : "ot-picker-problem", role: result.ok ? "status" : "alert" }, result.text) : null
+    result ? (0, import_react18.createElement)("p", { className: result.ok ? "ot-picker-note" : "ot-picker-problem", role: result.ok ? "status" : "alert" }, result.text) : null
   );
 }
 var OUTSIDE_CHECK_CSS = `
@@ -16997,7 +17067,7 @@ var OUTSIDE_CHECK_CSS = `
 `;
 
 // src/client/omni-tree.js
-var import_react18 = require("react");
+var import_react19 = require("react");
 var { ChevronRightIcon: ChevronRightIcon2, CloseIcon, DotsIcon, PlusIcon: PlusIcon3, SparkIcon } = icons;
 var OPEN_KEY = "omni.tree.open";
 var SEARCH_DELAY_MS = 250;
@@ -17088,8 +17158,8 @@ function needsStaffOf(thread) {
   return { label: "Needs a person", reason: thread.needsStaff.reason, title: `Needs a person from the team: ${thread.needsStaff.reason}` };
 }
 function useNow(on2) {
-  const [now, setNow] = (0, import_react18.useState)(() => Date.now());
-  (0, import_react18.useEffect)(() => {
+  const [now, setNow] = (0, import_react19.useState)(() => Date.now());
+  (0, import_react19.useEffect)(() => {
     if (!on2) return void 0;
     setNow(Date.now());
     const timer = setInterval(() => setNow(Date.now()), 15e3);
@@ -17128,14 +17198,14 @@ function ThreadRow({ thread, actions, rowProps = {}, shown = true }) {
   const asking = useStatus((map) => map.get(id)?.pendingInteraction !== void 0);
   const running = useStatus((map) => map.get(id)?.running === true);
   const active = useRetain(id, (info) => (info?.retainedBy?.mainView ?? 0) > 0);
-  const [confirming, setConfirming] = (0, import_react18.useState)(false);
-  const [deleting2, setDeleting] = (0, import_react18.useState)(null);
-  const [problem, setProblem] = (0, import_react18.useState)(null);
-  const [menu, setMenu] = (0, import_react18.useState)(false);
-  const [whyOpen, setWhyOpen] = (0, import_react18.useState)(false);
-  const row = (0, import_react18.useRef)(null);
+  const [confirming, setConfirming] = (0, import_react19.useState)(false);
+  const [deleting2, setDeleting] = (0, import_react19.useState)(null);
+  const [problem, setProblem] = (0, import_react19.useState)(null);
+  const [menu, setMenu] = (0, import_react19.useState)(false);
+  const [whyOpen, setWhyOpen] = (0, import_react19.useState)(false);
+  const row = (0, import_react19.useRef)(null);
   const opens = teamReady(rowProps.roster);
-  (0, import_react18.useEffect)(() => {
+  (0, import_react19.useEffect)(() => {
     if (!menu || typeof document === "undefined" || typeof document.addEventListener !== "function") return void 0;
     const away = (event) => {
       if (!row.current?.contains?.(event.target)) setMenu(false);
@@ -17143,10 +17213,10 @@ function ThreadRow({ thread, actions, rowProps = {}, shown = true }) {
     document.addEventListener("pointerdown", away, true);
     return () => document.removeEventListener("pointerdown", away, true);
   }, [menu]);
-  (0, import_react18.useEffect)(() => {
+  (0, import_react19.useEffect)(() => {
     if (opens && openOnArrival.delete(thread.id)) openThread(thread, actions, setProblem);
   }, [opens, thread.id]);
-  (0, import_react18.useEffect)(() => {
+  (0, import_react19.useEffect)(() => {
     if (!opens) return void 0;
     const opener = () => openThread(thread, actions, setProblem);
     rowOpeners.set(thread.id, opener);
@@ -17215,10 +17285,10 @@ function ThreadRow({ thread, actions, rowProps = {}, shown = true }) {
     event.stopPropagation();
     setMenu(false);
   };
-  return (0, import_react18.createElement)(
+  return (0, import_react19.createElement)(
     "div",
     { ref: row, className: "ot-thread", "data-idle": state === "idle" || void 0, "data-answer": answer ? true : void 0, "data-paused": pause ? true : void 0, "data-needs": need ? true : void 0 },
-    (0, import_react18.createElement)(
+    (0, import_react19.createElement)(
       "button",
       {
         type: "button",
@@ -17231,17 +17301,17 @@ function ThreadRow({ thread, actions, rowProps = {}, shown = true }) {
         tabIndex: shown ? void 0 : -1,
         onClick
       },
-      (0, import_react18.createElement)("span", { className: state === "waiting" ? "bt-thread-wait" : state === "working" ? "bt-thread-spin" : "ot-thread-idle", "aria-hidden": true }),
-      (0, import_react18.createElement)("span", { className: "bt-thread-title" }, name),
-      answer && !pause ? (0, import_react18.createElement)("span", { className: "ot-mode", "data-mode": answer.mode, title: answer.title, "aria-hidden": true }, answer.label) : null,
-      reason ? (0, import_react18.createElement)("span", { className: "ot-thread-reason" }, reason) : null,
-      free ? (0, import_react18.createElement)("span", { className: "ot-thread-free", title: free, "aria-hidden": true }, (0, import_react18.createElement)(SparkIcon)) : null,
-      dot ? (0, import_react18.createElement)("span", { className: "bt-unread", "aria-hidden": true }) : null
+      (0, import_react19.createElement)("span", { className: state === "waiting" ? "bt-thread-wait" : state === "working" ? "bt-thread-spin" : "ot-thread-idle", "aria-hidden": true }),
+      (0, import_react19.createElement)("span", { className: "bt-thread-title" }, name),
+      answer && !pause ? (0, import_react19.createElement)("span", { className: "ot-mode", "data-mode": answer.mode, title: answer.title, "aria-hidden": true }, answer.label) : null,
+      reason ? (0, import_react19.createElement)("span", { className: "ot-thread-reason" }, reason) : null,
+      free ? (0, import_react19.createElement)("span", { className: "ot-thread-free", title: free, "aria-hidden": true }, (0, import_react19.createElement)(SparkIcon)) : null,
+      dot ? (0, import_react19.createElement)("span", { className: "bt-unread", "aria-hidden": true }) : null
     ),
-    (0, import_react18.createElement)(
+    (0, import_react19.createElement)(
       "span",
       { className: "ot-thread-acts", "data-on": confirming || menu || void 0 },
-      confirming ? null : (0, import_react18.createElement)("button", {
+      confirming ? null : (0, import_react19.createElement)("button", {
         type: "button",
         className: "ot-thread-more",
         "aria-label": menuLabel,
@@ -17250,8 +17320,8 @@ function ThreadRow({ thread, actions, rowProps = {}, shown = true }) {
         "aria-expanded": menu,
         tabIndex: shown ? void 0 : -1,
         onClick: () => setMenu((open) => !open)
-      }, (0, import_react18.createElement)(DotsIcon)),
-      (0, import_react18.createElement)("button", {
+      }, (0, import_react19.createElement)(DotsIcon)),
+      (0, import_react19.createElement)("button", {
         type: "button",
         className: "ot-thread-remove",
         "data-confirm": confirming || void 0,
@@ -17260,15 +17330,15 @@ function ThreadRow({ thread, actions, rowProps = {}, shown = true }) {
         tabIndex: shown ? void 0 : -1,
         onClick: remove,
         onBlur: () => setConfirming(false)
-      }, confirming ? t("Remove") : (0, import_react18.createElement)(CloseIcon))
+      }, confirming ? t("Remove") : (0, import_react19.createElement)(CloseIcon))
     ),
     // Needs a person: its own line under the name, at every width: the badge and Dismiss, then
     // the child's reason, cut to one line until it is opened; the whole reason is the tooltip.
-    need ? (0, import_react18.createElement)(
+    need ? (0, import_react19.createElement)(
       "div",
       { className: "ot-needs", title: need.title },
-      (0, import_react18.createElement)("span", { className: "ot-mode", "data-mode": "needs", "aria-hidden": true }, need.label),
-      (0, import_react18.createElement)("button", {
+      (0, import_react19.createElement)("span", { className: "ot-mode", "data-mode": "needs", "aria-hidden": true }, need.label),
+      (0, import_react19.createElement)("button", {
         type: "button",
         className: "ot-needs-why",
         "aria-expanded": whyOpen,
@@ -17276,7 +17346,7 @@ function ThreadRow({ thread, actions, rowProps = {}, shown = true }) {
         tabIndex: shown ? void 0 : -1,
         onClick: () => setWhyOpen((open) => !open)
       }, need.reason),
-      (0, import_react18.createElement)("button", {
+      (0, import_react19.createElement)("button", {
         type: "button",
         className: "bt-soft bt-soft-sm ot-dismiss",
         "aria-label": `Dismiss: ${name} needs a person`,
@@ -17286,12 +17356,12 @@ function ThreadRow({ thread, actions, rowProps = {}, shown = true }) {
       }, "Dismiss")
     ) : null,
     // Paused: its own line under the name, at every width, with the time left and Resume.
-    pause ? (0, import_react18.createElement)(
+    pause ? (0, import_react19.createElement)(
       "div",
       { className: "ot-paused", title: pause.title },
-      (0, import_react18.createElement)("span", { className: "ot-mode", "data-mode": "paused", "aria-hidden": true }, pause.label),
-      (0, import_react18.createElement)("span", { className: "ot-paused-left", "aria-hidden": true }, pause.left),
-      (0, import_react18.createElement)("button", {
+      (0, import_react19.createElement)("span", { className: "ot-mode", "data-mode": "paused", "aria-hidden": true }, pause.label),
+      (0, import_react19.createElement)("span", { className: "ot-paused-left", "aria-hidden": true }, pause.left),
+      (0, import_react19.createElement)("button", {
         type: "button",
         className: "bt-soft bt-soft-sm ot-resume",
         "aria-label": `Resume answering in ${name}`,
@@ -17300,14 +17370,14 @@ function ThreadRow({ thread, actions, rowProps = {}, shown = true }) {
         onClick: resume
       }, "Resume")
     ) : null,
-    menu ? (0, import_react18.createElement)(
+    menu ? (0, import_react19.createElement)(
       "div",
       { className: "ot-thread-menu", role: "menu", "aria-label": menuLabel, onKeyDown: onMenuKey },
-      permissionMenuOf(thread).map((group) => (0, import_react18.createElement)(
+      permissionMenuOf(thread).map((group) => (0, import_react19.createElement)(
         "div",
         { key: group.field, className: "ot-thread-menu-group", role: "group", "aria-label": group.label },
-        (0, import_react18.createElement)("span", { className: "ot-thread-menu-head" }, group.label),
-        group.items.map((choice) => (0, import_react18.createElement)("button", {
+        (0, import_react19.createElement)("span", { className: "ot-thread-menu-head" }, group.label),
+        group.items.map((choice) => (0, import_react19.createElement)("button", {
           key: String(choice.value),
           type: "button",
           role: "menuitemradio",
@@ -17318,33 +17388,33 @@ function ThreadRow({ thread, actions, rowProps = {}, shown = true }) {
           onClick: () => choose(choice)
         }, choice.label))
       )),
-      answer?.progress ? (0, import_react18.createElement)("span", { className: "ot-thread-menu-note" }, answer.progress) : null
+      answer?.progress ? (0, import_react19.createElement)("span", { className: "ot-thread-menu-note" }, answer.progress) : null
     ) : null,
-    (thread.automations?.length ?? 0) > 0 ? (0, import_react18.createElement)(
+    (thread.automations?.length ?? 0) > 0 ? (0, import_react19.createElement)(
       "ul",
       { className: "ot-thread-automations", "aria-label": "Automations" },
-      thread.automations.map((automation) => (0, import_react18.createElement)("li", { key: automation.id }, automation.name))
+      thread.automations.map((automation) => (0, import_react19.createElement)("li", { key: automation.id }, automation.name))
     ) : null,
-    deleting2 ? (0, import_react18.createElement)(
+    deleting2 ? (0, import_react19.createElement)(
       "div",
       { className: "ot-thread-menu", role: "group", "aria-label": "What should happen to these automations?" },
-      (0, import_react18.createElement)("p", null, `What should happen to: ${deleting2.map((automation) => automation.name).join(", ")}?`),
-      ...[["keep", "Keep automations"], ["pause", "Pause automations"], ["delete", "Delete automations"]].map(([choice, label2]) => (0, import_react18.createElement)("button", {
+      (0, import_react19.createElement)("p", null, `What should happen to: ${deleting2.map((automation) => automation.name).join(", ")}?`),
+      ...[["keep", "Keep automations"], ["pause", "Pause automations"], ["delete", "Delete automations"]].map(([choice, label2]) => (0, import_react19.createElement)("button", {
         key: choice,
         type: "button",
         onClick: () => {
           void remove(choice);
         }
       }, label2)),
-      (0, import_react18.createElement)("button", { type: "button", onClick: () => setDeleting(null) }, "Cancel")
+      (0, import_react19.createElement)("button", { type: "button", onClick: () => setDeleting(null) }, "Cancel")
     ) : null,
-    problem ? (0, import_react18.createElement)("span", { className: "ot-thread-problem", role: "alert" }, hostText(problem)) : null
+    problem ? (0, import_react19.createElement)("span", { className: "ot-thread-problem", role: "alert" }, hostText(problem)) : null
   );
 }
 function PickerChat({ chat, busy, selected, onPick }) {
   const name = chat.name ?? (chat.kind === "group" ? t("Group") : t("Chat"));
   const tag = chat.added ? t("Added") : busy === chat.id ? t("Adding…") : null;
-  return (0, import_react18.createElement)(
+  return (0, import_react19.createElement)(
     "button",
     {
       type: "button",
@@ -17359,40 +17429,40 @@ function PickerChat({ chat, busy, selected, onPick }) {
         void onPick(chat);
       }
     },
-    (0, import_react18.createElement)(ChatAvatar, { chat: { ...chat, name }, size: 30 }),
-    (0, import_react18.createElement)(
+    (0, import_react19.createElement)(ChatAvatar, { chat: { ...chat, name }, size: 30 }),
+    (0, import_react19.createElement)(
       "span",
       { className: "ot-picker-body" },
-      (0, import_react18.createElement)(
+      (0, import_react19.createElement)(
         "span",
         { className: "ot-picker-top" },
-        (0, import_react18.createElement)("span", { className: "ot-picker-name" }, name),
-        tag ? (0, import_react18.createElement)("span", { className: "ot-picker-tag" }, tag) : chat.at > 0 ? (0, import_react18.createElement)("span", { className: "ot-picker-at" }, relativeShort(chat.at)) : null
+        (0, import_react19.createElement)("span", { className: "ot-picker-name" }, name),
+        tag ? (0, import_react19.createElement)("span", { className: "ot-picker-tag" }, tag) : chat.at > 0 ? (0, import_react19.createElement)("span", { className: "ot-picker-at" }, relativeShort(chat.at)) : null
       ),
-      chat.number ? (0, import_react18.createElement)("span", { className: "ot-picker-number" }, chat.number) : null,
-      chat.preview ? (0, import_react18.createElement)("span", { className: "ot-picker-preview" }, chat.preview) : null
+      chat.number ? (0, import_react19.createElement)("span", { className: "ot-picker-number" }, chat.number) : null,
+      chat.preview ? (0, import_react19.createElement)("span", { className: "ot-picker-preview" }, chat.preview) : null
     )
   );
 }
 function ThreadPicker({ channel, channels: channels2 = [channel], onPick, onClose }) {
-  const [query, setQuery] = (0, import_react18.useState)("");
-  const [channelId, setChannelId] = (0, import_react18.useState)(channel.id);
-  const [selected, setSelected] = (0, import_react18.useState)([]);
-  const [title, setTitle] = (0, import_react18.useState)("");
-  const [notes, setNotes] = (0, import_react18.useState)("");
-  const [list, setList] = (0, import_react18.useState)({ status: "loading", chats: [], error: null });
-  const [busy, setBusy] = (0, import_react18.useState)(null);
-  const [problem, setProblem] = (0, import_react18.useState)(null);
-  const asked = (0, import_react18.useRef)(0);
-  const alive = (0, import_react18.useRef)(true);
-  (0, import_react18.useEffect)(() => {
+  const [query, setQuery] = (0, import_react19.useState)("");
+  const [channelId, setChannelId] = (0, import_react19.useState)(channel.id);
+  const [selected, setSelected] = (0, import_react19.useState)([]);
+  const [title, setTitle] = (0, import_react19.useState)("");
+  const [notes, setNotes] = (0, import_react19.useState)("");
+  const [list, setList] = (0, import_react19.useState)({ status: "loading", chats: [], error: null });
+  const [busy, setBusy] = (0, import_react19.useState)(null);
+  const [problem, setProblem] = (0, import_react19.useState)(null);
+  const asked = (0, import_react19.useRef)(0);
+  const alive = (0, import_react19.useRef)(true);
+  (0, import_react19.useEffect)(() => {
     alive.current = true;
     return () => {
       alive.current = false;
     };
   }, []);
   const words = query.trim();
-  (0, import_react18.useEffect)(() => {
+  (0, import_react19.useEffect)(() => {
     const ticket = ++asked.current;
     const load = () => call("omni-thread-chats", words ? { channelId, query: words } : { channelId }).then(
       (reply) => {
@@ -17444,21 +17514,21 @@ function ThreadPicker({ channel, channels: channels2 = [channel], onPick, onClos
   const availableChats = list.chats.filter((chat) => chat.added !== true);
   const empty = list.status === "ready" && availableChats.length === 0;
   const emptyText = list.chats.length > 0 ? t("No chats to add here. Search for another chat.") : words ? t("No chats match.") : t("No chats yet");
-  return (0, import_react18.createElement)(
+  return (0, import_react19.createElement)(
     "div",
     { className: "ot-picker", role: "group", "aria-label": t("Add a chat from {name}", { name: channel.name }), onKeyDown },
-    (0, import_react18.createElement)(
+    (0, import_react19.createElement)(
       "select",
       { "aria-label": "Channel", value: channelId, disabled: busy !== null, onChange: (event) => {
         setChannelId(event.target.value);
         setQuery("");
       } },
-      channels2.map((item) => (0, import_react18.createElement)("option", { key: item.id, value: item.id }, item.name))
+      channels2.map((item) => (0, import_react19.createElement)("option", { key: item.id, value: item.id }, item.name))
     ),
-    (0, import_react18.createElement)(
+    (0, import_react19.createElement)(
       "div",
       { className: "ot-picker-head" },
-      (0, import_react18.createElement)("input", {
+      (0, import_react19.createElement)("input", {
         type: "search",
         className: "ot-picker-search",
         value: query,
@@ -17467,28 +17537,28 @@ function ThreadPicker({ channel, channels: channels2 = [channel], onPick, onClos
         autoFocus: true,
         onChange: (event) => setQuery(event.target.value)
       }),
-      (0, import_react18.createElement)("button", { type: "button", className: "ot-picker-close", "aria-label": t("Close"), title: t("Close"), onClick: onClose }, (0, import_react18.createElement)(CloseIcon))
+      (0, import_react19.createElement)("button", { type: "button", className: "ot-picker-close", "aria-label": t("Close"), title: t("Close"), onClick: onClose }, (0, import_react19.createElement)(CloseIcon))
     ),
-    problem ? (0, import_react18.createElement)("p", { className: "ot-picker-problem", role: "alert" }, hostText(problem)) : null,
-    list.status === "loading" ? (0, import_react18.createElement)("p", { className: "ot-picker-note" }, t("Loading…")) : null,
-    list.status === "failed" ? (0, import_react18.createElement)("p", { className: "ot-picker-problem", role: "alert" }, hostText(list.error)) : null,
-    empty ? (0, import_react18.createElement)("p", { className: "ot-picker-note" }, emptyText) : null,
-    availableChats.length > 0 ? (0, import_react18.createElement)(
+    problem ? (0, import_react19.createElement)("p", { className: "ot-picker-problem", role: "alert" }, hostText(problem)) : null,
+    list.status === "loading" ? (0, import_react19.createElement)("p", { className: "ot-picker-note" }, t("Loading…")) : null,
+    list.status === "failed" ? (0, import_react19.createElement)("p", { className: "ot-picker-problem", role: "alert" }, hostText(list.error)) : null,
+    empty ? (0, import_react19.createElement)("p", { className: "ot-picker-note" }, emptyText) : null,
+    availableChats.length > 0 ? (0, import_react19.createElement)(
       "div",
       { className: "ot-picker-list" },
-      availableChats.map((chat) => (0, import_react18.createElement)(PickerChat, { key: chat.id, chat, busy, selected: selected.some((item) => item.chatId === chat.id), onPick: toggle }))
+      availableChats.map((chat) => (0, import_react19.createElement)(PickerChat, { key: chat.id, chat, busy, selected: selected.some((item) => item.chatId === chat.id), onPick: toggle }))
     ) : null,
-    (0, import_react18.createElement)("p", { className: "ot-picker-selected" }, selected.map((item) => item.name ?? item.chatId).join(", ")),
-    (0, import_react18.createElement)("input", { "aria-label": "Thread title", placeholder: "Thread title", value: title, maxLength: 80, onChange: (event) => setTitle(event.target.value) }),
-    (0, import_react18.createElement)("textarea", { "aria-label": "Thread notes", placeholder: "Thread notes", value: notes, maxLength: 8e3, onChange: (event) => setNotes(event.target.value) }),
-    (0, import_react18.createElement)("button", { type: "button", disabled: busy !== null || selected.length === 0 || !title.trim(), onClick: () => {
+    (0, import_react19.createElement)("p", { className: "ot-picker-selected" }, selected.map((item) => item.name ?? item.chatId).join(", ")),
+    (0, import_react19.createElement)("input", { "aria-label": "Thread title", placeholder: "Thread title", value: title, maxLength: 80, onChange: (event) => setTitle(event.target.value) }),
+    (0, import_react19.createElement)("textarea", { "aria-label": "Thread notes", placeholder: "Thread notes", value: notes, maxLength: 8e3, onChange: (event) => setNotes(event.target.value) }),
+    (0, import_react19.createElement)("button", { type: "button", disabled: busy !== null || selected.length === 0 || !title.trim(), onClick: () => {
       void pick();
     } }, "Create thread")
   );
 }
 var addThread = (payload) => call("omni-thread-add", payload);
 function ChannelItem({ channel, state, roster, rowProps, actions, omni: omni2, plus, open, picking, onToggle, onPlus, onClosePicker }) {
-  const plusButton = (0, import_react18.useRef)(null);
+  const plusButton = (0, import_react19.useRef)(null);
   const threads = threadsOf(roster, channel.id);
   const hasChats = state.chats.some((chat) => chat.channelId === channel.id);
   const unread = unreadOf(state, channel.id);
@@ -17507,13 +17577,13 @@ function ChannelItem({ channel, state, roster, rowProps, actions, omni: omni2, p
     else openOnArrival.add(result.threadId);
     return result;
   });
-  return (0, import_react18.createElement)(
+  return (0, import_react19.createElement)(
     "div",
     { className: "ot-channel" },
-    (0, import_react18.createElement)(
+    (0, import_react19.createElement)(
       "div",
       { className: "ot-channel-head" },
-      (0, import_react18.createElement)(
+      (0, import_react19.createElement)(
         "button",
         {
           type: "button",
@@ -17523,12 +17593,12 @@ function ChannelItem({ channel, state, roster, rowProps, actions, omni: omni2, p
           title: `${type.label} · ${channel.name}`,
           onClick: onToggle
         },
-        (0, import_react18.createElement)("span", { className: "ot-chevron", "aria-hidden": true }, (0, import_react18.createElement)(ChevronRightIcon2)),
-        (0, import_react18.createElement)(Tile, { type: channel.type, size: 18 }),
-        (0, import_react18.createElement)("span", { className: "ot-channel-name" }, channel.name),
-        unread > 0 ? (0, import_react18.createElement)("span", { className: "ot-count", "aria-label": t("{n} unread", { n: unread }) }, unread) : (0, import_react18.createElement)(StatusDot, { status: channel.status })
+        (0, import_react19.createElement)("span", { className: "ot-chevron", "aria-hidden": true }, (0, import_react19.createElement)(ChevronRightIcon2)),
+        (0, import_react19.createElement)(Tile, { type: channel.type, size: 18 }),
+        (0, import_react19.createElement)("span", { className: "ot-channel-name" }, channel.name),
+        unread > 0 ? (0, import_react19.createElement)("span", { className: "ot-count", "aria-label": t("{n} unread", { n: unread }) }, unread) : (0, import_react19.createElement)(StatusDot, { status: channel.status })
       ),
-      plus.offered ? (0, import_react18.createElement)("button", {
+      plus.offered ? (0, import_react19.createElement)("button", {
         ref: plusButton,
         type: "button",
         className: "ot-plus",
@@ -17536,18 +17606,18 @@ function ChannelItem({ channel, state, roster, rowProps, actions, omni: omni2, p
         title: t("Add a chat"),
         "aria-expanded": picking,
         onClick: onPlus
-      }, (0, import_react18.createElement)(PlusIcon3)) : null
+      }, (0, import_react19.createElement)(PlusIcon3)) : null
     ),
-    (0, import_react18.createElement)(
+    (0, import_react19.createElement)(
       "div",
       { id: panelId, className: "ot-chats", "data-open": open || void 0 },
-      (0, import_react18.createElement)(
+      (0, import_react19.createElement)(
         "div",
         { className: "ot-chats-in" },
-        picking && plus.offered ? (0, import_react18.createElement)(ThreadPicker, { channel, channels: state.channels, onPick, onClose: closePicker }) : null,
-        !plus.offered && plus.reason ? (0, import_react18.createElement)("span", { className: "ot-empty" }, hostText(plus.reason)) : null,
-        threads.map((thread) => (0, import_react18.createElement)(ThreadRow, { key: rowKey(thread, rowProps), thread, actions, rowProps, shown: open })),
-        (0, import_react18.createElement)(
+        picking && plus.offered ? (0, import_react19.createElement)(ThreadPicker, { channel, channels: state.channels, onPick, onClose: closePicker }) : null,
+        !plus.offered && plus.reason ? (0, import_react19.createElement)("span", { className: "ot-empty" }, hostText(plus.reason)) : null,
+        threads.map((thread) => (0, import_react19.createElement)(ThreadRow, { key: rowKey(thread, rowProps), thread, actions, rowProps, shown: open })),
+        (0, import_react19.createElement)(
           "button",
           { type: "button", className: "ot-chat ot-all", tabIndex: open ? void 0 : -1, onClick: () => omni2.openChannels("channel", channel.id) },
           hasChats ? t("All chats") : t("Channel health")
@@ -17557,11 +17627,11 @@ function ChannelItem({ channel, state, roster, rowProps, actions, omni: omni2, p
   );
 }
 function ChannelBotForm({ channels: channels2, roster, onClose }) {
-  const [name, setName] = (0, import_react18.useState)("");
-  const [selected, setSelected] = (0, import_react18.useState)([]);
-  const [local, setLocal] = (0, import_react18.useState)(null);
-  const [busy, setBusy] = (0, import_react18.useState)(false);
-  const [problem, setProblem] = (0, import_react18.useState)(null);
+  const [name, setName] = (0, import_react19.useState)("");
+  const [selected, setSelected] = (0, import_react19.useState)([]);
+  const [local, setLocal] = (0, import_react19.useState)(null);
+  const [busy, setBusy] = (0, import_react19.useState)(false);
+  const [problem, setProblem] = (0, import_react19.useState)(null);
   const pending = local ? [local] : roster.omniBotProposals ?? [];
   const act = async (endpoint, body, after) => {
     setBusy(true);
@@ -17575,32 +17645,32 @@ function ChannelBotForm({ channels: channels2, roster, onClose }) {
       setBusy(false);
     }
   };
-  return (0, import_react18.createElement)(
+  return (0, import_react19.createElement)(
     "div",
     { className: "ot-picker", role: "group", "aria-label": "Dedicated channel bot" },
-    problem ? (0, import_react18.createElement)("p", { role: "alert" }, hostText(problem)) : null,
-    pending.map((proposal) => (0, import_react18.createElement)(
+    problem ? (0, import_react19.createElement)("p", { role: "alert" }, hostText(problem)) : null,
+    pending.map((proposal) => (0, import_react19.createElement)(
       "div",
       { key: proposal.proposalId },
-      (0, import_react18.createElement)("p", null, `Create ${proposal.name} and hand over: ${proposal.channelIds.map((id) => channels2.find((channel) => channel.id === id)?.name ?? id).join(", ")}? The default bot will only read these channels.`),
-      (0, import_react18.createElement)("button", { type: "button", disabled: busy, onClick: () => act("confirm_answer_bot", { proposalId: proposal.proposalId }, () => {
+      (0, import_react19.createElement)("p", null, `Create ${proposal.name} and hand over: ${proposal.channelIds.map((id) => channels2.find((channel) => channel.id === id)?.name ?? id).join(", ")}? The default bot will only read these channels.`),
+      (0, import_react19.createElement)("button", { type: "button", disabled: busy, onClick: () => act("confirm_answer_bot", { proposalId: proposal.proposalId }, () => {
         setLocal(null);
         onClose();
       }) }, "Confirm hand-over"),
-      (0, import_react18.createElement)("button", { type: "button", disabled: busy, onClick: () => act("cancel_answer_bot", { proposalId: proposal.proposalId }, () => {
+      (0, import_react19.createElement)("button", { type: "button", disabled: busy, onClick: () => act("cancel_answer_bot", { proposalId: proposal.proposalId }, () => {
         setLocal(null);
         onClose();
       }) }, "Cancel proposal")
     )),
-    (0, import_react18.createElement)("input", { "aria-label": "Bot name", value: name, maxLength: 40, onChange: (event) => setName(event.target.value) }),
-    channels2.map((channel) => (0, import_react18.createElement)(
+    (0, import_react19.createElement)("input", { "aria-label": "Bot name", value: name, maxLength: 40, onChange: (event) => setName(event.target.value) }),
+    channels2.map((channel) => (0, import_react19.createElement)(
       "label",
       { key: channel.id },
-      (0, import_react18.createElement)("input", { type: "checkbox", checked: selected.includes(channel.id), onChange: (event) => setSelected((before) => event.target.checked ? [...before, channel.id] : before.filter((id) => id !== channel.id)) }),
+      (0, import_react19.createElement)("input", { type: "checkbox", checked: selected.includes(channel.id), onChange: (event) => setSelected((before) => event.target.checked ? [...before, channel.id] : before.filter((id) => id !== channel.id)) }),
       channel.name
     )),
-    (0, import_react18.createElement)("button", { type: "button", disabled: busy || !name.trim() || !selected.length, onClick: () => act("propose_answer_bot", { name, channelIds: selected }, (value) => setLocal({ ...value, name, channelIds: selected })) }, "Review hand-over"),
-    (0, import_react18.createElement)("button", { type: "button", disabled: busy, onClick: onClose }, "Close")
+    (0, import_react19.createElement)("button", { type: "button", disabled: busy || !name.trim() || !selected.length, onClick: () => act("propose_answer_bot", { name, channelIds: selected }, (value) => setLocal({ ...value, name, channelIds: selected })) }, "Review hand-over"),
+    (0, import_react19.createElement)("button", { type: "button", disabled: busy, onClick: onClose }, "Close")
   );
 }
 var VISIBILITY = {
@@ -17619,23 +17689,23 @@ var SHARED_NOTES_MAX = 32e3;
 var STRANGER_REPLY_MAX = 1e3;
 var CODE_WELCOME_MAX = 1e3;
 function SwitchRow({ label, title, on: on2, onChange }) {
-  return (0, import_react18.createElement)(
+  return (0, import_react19.createElement)(
     "div",
     { className: "ot-answer-switch", title },
-    (0, import_react18.createElement)("span", null, label),
-    (0, import_react18.createElement)(
+    (0, import_react19.createElement)("span", null, label),
+    (0, import_react19.createElement)(
       "button",
       { type: "button", role: "switch", className: "bt-switch", "aria-checked": on2, "aria-label": label, onClick: () => onChange(!on2) },
-      (0, import_react18.createElement)("span", { className: "bt-switch-knob", "aria-hidden": true })
+      (0, import_react19.createElement)("span", { className: "bt-switch-knob", "aria-hidden": true })
     )
   );
 }
 function Field({ label, note, children }) {
-  return (0, import_react18.createElement)(
+  return (0, import_react19.createElement)(
     "div",
     { className: "bt-field ot-answer-field" },
-    (0, import_react18.createElement)("label", { className: "ot-answer-label" }, (0, import_react18.createElement)("span", { className: "bt-field-label" }, label), children),
-    note ? (0, import_react18.createElement)("span", { className: "bt-note" }, note) : null
+    (0, import_react19.createElement)("label", { className: "ot-answer-label" }, (0, import_react19.createElement)("span", { className: "bt-field-label" }, label), children),
+    note ? (0, import_react19.createElement)("span", { className: "bt-note" }, note) : null
   );
 }
 function staffChatOptions(chats, threads, chosen, several) {
@@ -17644,10 +17714,10 @@ function staffChatOptions(chats, threads, chosen, several) {
   return chosen && !options.some((option) => option.id === chosen) ? [{ id: chosen, label: "The chosen chat" }, ...options] : options;
 }
 function StrangerRequests({ botId, confirmedLabel }) {
-  const [shown, setShown] = (0, import_react18.useState)(false);
-  const [requests, setRequests] = (0, import_react18.useState)(null);
-  const [problem, setProblem] = (0, import_react18.useState)(null);
-  (0, import_react18.useEffect)(() => {
+  const [shown, setShown] = (0, import_react19.useState)(false);
+  const [requests, setRequests] = (0, import_react19.useState)(null);
+  const [problem, setProblem] = (0, import_react19.useState)(null);
+  (0, import_react19.useEffect)(() => {
     if (!shown) return void 0;
     let alive = true;
     setProblem(null);
@@ -17664,47 +17734,47 @@ function StrangerRequests({ botId, confirmedLabel }) {
     };
   }, [shown, botId]);
   const messages = (count) => `${count} ${count === 1 ? "message" : "messages"}`;
-  return (0, import_react18.createElement)(
+  return (0, import_react19.createElement)(
     "div",
     { className: "ot-answer-requests", role: "group", "aria-label": "Requests" },
-    (0, import_react18.createElement)(
+    (0, import_react19.createElement)(
       "div",
       { className: "ot-answer-requests-head" },
-      (0, import_react18.createElement)("span", { className: "bt-field-label" }, shown && requests !== null ? `Requests (${requests.length})` : "Requests"),
-      (0, import_react18.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", "aria-expanded": shown, onClick: () => setShown((before) => !before) }, shown ? "Hide" : "Show")
+      (0, import_react19.createElement)("span", { className: "bt-field-label" }, shown && requests !== null ? `Requests (${requests.length})` : "Requests"),
+      (0, import_react19.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", "aria-expanded": shown, onClick: () => setShown((before) => !before) }, shown ? "Hide" : "Show")
     ),
-    !shown ? null : problem ? (0, import_react18.createElement)("p", { className: "ot-picker-problem", role: "alert" }, hostText(problem)) : requests === null ? null : requests.length === 0 ? (0, import_react18.createElement)("span", { className: "bt-note" }, "Nobody yet.") : (0, import_react18.createElement)("ul", { className: "ot-requests" }, requests.map((request) => (0, import_react18.createElement)(
+    !shown ? null : problem ? (0, import_react19.createElement)("p", { className: "ot-picker-problem", role: "alert" }, hostText(problem)) : requests === null ? null : requests.length === 0 ? (0, import_react19.createElement)("span", { className: "bt-note" }, "Nobody yet.") : (0, import_react19.createElement)("ul", { className: "ot-requests" }, requests.map((request) => (0, import_react19.createElement)(
       "li",
       { key: request.chatUuid, className: "ot-request" },
-      (0, import_react18.createElement)("span", { className: "ot-request-who", title: (request.senders ?? []).join(", ") }, (request.senders ?? []).join(" · ")),
-      (0, import_react18.createElement)("span", { className: "ot-request-text", title: request.text }, request.text),
-      (0, import_react18.createElement)("span", { className: "ot-picker-at" }, `${relativeShort(request.lastAt)} · ${messages(request.count)}`),
+      (0, import_react19.createElement)("span", { className: "ot-request-who", title: (request.senders ?? []).join(", ") }, (request.senders ?? []).join(" · ")),
+      (0, import_react19.createElement)("span", { className: "ot-request-text", title: request.text }, request.text),
+      (0, import_react19.createElement)("span", { className: "ot-picker-at" }, `${relativeShort(request.lastAt)} · ${messages(request.count)}`),
       // #1732: a chat a code from a staff list let in, so staff do not let them in again by hand.
-      request.admitted ? (0, import_react18.createElement)("span", { className: "ot-picker-tag" }, t("Admitted by code")) : null,
+      request.admitted ? (0, import_react19.createElement)("span", { className: "ot-picker-tag" }, t("Admitted by code")) : null,
       // #1742: a chat whose code the bot's outside check confirmed, with the label staff set for it.
-      request.confirmed && confirmedLabel ? (0, import_react18.createElement)("span", { className: "ot-picker-tag" }, confirmedLabel) : null
+      request.confirmed && confirmedLabel ? (0, import_react19.createElement)("span", { className: "ot-picker-tag" }, confirmedLabel) : null
     )))
   );
 }
 function AnswerSettings({ bot, value = {}, channels: channels2 = [], threads = [] }) {
-  const [open, setOpen] = (0, import_react18.useState)(false);
-  const [enabled, setEnabled] = (0, import_react18.useState)(value.enabled === true);
-  const [visibility, setVisibility] = (0, import_react18.useState)(value.visibility ?? "isolated");
-  const [allowedTools, setAllowedTools] = (0, import_react18.useState)(value.allowedTools ?? []);
-  const [sharedNotes, setSharedNotes] = (0, import_react18.useState)(value.sharedNotes ?? "");
-  const [newChildMode, setNewChildMode] = (0, import_react18.useState)(value.newChildMode ?? "training");
-  const [graduates, setGraduates] = (0, import_react18.useState)(Number.isInteger(value.graduateAfter));
-  const [graduateAfter, setGraduateAfter] = (0, import_react18.useState)(String(value.graduateAfter ?? 5));
-  const [resumeMinutes, setResumeMinutes] = (0, import_react18.useState)(minutesOf(value.resumeAfterMs));
-  const [knowledgeFolder, setKnowledgeFolder] = (0, import_react18.useState)(value.knowledgeFolder ?? "");
-  const [personBinding, setPersonBinding] = (0, import_react18.useState)(value.personBinding === true);
-  const [staffChat, setStaffChat] = (0, import_react18.useState)(value.needsStaffChatId ?? "");
-  const [staffChats, setStaffChats] = (0, import_react18.useState)([]);
-  const [strangerReply, setStrangerReply] = (0, import_react18.useState)(value.strangerReply ?? "");
-  const [codeWelcome, setCodeWelcome] = (0, import_react18.useState)(value.codeWelcome ?? "");
-  const [busy, setBusy] = (0, import_react18.useState)(false);
-  const [problem, setProblem] = (0, import_react18.useState)(null);
-  (0, import_react18.useEffect)(() => {
+  const [open, setOpen] = (0, import_react19.useState)(false);
+  const [enabled, setEnabled] = (0, import_react19.useState)(value.enabled === true);
+  const [visibility, setVisibility] = (0, import_react19.useState)(value.visibility ?? "isolated");
+  const [allowedTools, setAllowedTools] = (0, import_react19.useState)(value.allowedTools ?? []);
+  const [sharedNotes, setSharedNotes] = (0, import_react19.useState)(value.sharedNotes ?? "");
+  const [newChildMode, setNewChildMode] = (0, import_react19.useState)(value.newChildMode ?? "training");
+  const [graduates, setGraduates] = (0, import_react19.useState)(Number.isInteger(value.graduateAfter));
+  const [graduateAfter, setGraduateAfter] = (0, import_react19.useState)(String(value.graduateAfter ?? 5));
+  const [resumeMinutes, setResumeMinutes] = (0, import_react19.useState)(minutesOf(value.resumeAfterMs));
+  const [knowledgeFolder, setKnowledgeFolder] = (0, import_react19.useState)(value.knowledgeFolder ?? "");
+  const [personBinding, setPersonBinding] = (0, import_react19.useState)(value.personBinding === true);
+  const [staffChat, setStaffChat] = (0, import_react19.useState)(value.needsStaffChatId ?? "");
+  const [staffChats, setStaffChats] = (0, import_react19.useState)([]);
+  const [strangerReply, setStrangerReply] = (0, import_react19.useState)(value.strangerReply ?? "");
+  const [codeWelcome, setCodeWelcome] = (0, import_react19.useState)(value.codeWelcome ?? "");
+  const [busy, setBusy] = (0, import_react19.useState)(false);
+  const [problem, setProblem] = (0, import_react19.useState)(null);
+  (0, import_react19.useEffect)(() => {
     setEnabled(value.enabled === true);
     setVisibility(value.visibility ?? "isolated");
     setAllowedTools(value.allowedTools ?? []);
@@ -17720,7 +17790,7 @@ function AnswerSettings({ bot, value = {}, channels: channels2 = [], threads = [
     setCodeWelcome(value.codeWelcome ?? "");
   }, [value.enabled, value.visibility, JSON.stringify(value.allowedTools), value.sharedNotes, value.newChildMode, value.graduateAfter, value.resumeAfterMs, value.knowledgeFolder, value.personBinding, value.needsStaffChatId, value.strangerReply, value.codeWelcome]);
   const channelIds = channels2.map((channel) => channel.id).join(",");
-  (0, import_react18.useEffect)(() => {
+  (0, import_react19.useEffect)(() => {
     if (!open || channels2.length === 0) return void 0;
     let alive = true;
     Promise.all(channels2.map((channel) => call("omni-thread-chats", { channelId: channel.id }).then(
@@ -17758,38 +17828,38 @@ function AnswerSettings({ bot, value = {}, channels: channels2 = [], threads = [
     }
   };
   const tool = (name, on2) => setAllowedTools((before) => on2 ? [...before.filter((item) => item !== name), name] : before.filter((item) => item !== name));
-  return (0, import_react18.createElement)(
+  return (0, import_react19.createElement)(
     "div",
     null,
-    (0, import_react18.createElement)("button", { type: "button", className: "ot-channel-row", "aria-expanded": open, onClick: () => setOpen((before) => !before) }, "Answer mode"),
-    open ? (0, import_react18.createElement)(
+    (0, import_react19.createElement)("button", { type: "button", className: "ot-channel-row", "aria-expanded": open, onClick: () => setOpen((before) => !before) }, "Answer mode"),
+    open ? (0, import_react19.createElement)(
       "div",
       { className: "ot-picker ot-answer", role: "group", "aria-label": "Answer mode settings" },
-      (0, import_react18.createElement)(SwitchRow, { label: "Answer new messages", on: enabled, onChange: setEnabled }),
-      (0, import_react18.createElement)("p", { className: "bt-note" }, "Each child replies only in its own chat. Switch a child between training and sending from its menu in the list below."),
-      (0, import_react18.createElement)(
+      (0, import_react19.createElement)(SwitchRow, { label: "Answer new messages", on: enabled, onChange: setEnabled }),
+      (0, import_react19.createElement)("p", { className: "bt-note" }, "Each child replies only in its own chat. Switch a child between training and sending from its menu in the list below."),
+      (0, import_react19.createElement)(
         Field,
         { label: "Visibility", note: VISIBILITY[visibility]?.[1] },
-        (0, import_react18.createElement)(
+        (0, import_react19.createElement)(
           "select",
           { className: "bt-select", value: visibility, onChange: (event) => setVisibility(event.target.value) },
-          Object.entries(VISIBILITY).map(([value2, [label]]) => (0, import_react18.createElement)("option", { key: value2, value: value2 }, label))
+          Object.entries(VISIBILITY).map(([value2, [label]]) => (0, import_react19.createElement)("option", { key: value2, value: value2 }, label))
         )
       ),
-      (0, import_react18.createElement)(
+      (0, import_react19.createElement)(
         Field,
         { label: "New children start in", note: NEW_CHILD_MODES[newChildMode]?.[1] },
-        (0, import_react18.createElement)(
+        (0, import_react19.createElement)(
           "select",
           { className: "bt-select", value: newChildMode, onChange: (event) => setNewChildMode(event.target.value) },
-          Object.entries(NEW_CHILD_MODES).map(([value2, [label]]) => (0, import_react18.createElement)("option", { key: value2, value: value2 }, label))
+          Object.entries(NEW_CHILD_MODES).map(([value2, [label]]) => (0, import_react19.createElement)("option", { key: value2, value: value2 }, label))
         )
       ),
-      (0, import_react18.createElement)(SwitchRow, { label: "Switch a training child to sending by itself", on: graduates, onChange: setGraduates }),
-      graduates ? (0, import_react18.createElement)(
+      (0, import_react19.createElement)(SwitchRow, { label: "Switch a training child to sending by itself", on: graduates, onChange: setGraduates }),
+      graduates ? (0, import_react19.createElement)(
         Field,
         { label: "Approved drafts in a row", note: "Only drafts sent unchanged count. An edit or a rejection starts the count again." },
-        (0, import_react18.createElement)("input", {
+        (0, import_react19.createElement)("input", {
           className: "bt-input ot-answer-count",
           type: "number",
           min: 1,
@@ -17801,13 +17871,13 @@ function AnswerSettings({ bot, value = {}, channels: channels2 = [], threads = [
           onChange: (event) => setGraduateAfter(event.target.value)
         })
       ) : null,
-      (0, import_react18.createElement)(
+      (0, import_react19.createElement)(
         Field,
         { label: "Resume a paused child after", note: "A child pauses when staff write in its chat from their own phone. It answers again after this many minutes with no staff message there, or when you press Resume." },
-        (0, import_react18.createElement)(
+        (0, import_react19.createElement)(
           "span",
           { className: "ot-answer-minutes" },
-          (0, import_react18.createElement)("input", {
+          (0, import_react19.createElement)("input", {
             className: "bt-input ot-answer-count",
             type: "number",
             min: 1,
@@ -17818,65 +17888,65 @@ function AnswerSettings({ bot, value = {}, channels: channels2 = [], threads = [
             "aria-invalid": !minutesOk || void 0,
             onChange: (event) => setResumeMinutes(event.target.value)
           }),
-          (0, import_react18.createElement)("span", { "aria-hidden": true }, "minutes")
+          (0, import_react19.createElement)("span", { "aria-hidden": true }, "minutes")
         )
       ),
-      (0, import_react18.createElement)(
+      (0, import_react19.createElement)(
         Field,
         { label: "Staff chat when a person is needed", note: "When a child says its person needs someone from the team, the bot's own chat and the child's row here show it. Pick a chat only staff are in to get a message there too." },
-        (0, import_react18.createElement)(
+        (0, import_react19.createElement)(
           "select",
           { className: "bt-select ot-answer-staff", value: staffChat, onChange: (event) => setStaffChat(event.target.value) },
-          (0, import_react18.createElement)("option", { value: "" }, "None"),
-          staffOptions.map((option) => (0, import_react18.createElement)("option", { key: option.id, value: option.id }, option.label))
+          (0, import_react19.createElement)("option", { value: "" }, "None"),
+          staffOptions.map((option) => (0, import_react19.createElement)("option", { key: option.id, value: option.id }, option.label))
         )
       ),
-      (0, import_react18.createElement)(
+      (0, import_react19.createElement)(
         Field,
         { label: "Reply to people who are not let in", note: "Sent once a day to each person no rule lets in. Empty: no reply." },
-        (0, import_react18.createElement)("textarea", { className: "bt-input bt-input-area ot-answer-stranger", maxLength: STRANGER_REPLY_MAX, value: strangerReply, onChange: (event) => setStrangerReply(event.target.value) })
+        (0, import_react19.createElement)("textarea", { className: "bt-input bt-input-area ot-answer-stranger", maxLength: STRANGER_REPLY_MAX, value: strangerReply, onChange: (event) => setStrangerReply(event.target.value) })
       ),
-      (0, import_react18.createElement)(StrangerRequests, { botId: bot.id, confirmedLabel: value.outsideCheck?.label ?? null }),
-      (0, import_react18.createElement)(
+      (0, import_react19.createElement)(StrangerRequests, { botId: bot.id, confirmedLabel: value.outsideCheck?.label ?? null }),
+      (0, import_react19.createElement)(
         "div",
         { className: "ot-answer-tools", role: "group", "aria-label": "Children may also" },
-        (0, import_react18.createElement)("span", { className: "bt-field-label", "aria-hidden": true }, "Children may also"),
-        ANSWER_TOOLS.map(([name, label]) => (0, import_react18.createElement)(SwitchRow, { key: name, label, title: name, on: allowedTools.includes(name), onChange: (on2) => tool(name, on2) }))
+        (0, import_react19.createElement)("span", { className: "bt-field-label", "aria-hidden": true }, "Children may also"),
+        ANSWER_TOOLS.map(([name, label]) => (0, import_react19.createElement)(SwitchRow, { key: name, label, title: name, on: allowedTools.includes(name), onChange: (on2) => tool(name, on2) }))
       ),
       // #1689: the host checks the folder and keeps its real path; no model tool can set it.
-      (0, import_react18.createElement)(
+      (0, import_react19.createElement)(
         Field,
         { label: "Knowledge folder", note: "The business's own files, such as instructions and FAQ. While a folder is set, children read, find and search files there, and nowhere else. Full path; empty for none." },
-        (0, import_react18.createElement)("input", { className: "bt-input ot-answer-folder", type: "text", value: knowledgeFolder, title: knowledgeFolder || void 0, placeholder: "/path/to/folder", spellCheck: false, autoComplete: "off", onChange: (event) => setKnowledgeFolder(event.target.value) })
+        (0, import_react19.createElement)("input", { className: "bt-input ot-answer-folder", type: "text", value: knowledgeFolder, title: knowledgeFolder || void 0, placeholder: "/path/to/folder", spellCheck: false, autoComplete: "off", onChange: (event) => setKnowledgeFolder(event.target.value) })
       ),
-      (0, import_react18.createElement)(SwitchRow, { label: "Bind each child to its person", on: personBinding, onChange: setPersonBinding }),
-      (0, import_react18.createElement)("p", { className: "bt-note" }, "A child then takes the notes and the capability in its person's access rule, and answers only messages that rule lets in. Needs isolated visibility, and the file tools off or limited to a knowledge folder."),
+      (0, import_react19.createElement)(SwitchRow, { label: "Bind each child to its person", on: personBinding, onChange: setPersonBinding }),
+      (0, import_react19.createElement)("p", { className: "bt-note" }, "A child then takes the notes and the capability in its person's access rule, and answers only messages that rule lets in. Needs isolated visibility, and the file tools off or limited to a knowledge folder."),
       // #1732: a person whose first message carries an open code from a staff list is let in (host answer-codes.js).
-      (0, import_react18.createElement)(
+      (0, import_react19.createElement)(
         Field,
         { label: t("Message when a code admits someone"), note: t("Sent to the person once a code from a list admits them; their child answers from their next message. Empty: no message, and the child answers the one with the code.") },
-        (0, import_react18.createElement)("textarea", { className: "bt-input bt-input-area ot-answer-welcome", maxLength: CODE_WELCOME_MAX, value: codeWelcome, onChange: (event) => setCodeWelcome(event.target.value) })
+        (0, import_react19.createElement)("textarea", { className: "bt-input bt-input-area ot-answer-welcome", maxLength: CODE_WELCOME_MAX, value: codeWelcome, onChange: (event) => setCodeWelcome(event.target.value) })
       ),
-      (0, import_react18.createElement)(CodeLists),
+      (0, import_react19.createElement)(CodeLists),
       // #1742: a code from a person not let in is checked with this outside service (host answer-outside-check.js).
-      (0, import_react18.createElement)(OutsideCheck, { botId: bot.id, value: value.outsideCheck }),
-      (0, import_react18.createElement)(
+      (0, import_react19.createElement)(OutsideCheck, { botId: bot.id, value: value.outsideCheck }),
+      (0, import_react19.createElement)(
         Field,
         { label: "Shared notes for collective children" },
-        (0, import_react18.createElement)("textarea", { className: "bt-input bt-input-area", maxLength: SHARED_NOTES_MAX, value: sharedNotes, onChange: (event) => setSharedNotes(event.target.value) })
+        (0, import_react19.createElement)("textarea", { className: "bt-input bt-input-area", maxLength: SHARED_NOTES_MAX, value: sharedNotes, onChange: (event) => setSharedNotes(event.target.value) })
       ),
-      problem ? (0, import_react18.createElement)("p", { className: "ot-picker-problem", role: "alert" }, hostText(problem)) : null,
-      (0, import_react18.createElement)(
+      problem ? (0, import_react19.createElement)("p", { className: "ot-picker-problem", role: "alert" }, hostText(problem)) : null,
+      (0, import_react19.createElement)(
         "div",
         { className: "bt-actions" },
-        (0, import_react18.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: busy || graduates && !countOk || !minutesOk, onClick: save }, "Save answer settings")
+        (0, import_react19.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: busy || graduates && !countOk || !minutesOk, onClick: save }, "Save answer settings")
       )
     ) : null
   );
 }
 function RepairTools({ bot }) {
-  const [busy, setBusy] = (0, import_react18.useState)(false);
-  const [result, setResult] = (0, import_react18.useState)(null);
+  const [busy, setBusy] = (0, import_react19.useState)(false);
+  const [result, setResult] = (0, import_react19.useState)(null);
   const repair = async () => {
     setBusy(true);
     setResult(null);
@@ -17889,11 +17959,11 @@ function RepairTools({ bot }) {
       setBusy(false);
     }
   };
-  return (0, import_react18.createElement)(
+  return (0, import_react19.createElement)(
     "div",
     null,
-    (0, import_react18.createElement)("button", { type: "button", className: "ot-channel-row", disabled: busy, title: "For a bot whose every turn fails with a tool error", onClick: repair }, busy ? "Repairing tools…" : "Repair tools"),
-    result ? (0, import_react18.createElement)("p", { className: result.ok ? "ot-picker-note" : "ot-picker-problem", role: result.ok ? "status" : "alert" }, result.text) : null
+    (0, import_react19.createElement)("button", { type: "button", className: "ot-channel-row", disabled: busy, title: "For a bot whose every turn fails with a tool error", onClick: repair }, busy ? "Repairing tools…" : "Repair tools"),
+    result ? (0, import_react19.createElement)("p", { className: result.ok ? "ot-picker-note" : "ot-picker-problem", role: result.ok ? "status" : "alert" }, result.text) : null
   );
 }
 function waitingOf(roster, botId) {
@@ -17904,11 +17974,11 @@ function waitingOf(roster, botId) {
 function OmniTree(props) {
   const { bot, actions, roster } = props;
   const state = useOmni();
-  const omni2 = (0, import_react18.useMemo)(() => omniActions((id) => actions.selectPanel(id), call), [actions]);
-  const [open, setOpen] = (0, import_react18.useState)(readOpen);
-  const [picking, setPicking] = (0, import_react18.useState)(null);
-  const [creatingBot, setCreatingBot] = (0, import_react18.useState)(false);
-  (0, import_react18.useEffect)(() => {
+  const omni2 = (0, import_react19.useMemo)(() => omniActions((id) => actions.selectPanel(id), call), [actions]);
+  const [open, setOpen] = (0, import_react19.useState)(readOpen);
+  const [picking, setPicking] = (0, import_react19.useState)(null);
+  const [creatingBot, setCreatingBot] = (0, import_react19.useState)(false);
+  (0, import_react19.useEffect)(() => {
     startLive(call);
   }, []);
   if (!isOmniBot(bot)) return null;
@@ -17921,14 +17991,14 @@ function OmniTree(props) {
   const ownedChannels = state.channels.filter((channel) => ownerOf(channel.id) === bot.id);
   const ownedState = { ...state, channels: ownedChannels };
   const ownedView = { ...roster, omniThreads: threads };
-  const others = (list) => list.length === 0 ? null : (0, import_react18.createElement)(
+  const others = (list) => list.length === 0 ? null : (0, import_react19.createElement)(
     "div",
     { className: "ot-others", role: "group", "aria-label": t("Other chats") },
-    (0, import_react18.createElement)("span", { className: "ot-empty" }, t("Other chats")),
-    list.map((thread) => (0, import_react18.createElement)(ThreadRow, { key: rowKey(thread, rowProps), thread, actions, rowProps }))
+    (0, import_react19.createElement)("span", { className: "ot-empty" }, t("Other chats")),
+    list.map((thread) => (0, import_react19.createElement)(ThreadRow, { key: rowKey(thread, rowProps), thread, actions, rowProps }))
   );
   if (state.preview) {
-    return (0, import_react18.createElement)("div", { className: "ot-tree" }, (0, import_react18.createElement)("button", { type: "button", className: "ot-channel-row ot-link", onClick: openConnectWizard }, t("Connect Omni"), (0, import_react18.createElement)("span", { "aria-hidden": true }, " →")), others(threads));
+    return (0, import_react19.createElement)("div", { className: "ot-tree" }, (0, import_react19.createElement)("button", { type: "button", className: "ot-channel-row ot-link", onClick: openConnectWizard }, t("Connect Omni"), (0, import_react19.createElement)("span", { "aria-hidden": true }, " →")), others(threads));
   }
   const change = (id, show) => setOpen((before) => {
     const next = new Set(before);
@@ -17940,20 +18010,20 @@ function OmniTree(props) {
   const plus = plusOf(roster, state);
   const listed = new Set(ownedChannels.map((channel) => channel.id));
   const waiting = waitingOf(roster, bot.id);
-  return (0, import_react18.createElement)(
+  return (0, import_react19.createElement)(
     "div",
     { className: "ot-tree", role: "group", "aria-label": t("{name}'s channels", { name: bot.name }) },
-    waiting ? (0, import_react18.createElement)(
+    waiting ? (0, import_react19.createElement)(
       "div",
       { className: "ot-channel-row ot-waiting", role: "status", title: waiting.title, "aria-label": `${waiting.count} ${waiting.label}` },
-      (0, import_react18.createElement)("span", { className: "ot-count", "aria-hidden": true }, String(waiting.count)),
-      (0, import_react18.createElement)("span", { className: "ot-waiting-text", "aria-hidden": true }, waiting.label)
+      (0, import_react19.createElement)("span", { className: "ot-count", "aria-hidden": true }, String(waiting.count)),
+      (0, import_react19.createElement)("span", { className: "ot-waiting-text", "aria-hidden": true }, waiting.label)
     ) : null,
-    (0, import_react18.createElement)(AnswerSettings, { bot, value: roster?.omniAnswers?.[bot.id], channels: ownedChannels, threads }),
-    (0, import_react18.createElement)(RepairTools, { bot }),
-    bot.id === defaultBotId ? (0, import_react18.createElement)("button", { type: "button", className: "ot-channel-row", onClick: () => setCreatingBot((value) => !value) }, "Add channel bot") : null,
-    bot.id === defaultBotId && (creatingBot || roster?.omniBotProposals?.length > 0) ? (0, import_react18.createElement)(ChannelBotForm, { channels: state.channels, roster, onClose: () => setCreatingBot(false) }) : null,
-    ownedChannels.map((channel) => (0, import_react18.createElement)(ChannelItem, {
+    (0, import_react19.createElement)(AnswerSettings, { bot, value: roster?.omniAnswers?.[bot.id], channels: ownedChannels, threads }),
+    (0, import_react19.createElement)(RepairTools, { bot }),
+    bot.id === defaultBotId ? (0, import_react19.createElement)("button", { type: "button", className: "ot-channel-row", onClick: () => setCreatingBot((value) => !value) }, "Add channel bot") : null,
+    bot.id === defaultBotId && (creatingBot || roster?.omniBotProposals?.length > 0) ? (0, import_react19.createElement)(ChannelBotForm, { channels: state.channels, roster, onClose: () => setCreatingBot(false) }) : null,
+    ownedChannels.map((channel) => (0, import_react19.createElement)(ChannelItem, {
       key: channel.id,
       channel,
       state: ownedState,
@@ -17982,7 +18052,7 @@ function OmniTree(props) {
 var threadDocks = 0;
 function ThreadDock({ sessionId, useRoster }) {
   const thread = useRoster((roster) => isThreadSession(roster, sessionId));
-  (0, import_react18.useEffect)(() => {
+  (0, import_react19.useEffect)(() => {
     if (!thread || typeof document === "undefined") return void 0;
     threadDocks += 1;
     document.body.dataset.omniThread = "";
@@ -18129,8 +18199,8 @@ body[data-omni-thread] .bt-voice,body[data-omni-thread] .bt-plus,body[data-omni-
 ${CODE_LISTS_CSS}${OUTSIDE_CHECK_CSS}`;
 
 // src/client/permissions.js
-var import_react19 = require("react");
-var NONE = {};
+var import_react20 = require("react");
+var NONE2 = {};
 var ASKING_TOOLS = ["omni_messages", "omni_send", "omni_react", "omni_media", "omni_delete", "omni_call"];
 var KIND_OF = { chat: "chat", group: "group", self: "your own chat", channel: "channel" };
 var kindText = (resource) => t(KIND_OF[resource?.type] ?? "chat");
@@ -18160,19 +18230,19 @@ function reachText(entry) {
 }
 var CONFIRM_LABEL = { send: "Send", delete: "Delete", disconnect: "Disconnect", react: "React" };
 function Preview({ entry }) {
-  const preview = entry.preview ?? NONE;
+  const preview = entry.preview ?? NONE2;
   const lines = [];
-  if (entry.resource?.type === "call") lines.push((0, import_react19.createElement)("code", { key: "op", className: "om-perm-op" }, `${preview.method ?? ""} ${preview.path ?? ""}${preview.query ? ` ?${preview.query}` : ""}`.trim()));
-  if (preview.channel) lines.push((0, import_react19.createElement)("div", { key: "channel", className: "om-perm-to" }, t("From {channel}", { channel: preview.channel })));
-  if (preview.to) lines.push((0, import_react19.createElement)("div", { key: "to", className: "om-perm-to" }, t("To {to}", { to: preview.to })));
-  if (preview.emoji) lines.push((0, import_react19.createElement)("div", { key: "emoji", className: "om-perm-emoji" }, preview.emoji));
-  if (preview.text) lines.push((0, import_react19.createElement)("blockquote", { key: "text", className: "om-perm-text" }, preview.text));
-  if (preview.body) lines.push((0, import_react19.createElement)("pre", { key: "body", className: "om-perm-body" }, preview.body));
-  return lines.length === 0 ? null : (0, import_react19.createElement)("div", { className: "om-perm-preview" }, lines);
+  if (entry.resource?.type === "call") lines.push((0, import_react20.createElement)("code", { key: "op", className: "om-perm-op" }, `${preview.method ?? ""} ${preview.path ?? ""}${preview.query ? ` ?${preview.query}` : ""}`.trim()));
+  if (preview.channel) lines.push((0, import_react20.createElement)("div", { key: "channel", className: "om-perm-to" }, t("From {channel}", { channel: preview.channel })));
+  if (preview.to) lines.push((0, import_react20.createElement)("div", { key: "to", className: "om-perm-to" }, t("To {to}", { to: preview.to })));
+  if (preview.emoji) lines.push((0, import_react20.createElement)("div", { key: "emoji", className: "om-perm-emoji" }, preview.emoji));
+  if (preview.text) lines.push((0, import_react20.createElement)("blockquote", { key: "text", className: "om-perm-text" }, preview.text));
+  if (preview.body) lines.push((0, import_react20.createElement)("pre", { key: "body", className: "om-perm-body" }, preview.body));
+  return lines.length === 0 ? null : (0, import_react20.createElement)("div", { className: "om-perm-preview" }, lines);
 }
 function ConsentCard({ bot, entry }) {
-  const [busy, setBusy] = (0, import_react19.useState)("");
-  const [error, setError] = (0, import_react19.useState)("");
+  const [busy, setBusy] = (0, import_react20.useState)("");
+  const [error, setError] = (0, import_react20.useState)("");
   const answer = (choice) => {
     if (busy) return;
     setBusy(choice);
@@ -18181,37 +18251,37 @@ function ConsentCard({ bot, entry }) {
   };
   const running = entry.status === "running";
   const confirm2 = entry.kind === "confirm";
-  const button = (choice, label, primary = false) => (0, import_react19.createElement)("button", {
+  const button = (choice, label, primary = false) => (0, import_react20.createElement)("button", {
     type: "button",
     className: primary ? "bt-q-submit" : "bt-q-btn",
     disabled: Boolean(busy) || running,
     onClick: () => answer(choice)
   }, busy === choice ? "…" : label);
-  return (0, import_react19.createElement)(
+  return (0, import_react20.createElement)(
     "div",
     { className: "bt-q om-perm", role: "group", "aria-label": askTitle(bot, entry), "data-kind": entry.kind },
-    (0, import_react19.createElement)(
+    (0, import_react20.createElement)(
       "div",
       { className: "bt-q-head" },
-      (0, import_react19.createElement)("span", { className: "om-perm-who" }, (0, import_react19.createElement)(BotMark, { bot, size: 28 })),
-      (0, import_react19.createElement)(
+      (0, import_react20.createElement)("span", { className: "om-perm-who" }, (0, import_react20.createElement)(BotMark, { bot, size: 28 })),
+      (0, import_react20.createElement)(
         "div",
         { className: "bt-q-text" },
-        (0, import_react19.createElement)("p", { className: "bt-q-title" }, askTitle(bot, entry)),
-        (0, import_react19.createElement)("div", { className: "bt-q-detail" }, reachText(entry))
+        (0, import_react20.createElement)("p", { className: "bt-q-title" }, askTitle(bot, entry)),
+        (0, import_react20.createElement)("div", { className: "bt-q-detail" }, reachText(entry))
       )
     ),
-    (0, import_react19.createElement)(Preview, { entry }),
-    error ? (0, import_react19.createElement)("div", { className: "om-perm-error", role: "alert" }, error) : null,
-    (0, import_react19.createElement)(
+    (0, import_react20.createElement)(Preview, { entry }),
+    error ? (0, import_react20.createElement)("div", { className: "om-perm-error", role: "alert" }, error) : null,
+    (0, import_react20.createElement)(
       "div",
       { className: "bt-q-foot" },
-      running ? (0, import_react19.createElement)("span", { className: "om-perm-running" }, t("Running…")) : null,
-      confirm2 ? [(0, import_react19.createElement)("span", { key: "deny" }, button("deny", t("Cancel"))), (0, import_react19.createElement)("span", { key: "once" }, button("once", t(CONFIRM_LABEL[entry.action] ?? "Allow"), true))] : [
-        (0, import_react19.createElement)("span", { key: "deny" }, button("deny", t("No"))),
-        (0, import_react19.createElement)("span", { key: "once" }, button("once", t("Once"))),
-        entry.resource?.channelId && entry.resource.channelName ? (0, import_react19.createElement)("span", { key: "channel" }, button("channel", t("Always, all of {channel}", { channel: entry.resource.channelName }))) : null,
-        (0, import_react19.createElement)("span", { key: "always" }, button("always", t("Always"), true))
+      running ? (0, import_react20.createElement)("span", { className: "om-perm-running" }, t("Running…")) : null,
+      confirm2 ? [(0, import_react20.createElement)("span", { key: "deny" }, button("deny", t("Cancel"))), (0, import_react20.createElement)("span", { key: "once" }, button("once", t(CONFIRM_LABEL[entry.action] ?? "Allow"), true))] : [
+        (0, import_react20.createElement)("span", { key: "deny" }, button("deny", t("No"))),
+        (0, import_react20.createElement)("span", { key: "once" }, button("once", t("Once"))),
+        entry.resource?.channelId && entry.resource.channelName ? (0, import_react20.createElement)("span", { key: "channel" }, button("channel", t("Always, all of {channel}", { channel: entry.resource.channelName }))) : null,
+        (0, import_react20.createElement)("span", { key: "always" }, button("always", t("Always"), true))
       ]
     )
   );
@@ -18226,10 +18296,10 @@ var SETTLED = {
   replaced: "Asked again"
 };
 function Settled({ bot, entry }) {
-  return (0, import_react19.createElement)(
+  return (0, import_react20.createElement)(
     "div",
     { className: "bt-event om-perm-done", "data-status": entry.status },
-    (0, import_react19.createElement)(BotMark, { bot, size: 16 }),
+    (0, import_react20.createElement)(BotMark, { bot, size: 16 }),
     ` ${askTitle(bot, entry)} · ${t(SETTLED[entry.status] ?? entry.status)}`
   );
 }
@@ -18240,21 +18310,21 @@ function withConsent(render) {
     const callId = props.call?.callId;
     const entry = bot && callId ? entryAt(props.roster, bot, props.sessionId, callId) : void 0;
     if (entry === void 0) {
-      if (props.done && /^(consent|confirmation)_required:/.test(props.content ?? "")) return (0, import_react19.createElement)("div", { className: "bt-event" }, t("Asked you for permission in its chat"));
+      if (props.done && /^(consent|confirmation)_required:/.test(props.content ?? "")) return (0, import_react20.createElement)("div", { className: "bt-event" }, t("Asked you for permission in its chat"));
       return render ? render(props) : null;
     }
-    return (0, import_react19.createElement)("div", { className: "bt-q-inline" }, entry.status === "pending" || entry.status === "running" ? (0, import_react19.createElement)(ConsentCard, { bot, entry }) : (0, import_react19.createElement)(Settled, { bot, entry }));
+    return (0, import_react20.createElement)("div", { className: "bt-q-inline" }, entry.status === "pending" || entry.status === "running" ? (0, import_react20.createElement)(ConsentCard, { bot, entry }) : (0, import_react20.createElement)(Settled, { bot, entry }));
   };
 }
 function ConsentDock({ sessionId, useRoster, useCards }) {
   const roster = useRoster((value) => value);
-  const shown = useCards?.((state) => state[sessionId]) ?? NONE;
+  const shown = useCards?.((state) => state[sessionId]) ?? NONE2;
   const bot = roster.byId?.[sessionId];
   if (!bot || (bot.sessionId ?? bot.id) !== sessionId) return null;
   const drawn = (entry) => entry.callId && entry.sessionId === sessionId && shown[entry.callId] > 0;
   const waiting = (roster.omniConsents?.[bot.id] ?? []).filter((entry) => (entry.status === "pending" || entry.status === "running") && !drawn(entry));
   if (waiting.length === 0) return null;
-  return (0, import_react19.createElement)("div", { className: "bt-q-dock om-perm-dock" }, waiting.map((entry) => (0, import_react19.createElement)(ConsentCard, { key: entry.id, bot, entry })));
+  return (0, import_react20.createElement)("div", { className: "bt-q-dock om-perm-dock" }, waiting.map((entry) => (0, import_react20.createElement)(ConsentCard, { key: entry.id, bot, entry })));
 }
 var ACTION_TEXT = { read: "read", media: "files", send: "send", react: "react", delete: "delete" };
 function PermissionsCard({ bot, roster, run, Card, SwitchRow: SwitchRow2 }) {
@@ -18263,35 +18333,35 @@ function PermissionsCard({ bot, roster, run, Card, SwitchRow: SwitchRow2 }) {
   const grants = (roster.omniGrants ?? []).filter((grant) => grant.botId === bot.id);
   const now = Date.now();
   if (main) {
-    return (0, import_react19.createElement)(
+    return (0, import_react20.createElement)(
       Card,
       { title: t("On Omni") },
-      (0, import_react19.createElement)("div", { className: "bt-set-row bt-bs-row" }, (0, import_react19.createElement)(
+      (0, import_react20.createElement)("div", { className: "bt-set-row bt-bs-row" }, (0, import_react20.createElement)(
         "span",
         { className: "bt-set-copy" },
-        (0, import_react19.createElement)("span", { className: "bt-bs-label" }, t("All of Omni")),
-        (0, import_react19.createElement)("span", { className: "bt-set-hint" }, t("Omni and Main Bots operate Omni. Messaging a person, deleting and disconnecting still ask you first."))
+        (0, import_react20.createElement)("span", { className: "bt-bs-label" }, t("All of Omni")),
+        (0, import_react20.createElement)("span", { className: "bt-set-hint" }, t("Omni and Main Bots operate Omni. Messaging a person, deleting and disconnecting still ask you first."))
       ))
     );
   }
-  return (0, import_react19.createElement)(
+  return (0, import_react20.createElement)(
     Card,
     { title: t("On Omni") },
-    grants.length === 0 ? (0, import_react19.createElement)("div", { className: "bt-set-row bt-bs-row" }, (0, import_react19.createElement)(
+    grants.length === 0 ? (0, import_react20.createElement)("div", { className: "bt-set-row bt-bs-row" }, (0, import_react20.createElement)(
       "span",
       { className: "bt-set-copy" },
-      (0, import_react19.createElement)("span", { className: "bt-bs-label" }, t("Nothing yet")),
-      (0, import_react19.createElement)("span", { className: "bt-set-hint" }, t("When {bot} needs a chat, it asks you there, on a card.", { bot: bot.name }))
-    )) : grants.map((grant) => (0, import_react19.createElement)(
+      (0, import_react20.createElement)("span", { className: "bt-bs-label" }, t("Nothing yet")),
+      (0, import_react20.createElement)("span", { className: "bt-set-hint" }, t("When {bot} needs a chat, it asks you there, on a card.", { bot: bot.name }))
+    )) : grants.map((grant) => (0, import_react20.createElement)(
       "div",
       { key: grant.id, className: "om-grant" },
-      (0, import_react19.createElement)(SwitchRow2, {
+      (0, import_react20.createElement)(SwitchRow2, {
         label: `${grant.resource?.name ?? t("a chat")} · ${grant.actions.map((action) => t(ACTION_TEXT[action] ?? action)).join(", ")}`,
         hint: [kindText(grant.resource), typeof grant.expiresAt === "number" && grant.expiresAt <= now ? t("expired") : "", t("Ask each time")].filter(Boolean).join(" · "),
         on: grant.approval === "confirm",
         onChange: (on2) => run(call("omni-grant-approval", { id: grant.id, approval: on2 ? "confirm" : "auto" }))
       }),
-      (0, import_react19.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm om-grant-revoke", onClick: () => run(call("omni-grant-revoke", { id: grant.id })) }, t("Revoke"))
+      (0, import_react20.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm om-grant-revoke", onClick: () => run(call("omni-grant-revoke", { id: grant.id })) }, t("Revoke"))
     ))
   );
 }
@@ -19139,7 +19209,7 @@ var STRINGS = {
 };
 
 // src/client/index.js
-var import_react20 = require("react");
+var import_react21 = require("react");
 var { ClockIcon: ClockIcon3 } = icons;
 var inject = ["slots"];
 var channels = Object.freeze({ Badge, KeyValue, LiveChannel, LiveChat, LiveQr, Table });
@@ -19154,10 +19224,10 @@ function toggleBoard(reportError, botId) {
     reportError?.(error, "board");
   }
 }
-function installBoard(ctx, face) {
+function installBoard(ctx, face2) {
   const fiber = ctx.inject(["sidebarRight", "sidebarRightTabs"], (scope) => {
     scope.effect(() => scope.sidebarRightTabs.register(boardTabDefinition()), "ds-bot: subscriptions tab type");
-    scope.effect(() => ctx.slots.inject("sidebar.right.pane.tab", () => ctx.slots.register({ name: "sidebar.right.pane.tab", key: BOARD_TAB_ID, inject: face }, BoardTab)), "ds-bot: subscriptions tab");
+    scope.effect(() => ctx.slots.inject("sidebar.right.pane.tab", () => ctx.slots.register({ name: "sidebar.right.pane.tab", key: BOARD_TAB_ID, inject: face2 }, BoardTab)), "ds-bot: subscriptions tab");
     scope.effect(() => {
       boardRight = scope.sidebarRight;
       return () => {
@@ -19181,8 +19251,8 @@ var PHRASES = {
   omni_media: () => ({ label: t("Opening a file"), state: "working" }),
   omni_delete: () => ({ label: t("Deleting a message"), state: "working" })
 };
-var callCard = ({ arg, content, done }) => (0, import_react20.createElement)(OmniCallCard, { ...parseCall(arg, content), done });
-var toolCard = ({ tool, arg, content, done }) => (0, import_react20.createElement)(OmniToolCard, { tool, arg, content, done });
+var callCard = ({ arg, content, done }) => (0, import_react21.createElement)(OmniCallCard, { ...parseCall(arg, content), done });
+var toolCard = ({ tool, arg, content, done }) => (0, import_react21.createElement)(OmniToolCard, { tool, arg, content, done });
 function apply(ctx) {
   ctx.effect(() => addStrings(STRINGS), "ds-bot: channels copy");
   registerConnectStep(ctx);
@@ -19200,33 +19270,34 @@ function apply(ctx) {
   }
   if (botSettings) ctx.effect(() => botSettings.register({ id: "omni-permissions", order: 0, Component: PermissionsCard }), "ds-bot: Omni permissions settings");
   for (const name of ["find_chats", "omni_endpoints"]) ctx.effect(() => toolCards.register(name, null, { phrase: PHRASES[name] }), `ds-bot: ${name} phrase`);
-  ctx.effect(() => toolCards.register("save_automation", (props) => (0, import_react20.createElement)(SavedAutomationCard, props), { phrase: PHRASES.save_automation }), "ds-bot: save_automation card");
-  ctx.effect(() => badges.register({ id: "omni-events", Component: ({ bot, roster, useWork }) => isEventsBot(roster, bot.id) ? (0, import_react20.createElement)(EventsBadge, { roster, useWork, botId: bot.id }) : null }), "ds-bot: automations badge");
+  ctx.effect(() => toolCards.register("save_automation", (props) => (0, import_react21.createElement)(SavedAutomationCard, props), { phrase: PHRASES.save_automation }), "ds-bot: save_automation card");
+  ctx.effect(() => badges.register({ id: "omni-events", Component: ({ bot, roster, useWork }) => isEventsBot(roster, bot.id) ? (0, import_react21.createElement)(EventsBadge, { roster, useWork, botId: bot.id }) : null }), "ds-bot: automations badge");
   if (botChildren) ctx.effect(() => botChildren.register({ id: "omni-channels", Component: OmniTree }), "ds-bot: Omni channels in the sidebar");
+  if (botChannels?.register) ctx.effect(() => registerBotChannels(botChannels), "omni-channels: channels in the left bar");
   ctx.effect(() => headerButtons.register({
     id: "omni-board",
-    Component: ({ bot, roster, actions, useWork }) => isEventsBot(roster, bot.id) ? (0, import_react20.createElement)(SubscriptionsButton, { roster, useWork, botId: bot.id, onToggle: () => toggleBoard(actions.reportError, bot.id) }) : null
+    Component: ({ bot, roster, actions, useWork }) => isEventsBot(roster, bot.id) ? (0, import_react21.createElement)(SubscriptionsButton, { roster, useWork, botId: bot.id, onToggle: () => toggleBoard(actions.reportError, bot.id) }) : null
   }), "ds-bot: automations button");
   if (chatSuggestions?.register) ctx.effect(() => chatSuggestions.register({ id: "omni-automations", order: -10, when: ({ bot, roster }) => Boolean(bot?.id) && bot.id === roster?.eventsBotId, items: automationExamples }), "ds-bot: automation suggestions");
   ctx.effect(() => nav.register({ id: "automations", label: () => t("Automations"), icon: ClockIcon3, run: (actions) => actions.selectPanel(AUTOMATIONS_PANEL) }), "ds-bot: automations nav");
-  ctx.effect(() => onShell(({ face, shadow, installCompiledStyles }) => [
-    () => installCompiledStyles(CHANNELS_CSS + OMNI_TREE_CSS + SUBSCRIPTIONS_CSS + AUTOMATIONS_CSS + OMNI_LIVE_CSS + OMNI_PEEK_CSS + OMNI_CONNECT_CSS + PERMISSIONS_CSS + OMNI_PHONE_CSS, "channels"),
-    () => shadow("conversation.input.dock", { id: "omni-consent", order: -80, inject: face }, ConsentDock),
+  ctx.effect(() => onShell(({ face: face2, shadow, installCompiledStyles }) => [
+    () => installCompiledStyles(CHANNELS_CSS + BOT_CHANNELS_CSS + OMNI_TREE_CSS + SUBSCRIPTIONS_CSS + AUTOMATIONS_CSS + OMNI_LIVE_CSS + OMNI_PEEK_CSS + OMNI_CONNECT_CSS + PERMISSIONS_CSS + OMNI_PHONE_CSS, "channels"),
+    () => shadow("conversation.input.dock", { id: "omni-consent", order: -80, inject: face2 }, ConsentDock),
     // A chat thread's Session is not a Bot's: it marks the page so the Bot controls stay hidden there.
-    () => shadow("conversation.input.dock", { id: "omni-thread", order: -200, inject: face }, ThreadDock),
+    () => shadow("conversation.input.dock", { id: "omni-thread", order: -200, inject: face2 }, ThreadDock),
     // In a thread's own Session, the opener of its phone pane: a click on the thread's row
     // asks for it and this mounts inside that Session, where DSH has the Session's store. The
     // team's header draws its buttons in a Bot's Session only, hence a dock of our own.
-    () => shadow("conversation.input.dock", { id: "omni-phone", order: -190, inject: face }, PhoneDock),
-    () => shadow("sidebar.footer.action", { id: "bot-connect", order: -100, inject: face }, ChannelsFooter),
+    () => shadow("conversation.input.dock", { id: "omni-phone", order: -190, inject: face2 }, PhoneDock),
+    () => shadow("sidebar.footer.action", { id: "bot-connect", order: -100, inject: face2 }, ChannelsFooter),
     // The Connect wizard opened on demand (settings, Channels, or once after install) mounts here.
-    () => shadow("sidebar.footer.action", { id: "omni-connect-wizard", order: 1e3, inject: face }, WizardHost),
-    () => shadow("main", { key: CHANNELS_PANEL, inject: face }, ChannelsPage),
-    () => shadow("main", { key: CHAT_PANEL, inject: face }, ChatPage),
-    () => shadow("main", { key: AUTOMATIONS_PANEL, inject: face }, AutomationsPage),
-    () => installBoard(ctx, face),
+    () => shadow("sidebar.footer.action", { id: "omni-connect-wizard", order: 1e3, inject: face2 }, WizardHost),
+    () => shadow("main", { key: CHANNELS_PANEL, inject: face2 }, ChannelsPage),
+    () => shadow("main", { key: CHAT_PANEL, inject: face2 }, ChatPage),
+    () => shadow("main", { key: AUTOMATIONS_PANEL, inject: face2 }, AutomationsPage),
+    () => installBoard(ctx, face2),
     // A thread's phone pane, a tab of the same column, opened only from the thread.
-    () => installPhone(ctx, face)
+    () => installPhone(ctx, face2)
   ]), "ds-bot: channels on the Bot surface");
 }
 /*! Bundled license information:

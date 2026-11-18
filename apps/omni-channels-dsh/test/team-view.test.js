@@ -337,6 +337,8 @@ test('apply registers its listeners, tools and effects after the team\'s, in a f
     'tool read_history',
     'tool save_reading_note',
     'effect omni-channels: omni-reading-note',
+    'effect omni-channels: bot channels',
+    'effect omni-channels: omni-bot-chats',
     'provide omniChannels',
   ])
   assert.ok(!own.includes('on llm/stream'))
