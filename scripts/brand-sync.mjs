@@ -117,12 +117,15 @@ const within = (path, folder) => path === folder || path.startsWith(`${folder}/`
  * Why `into` cannot be the brand's folder in a copy, or undefined when it can. A folder inside
  * the repository, named from its root, that is not git's, not the skill's or one around it, and
  * not one around the tool: --write removes what it did not copy from the folders it owns.
+ * Letter case is ignored: on a Mac or on Windows, .Claude/skills and Scripts are the same
+ * folders as .claude/skills and scripts.
  */
 function refusedInto(into) {
   if (!plain(into) || into.startsWith('-')) return 'it must be a folder inside the repository, named from its root (for example brand, or docs/brand)';
-  if (into.split('/').some(part => part.toLowerCase() === '.git')) return 'it is inside .git';
-  if (within(into, SKILL_FOLDER) || within(SKILL_FOLDER, into)) return `it overlaps the skill's folder (${SKILL_FOLDER})`;
-  if (within(TOOL, into)) return `it holds the tool (${TOOL})`;
+  const [named, skill, tool] = [into, SKILL_FOLDER, TOOL].map(path => path.toLowerCase());
+  if (named.split('/').includes('.git')) return 'it is inside .git';
+  if (within(named, skill) || within(skill, named)) return `it overlaps the skill's folder (${SKILL_FOLDER})`;
+  if (within(tool, named)) return `it holds the tool (${TOOL})`;
   return undefined;
 }
 
@@ -310,10 +313,16 @@ export function write({ to, from, remote, into: asked }) {
       throw new Error(`${error.message}${asked === undefined ? ' Or put the brand in another folder: --into <folder>.' : ''}`);
     }
     const here = present(root, into);
-    // A folder chosen for the first time is the copy's alone from then on: it may not hold other files now.
-    if (into !== before?.into && into !== BRAND) {
-      const others = here.filter(path => within(path, into) && !kept.has(path) && !before?.files.includes(path));
-      if (others.length) throw new Error(`${into} holds files that are not a brand copy (${others[0]}${others.length > 1 ? ` and ${others.length - 1} more` : ''}). Nothing was changed: choose a folder of the copy's own with --into.`);
+    // A folder the repository chose is the copy's alone, but this tool removes from it only what a copy
+    // recorded. A file nobody recorded is somebody's work: on the first run and on every later one it
+    // stops the write. docs/brand, the default, is the brand's by name: there the copy removes the rest.
+    // A link is not counted here: the check for links below refuses it by its own name.
+    if (into !== BRAND) {
+      const recorded = before?.files ?? [];
+      const others = here.filter(path => within(path, into) && !kept.has(path) && !recorded.includes(path) && !lstatOf(join(root, path))?.isSymbolicLink());
+      const named = `${others[0]}${others.length > 1 ? ` and ${others.length - 1} more` : ''}`;
+      if (others.length && before?.into !== into) throw new Error(`${into} holds files that are not a brand copy (${named}). Nothing was changed: choose a folder of the copy's own with --into.`);
+      if (others.length) throw new Error(`${into} holds files this copy never recorded (${named}). Nothing was changed: move them out of the brand's folder, then run --write again.`);
     }
     const removed = here.filter(path => path !== RECORD && !kept.has(path));
     // The folder the copy was in, when this run moves it: the files that copy recorded, and its record.
@@ -386,6 +395,44 @@ export function check({ to }) {
   }
   for (const link of [...links].sort()) problems.push(`${link} ${LINK}`);
   return { commit: record.commit, files: Object.keys(files).length, into, record: at, problems };
+}
+
+/**
+ * Whether the record's commit is real: a commit of Automagik's repository whose brand files, as
+ * committed, hash to the values the record holds. Else the record could name any commit, edited
+ * by hand, and the check (file hashes alone) would pass. Never throws. `ok`; `bad` with its
+ * `problems`; `offline` when the remote did not answer, so nothing could be said.
+ */
+export function verifyCommit({ commit, files, into, remote = `${SOURCE}.git` }) {
+  if (remote.startsWith('-')) return { state: 'offline', why: `not a remote: ${remote}`, problems: [] };
+  let repo;
+  try {
+    repo = scratchRepo(remote);
+    try {
+      git(['fetch', '-q', '--depth', '1', 'origin', commit], { dir: repo, timeout: NETWORK_MS });
+    } catch (error) {
+      try { git(['ls-remote', remote, 'HEAD'], { timeout: NETWORK_MS }); } catch { return { state: 'offline', why: reason(error), problems: [] }; }
+      return { state: 'bad', problems: [`the commit ${short(commit)} in ${RECORD} is not a commit of Automagik's repository (${reason(error)})`] };
+    }
+    if (git(['cat-file', '-t', commit], { dir: repo }).trim() !== 'commit') return { state: 'bad', problems: [`${commit} in ${RECORD} is not a commit`] };
+    const there = {};
+    for (const line of git(['ls-tree', '-r', '-z', commit, '--', ...FOLDERS, TOOL], { dir: repo }).split('\0').filter(Boolean)) {
+      const tab = line.indexOf('\t');
+      const [, type, oid] = line.slice(0, tab).split(' ');
+      if (type === 'blob') there[placed(line.slice(tab + 1), into)] = oid;
+    }
+    const problems = [];
+    for (const path of Object.keys(files).sort()) {
+      if (!there[path]) problems.push(`${path} is recorded, but Automagik's commit ${short(commit)} has no such file`);
+      else if (sha256(git(['cat-file', 'blob', there[path]], { dir: repo, buffer: true })) !== files[path]) problems.push(`${path} is recorded with a hash that Automagik's commit ${short(commit)} does not have`);
+    }
+    for (const path of Object.keys(there).sort()) if (!Object.hasOwn(files, path)) problems.push(`Automagik's commit ${short(commit)} has ${path}, which ${RECORD} does not record`);
+    return problems.length ? { state: 'bad', problems } : { state: 'ok', problems: [] };
+  } catch (error) {
+    return { state: 'offline', why: reason(error), problems: [] };
+  } finally {
+    if (repo) rmSync(repo, { recursive: true, force: true });
+  }
 }
 
 /**
@@ -486,6 +533,12 @@ export function main(argv, { out = console.log, err = console.error, cwd = proce
       return 0;
     }
     const found = check({ to });
+    if (found.commit && !found.problems.length) {
+      const recordFiles = JSON.parse(readFileSync(join(realpathSync(resolve(to)), found.record), 'utf8')).files;
+      const proof = verifyCommit({ commit: found.commit, files: recordFiles, into: found.into, remote: options.remote });
+      found.problems.push(...proof.problems);
+      if (proof.state === 'offline') out(`brand-sync: could not check the record's commit against Automagik's repository (offline?): ${proof.why}`);
+    }
     if (found.problems.length) {
       for (const problem of found.problems) err(`brand-sync: ${problem}`);
       err(`brand-sync: the copy is never edited here. Change the files in Automagik's repository, then run: ${WRITE}`);
