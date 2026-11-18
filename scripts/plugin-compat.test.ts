@@ -85,7 +85,8 @@ describe("Omni's plugins and the Omni they need", () => {
 
   test('a minimum older than an API the plugin uses fails, naming the API', () => {
     // POST /api/v2/login/connect (connect links) arrived in 2.261023.15; the chat-key routes
-    // the threads' keys use (thread-keys.js), later still.
+    // the threads' keys use (thread-keys.js), and the chat coverage reading uses (reading.js),
+    // later still.
     const result = checkPlugin('apps/omni-channels-dsh', '>=2.261023.14', repoVersion, root);
     expect(result.against).toBe('v2.261023.14');
     expect(result.problems).toEqual([
@@ -93,6 +94,7 @@ describe("Omni's plugins and the Omni they need", () => {
       'Omni 2.261023.14 serves no GET /api/v2/channels/whatsapp-business/kapso/numbers (src/host/omni-channel-actions.js): raise engines.omni',
       'Omni 2.261023.14 serves no POST /api/v2/channels/whatsapp-business/kapso/setup-link (src/host/omni-channel-actions.js): raise engines.omni',
       'Omni 2.261023.14 serves no GET /api/v2/channels/whatsapp-business/webhook-setup (src/host/omni-channel-actions.js): raise engines.omni',
+      'Omni 2.261023.14 serves no GET /api/v2/chats/{}/coverage (src/host/reading.js): raise engines.omni',
       'Omni 2.261023.14 serves no POST /api/v2/instances/{}/whatsapp-business/kapso/connect (src/host/omni-channel-actions.js): raise engines.omni',
       'Omni 2.261023.14 serves no POST /api/v2/keys/children (src/host/thread-keys.js): raise engines.omni',
       'Omni 2.261023.14 serves no POST /api/v2/keys/children/{}/revoke (src/host/thread-keys.js): raise engines.omni',

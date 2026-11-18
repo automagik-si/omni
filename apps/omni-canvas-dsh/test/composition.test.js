@@ -100,14 +100,14 @@ function services(ctx) {
 // The team's browser tools (bots-dsh browser-plugins.js, since 3.87), which TEAM_TOOLS does not
 // name: one browser plugin for the whole team, registered beside TEAM_TOOLS.
 const TEAM_BROWSER_TOOLS = ['browser_back', 'browser_click', 'browser_handoff', 'browser_open', 'browser_press', 'browser_resume', 'browser_screenshot', 'browser_select', 'browser_snapshot', 'browser_tabs', 'browser_type', 'browser_upload']
-// The channels plugin's own tools and the chat threads' (THREAD_TOOLS) come on top;
+// The channels plugin's own tools, the chat threads' (THREAD_TOOLS) and reading's come on top;
 // omni_handoff is gone (the team's browser_handoff is a browser tool, not the plugin's).
 test('with all three plugins, the team registers exactly the tools TEAM_TOOLS names, plus the channels plugin\'s own', async (t) => {
   const ctx = services(fakeContext())
   const home = mkdtempSync(join(tmpdir(), 'omni-canvas-all-'))
   applyAll(ctx, { home, browser: true })
   t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
-  assert.deepEqual([...ctx.registeredTools.keys()].sort(), [...TEAM_TOOLS, ...TEAM_BROWSER_TOOLS, ...THREAD_TOOLS, 'create_thread', 'propose_answer_bot', 'set_child_notes', 'set_answer_shared_notes', 'resume_answer_child', 'answer_chats', 'thread_needs_staff'].sort())
+  assert.deepEqual([...ctx.registeredTools.keys()].sort(), [...TEAM_TOOLS, ...TEAM_BROWSER_TOOLS, ...THREAD_TOOLS, 'create_thread', 'propose_answer_bot', 'set_child_notes', 'set_answer_shared_notes', 'resume_answer_child', 'answer_chats', 'thread_needs_staff', 'read_history', 'save_reading_note'].sort())
   assert.equal(ctx.registeredTools.has('omni_handoff'), false)
   // This plugin's own come last, and it adds no llm/stream listener.
   const own = ctx.calls.slice(ctx.calls.indexOf('provide omniChannels') + 1)
