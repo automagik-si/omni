@@ -620,7 +620,7 @@ postgresDescribe('Read Receipt Endpoints', () => {
       expect(res.status).toBe(404);
     });
 
-    test('returns error when instance does not match chat', async () => {
+    test('a chat on another instance than the body instanceId answers not found', async () => {
       // Create a second instance
       const [otherInstance] = await db
         .insert(instances)
@@ -643,10 +643,21 @@ postgresDescribe('Read Receipt Endpoints', () => {
         }),
       });
 
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(404);
       const body = (await res.json()) as { error: { code: string; message: string } };
-      expect(body.error.code).toBe('VALIDATION');
-      expect(body.error.message).toContain('Instance ID does not match');
+      expect(body.error.code).toBe('NOT_FOUND');
+
+      const missingId = '33333333-3333-4333-8333-333333333333';
+      const missing = await app.request(`/chats/${missingId}/read`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ instanceId: otherInstance.id }),
+      });
+
+      expect(missing.status).toBe(404);
+      expect(JSON.stringify(body).replaceAll(testChat.id, '<id>')).toBe(
+        JSON.stringify(await missing.json()).replaceAll(missingId, '<id>'),
+      );
     });
   });
 });

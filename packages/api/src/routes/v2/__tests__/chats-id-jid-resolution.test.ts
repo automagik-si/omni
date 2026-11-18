@@ -427,13 +427,7 @@ describe('cross-instance existence oracle — checkInstanceAccess runs BEFORE fi
     expect(calls.findByExternalIdSmart).toHaveLength(0);
   });
 
-  test('UUID input outside the API key scope is NOT pre-checked here (handler-level checks remain)', async () => {
-    // UUID input bypasses the resolver entirely (no DB lookup needed). For
-    // UUID-shaped IDs the existing handler-level `checkInstanceAccess` and
-    // service-layer guards remain authoritative. The resolver's job is
-    // narrowly: prevent the JID-shaped existence oracle. Document that
-    // here so future refactors don't accidentally start enforcing access
-    // on UUIDs in a way that breaks legitimate operator workflows.
+  test("chat routes treat a chat outside a restricted key's instances as not found", async () => {
     const { app, calls } = mountHarness({
       apiKeyInstanceIds: [ALLOWED_INSTANCE_ID],
     });
@@ -444,10 +438,8 @@ describe('cross-instance existence oracle — checkInstanceAccess runs BEFORE fi
       body: JSON.stringify({ instanceId: FORBIDDEN_INSTANCE_ID }),
     });
 
-    // Either way, no findByExternalIdSmart was called (UUID path bypasses
-    // the resolver). The handler-level checkInstanceAccess kicks in and
-    // returns the standard VALIDATION error.
-    expect(res.status).not.toBe(200);
+    expect(res.status).toBe(404);
+    expect(calls.getById).toEqual([VALID_UUID]);
     expect(calls.findByExternalIdSmart).toHaveLength(0);
   });
 
