@@ -20,6 +20,7 @@ import { isTenantWorkAdmissible } from '../tenancy/periodic-tenant-work';
 import { scopedHandle } from '../tenancy/tenant-scope';
 import { runConsumerInTenantContext } from '../tenancy/worker-tenant-context';
 import { validateContactPhone } from '../utils/phone';
+import { processChatBackfill } from './chat-backfill';
 
 const log = createLogger('sync-worker');
 
@@ -200,8 +201,26 @@ export async function setupSyncWorker(
             return;
           }
 
+          if (existing?.config?.backfill) {
+            const revocation = jobRevocationMonitor(services, jobTenantId);
+            await processChatBackfill({
+              jobId,
+              tenantId: jobTenantId,
+              services,
+              registry: channelRegistry,
+              scope: (fn) => inSyncWorkerScope(event, fn),
+              assertAdmissible: () => revocation.assertAdmissible(),
+            });
+            return;
+          }
+
           // Start the job
-          await services.syncJobs.start(jobId, jobTenantId);
+          let started = await services.syncJobs.start(jobId, jobTenantId);
+          while (started?.status === 'pending') {
+            await new Promise((resolve) => setTimeout(resolve, 250));
+            started = await services.syncJobs.start(jobId, jobTenantId);
+          }
+          if (started && TERMINAL_JOB_STATUSES.includes(started.status)) return;
 
           // Get instance to determine channel type. One discrete scoped read
           // (G5, ADR-0008): a tenant-world job runs it in a short worker scope
@@ -256,6 +275,7 @@ export async function setupSyncWorker(
       },
       {
         durable: 'sync-worker',
+        concurrency: 32,
         queue: 'sync-workers',
         startFrom: 'new',
         // Message syncs run minutes to hours; the 30s default redelivered

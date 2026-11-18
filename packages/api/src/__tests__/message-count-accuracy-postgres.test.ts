@@ -54,6 +54,39 @@ postgresDescribe('Message Count Accuracy', () => {
     testChatId = chat.id;
   });
 
+  test('backward history keeps the newest summary, counts every insert, and leaves live behavior unchanged', async () => {
+    const chat = await chatService.create({
+      instanceId: testInstanceId,
+      externalId: 'summary-history@s.whatsapp.net',
+      chatType: 'dm',
+      channel: 'whatsapp-baileys',
+    });
+    const create = (source: 'sync' | 'realtime', at: string, text: string) =>
+      messageService.create({
+        chatId: chat.id,
+        externalId: text,
+        source,
+        messageType: 'text',
+        textContent: text,
+        platformTimestamp: new Date(at),
+      });
+    const summary = async () => {
+      const [row] = await db.select().from(chats).where(eq(chats.id, chat.id));
+      return { at: row?.lastMessageAt?.toISOString(), preview: row?.lastMessagePreview, count: row?.messageCount };
+    };
+    await create('sync', '2026-02-01', 'first');
+    expect(await summary()).toEqual({ at: '2026-02-01T00:00:00.000Z', preview: 'first', count: 1 });
+    await create('sync', '2026-03-01', 'newest');
+    await Promise.all([
+      create('sync', '2026-01-15', 'older'),
+      create('sync', '2026-01-01', 'oldest'),
+      create('sync', '2026-03-01', 'equal timestamp'),
+    ]);
+    expect(await summary()).toEqual({ at: '2026-03-01T00:00:00.000Z', preview: 'newest', count: 5 });
+    await create('realtime', '2026-02-15', 'live arrival');
+    expect(await summary()).toEqual({ at: '2026-02-15T00:00:00.000Z', preview: 'live arrival', count: 6 });
+  });
+
   test('should maintain accurate count when creating messages sequentially', async () => {
     const messageCount = 10;
 

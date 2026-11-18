@@ -7,6 +7,7 @@
  * @see unified-messages wish
  */
 
+import { type HistorySyncMutation, HistorySyncMutationSchema } from '@omni/channel-sdk';
 import type { EventBus } from '@omni/core';
 import { NotFoundError } from '@omni/core';
 import type { Database } from '@omni/db';
@@ -23,10 +24,86 @@ import {
   chats,
   messages,
 } from '@omni/db';
-import { and, count, desc, eq, gte, ilike, inArray, isNull, lte, notInArray, or, sql } from 'drizzle-orm';
+import {
+  type SQL,
+  and,
+  count,
+  desc,
+  eq,
+  gte,
+  ilike,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  lte,
+  notInArray,
+  or,
+  sql,
+} from 'drizzle-orm';
+import { z } from 'zod';
 import { scopedHandle } from '../tenancy/tenant-scope';
 
 import { sanitizeText } from '../utils/utf8';
+
+/** Where the next page of a chat's messages starts: the last item of the page before. */
+export interface ChatMessagesCursor {
+  at: Date;
+  id: string;
+}
+
+export interface ChatMessagesPageOptions {
+  limit?: number;
+  before?: Date;
+  after?: Date;
+  mediaOnly?: boolean;
+  includeDeleted?: boolean;
+  cursor?: ChatMessagesCursor;
+}
+
+export interface ChatMessagesPage {
+  items: Message[];
+  hasMore: boolean;
+  cursor: string | null;
+}
+
+export interface ChatCoverageOptions {
+  from?: Date;
+  to?: Date;
+  includeDeleted?: boolean;
+}
+
+export interface ChatCoverage {
+  oldest: Date | null;
+  newest: Date | null;
+  count: number;
+  countInWindow: number;
+  mediaMissing: number;
+  deletedCount: number;
+  lastInbound: Date | null;
+  lastOutbound: Date | null;
+}
+
+const ChatMessagesCursorPayload = z.object({ t: z.string().datetime(), id: z.string().uuid() });
+
+/**
+ * The opaque cursor for the page after `last`: base64url of its platform time
+ * and id. Platform times are written from JS Dates, so milliseconds hold them
+ * exactly.
+ */
+export function encodeChatMessagesCursor(last: { platformTimestamp: Date; id: string }): string {
+  return Buffer.from(JSON.stringify({ t: last.platformTimestamp.toISOString(), id: last.id })).toString('base64url');
+}
+
+/** The position a cursor from `encodeChatMessagesCursor` names, or null for anything else. */
+export function decodeChatMessagesCursor(raw: string): ChatMessagesCursor | null {
+  try {
+    const parsed = ChatMessagesCursorPayload.safeParse(JSON.parse(Buffer.from(raw, 'base64url').toString('utf8')));
+    return parsed.success ? { at: new Date(parsed.data.t), id: parsed.data.id } : null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Sanitize a `textContent`-style value without changing its shape.
@@ -325,14 +402,29 @@ export class MessageService {
   }
 
   /**
-   * Get messages for a chat (chronological order)
+   * Get messages for a chat, newest first. One page of `pageChatMessages`.
    */
-  async getChatMessages(
-    chatId: string,
-    options: { limit?: number; before?: Date; after?: Date; mediaOnly?: boolean } = {},
-  ): Promise<Message[]> {
-    const { limit = 100, before, after, mediaOnly } = options;
-    const conditions = [eq(messages.chatId, chatId), sql`${messages.deletedAt} IS NULL`];
+  async getChatMessages(chatId: string, options: ChatMessagesPageOptions = {}): Promise<Message[]> {
+    return (await this.pageChatMessages(chatId, options)).items;
+  }
+
+  /**
+   * One page of a chat's messages, ordered `(platformTimestamp desc, id desc)`.
+   *
+   * `before` and `after` bound the window, both inclusive. `cursor` continues
+   * after the last item of the page before, exclusive on the same order, so
+   * messages that share one platform time are never repeated or skipped.
+   * Deleted messages stay out unless `includeDeleted` is set.
+   *
+   * `cursor` in the answer is null when no further page exists.
+   */
+  async pageChatMessages(chatId: string, options: ChatMessagesPageOptions = {}): Promise<ChatMessagesPage> {
+    const { limit = 100, before, after, mediaOnly, includeDeleted = false, cursor } = options;
+    const conditions: (SQL | undefined)[] = [eq(messages.chatId, chatId)];
+
+    if (!includeDeleted) {
+      conditions.push(isNull(messages.deletedAt));
+    }
 
     if (before) {
       conditions.push(lte(messages.platformTimestamp, before));
@@ -346,12 +438,79 @@ export class MessageService {
       conditions.push(eq(messages.hasMedia, true));
     }
 
-    return this.db
+    if (cursor) {
+      conditions.push(
+        or(
+          lt(messages.platformTimestamp, cursor.at),
+          and(eq(messages.platformTimestamp, cursor.at), lt(messages.id, cursor.id)),
+        ),
+      );
+    }
+
+    const rows = await this.db
       .select()
       .from(messages)
       .where(and(...conditions))
-      .orderBy(desc(messages.platformTimestamp))
-      .limit(limit);
+      .orderBy(desc(messages.platformTimestamp), desc(messages.id))
+      .limit(limit + 1);
+
+    const hasMore = rows.length > limit;
+    const items = hasMore ? rows.slice(0, limit) : rows;
+    const last = items[items.length - 1];
+    return { items, hasMore, cursor: hasMore && last ? encodeChatMessagesCursor(last) : null };
+  }
+
+  /**
+   * What Omni holds for one chat: the platform times of its oldest and newest
+   * messages, how many there are (in all, and between `from` and `to`, both
+   * inclusive), how many media messages have no stored file, how many are
+   * deleted, and the newest message not sent from the account and sent from it.
+   *
+   * Every figure but `deletedCount` uses the row filter of `pageChatMessages`
+   * (deleted messages out unless `includeDeleted`), so `count` is what paging
+   * the whole chat returns. `deletedCount` counts the deleted messages whatever
+   * `includeDeleted` says.
+   */
+  async getChatCoverage(chatId: string, options: ChatCoverageOptions = {}): Promise<ChatCoverage> {
+    const { from, to, includeDeleted = false } = options;
+    const kept = includeDeleted ? sql`true` : isNull(messages.deletedAt);
+    const inWindow = and(
+      kept,
+      from ? gte(messages.platformTimestamp, from) : undefined,
+      to ? lte(messages.platformTimestamp, to) : undefined,
+    );
+    const latest = (condition: SQL | undefined) =>
+      sql<Date | null>`max(${messages.platformTimestamp}) filter (where ${condition})`.mapWith(
+        messages.platformTimestamp,
+      );
+    const tally = (condition: SQL | undefined) => sql<number>`count(*) filter (where ${condition})`.mapWith(Number);
+
+    const [row] = await this.db
+      .select({
+        oldest: sql<Date | null>`min(${messages.platformTimestamp}) filter (where ${kept})`.mapWith(
+          messages.platformTimestamp,
+        ),
+        newest: latest(kept),
+        count: tally(kept),
+        countInWindow: tally(inWindow),
+        mediaMissing: tally(and(kept, eq(messages.hasMedia, true), isNull(messages.mediaLocalPath))),
+        deletedCount: tally(isNotNull(messages.deletedAt)),
+        lastInbound: latest(and(kept, eq(messages.isFromMe, false))),
+        lastOutbound: latest(and(kept, eq(messages.isFromMe, true))),
+      })
+      .from(messages)
+      .where(eq(messages.chatId, chatId));
+
+    return {
+      oldest: row?.oldest ?? null,
+      newest: row?.newest ?? null,
+      count: row?.count ?? 0,
+      countInWindow: row?.countInWindow ?? 0,
+      mediaMissing: row?.mediaMissing ?? 0,
+      deletedCount: row?.deletedCount ?? 0,
+      lastInbound: row?.lastInbound ?? null,
+      lastOutbound: row?.lastOutbound ?? null,
+    };
   }
 
   /**
@@ -579,11 +738,21 @@ export class MessageService {
 
       // Update chat stats (in same transaction - ATOMIC)
       const preview = buildMessagePreview(options);
+      const timestamp = options.platformTimestamp.toISOString();
+      const newer = sql`${chats.lastMessageAt} IS NULL OR ${chats.lastMessageAt} < ${timestamp}`;
       await tx
         .update(chats)
         .set({
-          lastMessageAt: options.platformTimestamp,
-          lastMessagePreview: preview,
+          // History arrives backwards. Compare against the row being updated so
+          // an older insert cannot replace a concurrent live message's summary.
+          lastMessageAt:
+            options.source === 'sync'
+              ? sql`CASE WHEN ${newer} THEN ${timestamp} ELSE ${chats.lastMessageAt} END`
+              : options.platformTimestamp,
+          lastMessagePreview:
+            options.source === 'sync'
+              ? sql`CASE WHEN ${newer} THEN ${preview} ELSE ${chats.lastMessagePreview} END`
+              : preview,
           messageCount: sql`${chats.messageCount} + 1`,
           // Unread count is managed by platform-native events (chat.unread-updated)
           updatedAt: new Date(),
@@ -701,6 +870,7 @@ export class MessageService {
     editedAt: Date,
     editedBy?: string,
     latestEventId?: string,
+    history = false,
   ): Promise<Message> {
     const message = await this.getById(id);
 
@@ -713,7 +883,10 @@ export class MessageService {
 
     // Get current edit history or initialize
     const currentHistory = (message.editHistory as EditHistoryEntry[]) ?? [];
+    if (history && currentHistory.some((entry) => entry.at === editEntry.at && entry.text === newText)) return message;
     const newHistory = [...currentHistory, editEntry];
+    if (history) newHistory.sort((a, b) => a.at.localeCompare(b.at));
+    const keepLatest = history && message.editedAt && message.editedAt > editedAt;
 
     // If this is the first edit, save original text
     const originalText = message.editCount === 0 ? message.textContent : message.originalText;
@@ -721,12 +894,12 @@ export class MessageService {
     const [updated] = await this.db
       .update(messages)
       .set({
-        textContent: newText,
-        status: 'edited' as MessageStatus,
+        textContent: keepLatest ? message.textContent : newText,
+        status: (history && message.deletedAt ? 'deleted' : 'edited') as MessageStatus,
         editCount: message.editCount + 1,
         originalText,
         editHistory: newHistory,
-        editedAt,
+        editedAt: keepLatest ? message.editedAt : editedAt,
         latestEventId: latestEventId ?? message.latestEventId,
         updatedAt: new Date(),
       })
@@ -757,12 +930,13 @@ export class MessageService {
     reaction: Omit<ReactionInfo, 'at'>,
     latestEventId?: string,
     channel?: ChannelType,
+    at?: Date,
   ): Promise<Message> {
     const message = await this.getById(id);
 
     const reactionEntry: ReactionInfo = {
       ...reaction,
-      at: new Date().toISOString(),
+      at: (at ?? new Date()).toISOString(),
     };
 
     // Get current reactions or initialize
@@ -941,12 +1115,12 @@ export class MessageService {
   /**
    * Mark message as deleted
    */
-  async markDeleted(id: string, latestEventId?: string): Promise<Message> {
+  async markDeleted(id: string, latestEventId?: string, deletedAt = new Date()): Promise<Message> {
     const [updated] = await this.db
       .update(messages)
       .set({
         status: 'deleted' as MessageStatus,
-        deletedAt: new Date(),
+        deletedAt,
         latestEventId,
         updatedAt: new Date(),
       })
@@ -958,6 +1132,68 @@ export class MessageService {
     }
 
     return updated;
+  }
+
+  /** Apply a history state change and its replay receipt in ONE row-locked transaction; no events. */
+  async applyHistoryMutation(
+    chatId: string,
+    input: HistorySyncMutation,
+    channel: ChannelType,
+  ): Promise<'applied' | 'duplicate' | 'unmatched'> {
+    const mutation = HistorySyncMutationSchema.parse(input);
+    return this.db.transaction(async (tx) => {
+      const [target] = await tx
+        .select()
+        .from(messages)
+        .where(and(eq(messages.chatId, chatId), eq(messages.externalId, mutation.targetExternalId)))
+        .limit(1)
+        .for('update');
+      if (!target) return 'unmatched';
+      const raw = target.rawPayload ?? {};
+      const receipts = Array.isArray(raw.historyMutationIds)
+        ? raw.historyMutationIds.filter((id): id is string => typeof id === 'string')
+        : [];
+      const receipt = `${mutation.kind}:${mutation.id}:${mutation.actor}:${mutation.at.toISOString()}`;
+      if (receipts.includes(receipt)) return 'duplicate';
+      const parsedTimes = z.record(z.string().datetime()).safeParse(raw.historyReactionTimes);
+      const times = parsedTimes.success ? parsedTimes.data : {};
+      const currentReaction = (target.reactions ?? []).find((reaction) => reaction.platformUserId === mutation.actor);
+      const latestReaction = times[mutation.actor] ?? currentReaction?.at;
+      const stale = mutation.kind === 'reaction' && latestReaction && new Date(latestReaction) > mutation.at;
+      const service = new MessageService(tx as unknown as Database, null);
+      if (!stale) await service.applyHistoryChange(target, mutation, channel);
+      const reactionTimes =
+        mutation.kind === 'reaction' && !stale
+          ? { historyReactionTimes: { ...times, [mutation.actor]: mutation.at.toISOString() } }
+          : {};
+      await tx
+        .update(messages)
+        .set({ rawPayload: { ...raw, ...reactionTimes, historyMutationIds: [...receipts, receipt] } })
+        .where(eq(messages.id, target.id));
+      return stale ? 'duplicate' : 'applied';
+    });
+  }
+
+  private async applyHistoryChange(
+    target: Message,
+    mutation: HistorySyncMutation,
+    channel: ChannelType,
+  ): Promise<void> {
+    if (mutation.kind === 'edit') {
+      await this.recordEdit(target.id, mutation.text, mutation.at, mutation.actor, undefined, true);
+    } else if (mutation.kind === 'deletion') {
+      if (!target.deletedAt) await this.markDeleted(target.id, undefined, mutation.at);
+    } else if (mutation.emoji) {
+      await this.addReaction(
+        target.id,
+        { emoji: mutation.emoji, platformUserId: mutation.actor },
+        undefined,
+        channel,
+        mutation.at,
+      );
+    } else {
+      await this.removeReaction(target.id, mutation.actor, '');
+    }
   }
 
   // =========================================================================

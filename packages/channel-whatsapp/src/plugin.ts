@@ -16,6 +16,7 @@ import type {
   GroupParticipantUpdateResult,
   GroupSetting,
   HistorySyncMessage,
+  HistorySyncMutation,
   InboundSubStageTimings,
   InstanceConfig,
   OutgoingMessage,
@@ -32,8 +33,9 @@ import type {
   PasskeyPublicKeyCredentialRequestOptions,
   WAMessage,
   WASocket,
-  proto,
 } from 'baileys';
+import { proto } from 'baileys';
+import { type BackfillRoundTracker, extractHistoryMutation, fetchChatBackfillRounds } from './history-backfill';
 
 import { clearAuthState, createReadOnlyAuthState, createStorageAuthState } from './auth';
 import { WHATSAPP_CAPABILITIES } from './capabilities';
@@ -73,7 +75,7 @@ import {
   createChatTracker,
 } from './utils/history-anchors';
 import { type MentionResolution, resolveMentions } from './utils/mention-resolver';
-import { getDocumentMessage, getMessageContextInfo } from './utils/message';
+import { getDocumentMessage, getMessageContextInfo, withUnwrappedContent } from './utils/message';
 import { type RateLimitManager, createRateLimitManager, isRateLimitError } from './utils/rate-limit';
 
 // Re-export for external consumers that previously imported from this module
@@ -337,13 +339,21 @@ export class WhatsAppPlugin extends BaseChannelPlugin {
       since?: Date;
       until?: Date;
       onProgress?: (fetched: number, progress?: number) => void;
-      onMessage?: (message: HistorySyncMessage) => void;
+      onMessage?: (message: HistorySyncMessage) => void | Promise<void>;
+      onMutation?: (mutation: HistorySyncMutation) => Promise<void>;
+      chatJid?: string;
+      shouldCancel?: () => Promise<boolean>;
+      roundTracker?: BackfillRoundTracker;
+      pending?: Set<Promise<void>>;
       onComplete?: (totalFetched: number) => void;
       totalFetched: number;
       downloadMedia?: boolean;
       skippedBeforeSince?: number;
     }
   >();
+
+  /** Late replies to an explicit request must never fall into passive message emission. */
+  private backfillChats = new Map<string, Set<string>>();
 
   /** Tracks total messages fetched during initial history push (no explicit sync job) per instance */
   private historyPushFetchCount = new Map<string, number>();
@@ -2873,13 +2883,20 @@ export class WhatsAppPlugin extends BaseChannelPlugin {
     const messages: HistorySyncMessage[] = [];
     const count = options.count ?? 50;
 
+    const pending = new Set<Promise<void>>();
+    const roundTracker: BackfillRoundTracker = { received: 0, lastActivity: Date.now() };
     const syncState = {
+      onMutation: options.onMutation,
+      chatJid: options.onRound ? options.anchors?.[0]?.chatJid : undefined,
+      shouldCancel: options.shouldCancel,
+      roundTracker: options.onRound ? roundTracker : undefined,
+      pending,
       since: options.since,
       until: options.until ?? new Date(),
       onProgress: options.onProgress,
-      onMessage: (msg: HistorySyncMessage) => {
+      onMessage: async (msg: HistorySyncMessage) => {
         messages.push(msg);
-        options.onMessage?.(msg);
+        await options.onMessage?.(msg);
       },
       onComplete: options.onProgress ? () => options.onProgress?.(messages.length, 100) : undefined,
       totalFetched: 0,
@@ -2890,7 +2907,23 @@ export class WhatsAppPlugin extends BaseChannelPlugin {
     this.historySyncCallbacks.set(instanceId, syncState);
 
     try {
-      if (options.anchors?.length) {
+      const anchor = options.anchors?.[0];
+      if (options.onRound && options.shouldCancel && options.since && anchor) {
+        const chats = this.backfillChats.get(instanceId) ?? new Set<string>();
+        chats.add(anchor.chatJid);
+        this.backfillChats.set(instanceId, chats);
+        await fetchChatBackfillRounds({
+          anchor,
+          since: options.since,
+          tracker: roundTracker,
+          request: (next) => sock.fetchMessageHistory(count, next.messageKey, next.timestamp).then(() => undefined),
+          drain: async () => {
+            while (pending.size) await Promise.all([...pending]);
+          },
+          shouldCancel: options.shouldCancel,
+          onRound: options.onRound,
+        });
+      } else if (options.anchors?.length) {
         await this.fetchAnchorsHistory(sock, instanceId, options.anchors, count);
       } else {
         await this.waitForPassiveSync(instanceId);
@@ -2899,7 +2932,9 @@ export class WhatsAppPlugin extends BaseChannelPlugin {
       this.logger.info('History fetch completed', { instanceId, totalMessages: messages.length });
       return { totalFetched: messages.length, messages };
     } finally {
-      this.historySyncCallbacks.delete(instanceId);
+      if (this.historySyncCallbacks.get(instanceId) === syncState) {
+        this.historySyncCallbacks.delete(instanceId);
+      }
     }
   }
 
@@ -4424,6 +4459,25 @@ export class WhatsAppPlugin extends BaseChannelPlugin {
     // TODO: Emit media.update event
   }
 
+  private historyStateForBatch(instanceId: string, syncType: proto.HistorySync.HistorySyncType | null | undefined) {
+    const state = this.historySyncCallbacks.get(instanceId);
+    return state?.chatJid && syncType !== proto.HistorySync.HistorySyncType.ON_DEMAND ? undefined : state;
+  }
+
+  private historyStateForMessage(msg: WAMessage, state: ReturnType<WhatsAppPlugin['historyStateForBatch']>) {
+    return state?.chatJid && msg.key.remoteJid !== state.chatJid ? undefined : state;
+  }
+
+  private keepHistoryReply(
+    instanceId: string,
+    msg: WAMessage,
+    state: ReturnType<WhatsAppPlugin['historyStateForBatch']>,
+  ): boolean {
+    if (state && !state.chatJid) return true;
+    if (msg.key.remoteJid === state?.chatJid) return true;
+    return !this.backfillChats.get(instanceId)?.has(msg.key.remoteJid ?? '');
+  }
+
   /**
    * Handle history sync (initial load)
    * Processes messages from `messaging-history.set` event
@@ -4440,8 +4494,12 @@ export class WhatsAppPlugin extends BaseChannelPlugin {
       syncType?: proto.HistorySync.HistorySyncType | null;
     },
   ): Promise<void> {
-    const { contacts, messages, progress, isLatest, syncType } = history;
-    const syncState = this.historySyncCallbacks.get(instanceId);
+    const { contacts, messages: incomingMessages, progress, isLatest, syncType } = history;
+    const syncState = this.historyStateForBatch(instanceId, syncType);
+    const messages =
+      syncType === proto.HistorySync.HistorySyncType.ON_DEMAND
+        ? incomingMessages.filter((msg) => this.keepHistoryReply(instanceId, msg, syncState))
+        : incomingMessages;
 
     this.logger.debug('Processing history sync batch', {
       instanceId,
@@ -4469,7 +4527,15 @@ export class WhatsAppPlugin extends BaseChannelPlugin {
     const skippedBefore = syncState?.skippedBeforeSince ?? 0;
     for (let i = 0; i < messages.length; i += BATCH_SIZE) {
       const batch = messages.slice(i, i + BATCH_SIZE);
-      await Promise.all(batch.map((msg) => this.processHistoryMessage(instanceId, msg, syncState)));
+      const work = Promise.all(
+        batch.map((msg) => this.processHistoryMessage(instanceId, msg, this.historyStateForMessage(msg, syncState))),
+      ).then(() => undefined);
+      syncState?.pending?.add(work);
+      try {
+        await work;
+      } finally {
+        syncState?.pending?.delete(work);
+      }
     }
     const skippedBeforeSince = (syncState?.skippedBeforeSince ?? 0) - skippedBefore;
     if (skippedBeforeSince > 0) {
@@ -4537,9 +4603,67 @@ export class WhatsAppPlugin extends BaseChannelPlugin {
    * has no job: there the instance's `downloadMediaOnSync` (passed in the
    * connect options) decides, defaulting to off like the column (#1280).
    */
-  private shouldDownloadHistoryMedia(instanceId: string, syncState: { downloadMedia?: boolean } | undefined): boolean {
+  private shouldDownloadHistoryMedia(
+    instanceId: string,
+    syncState: { downloadMedia?: boolean; chatJid?: string } | undefined,
+  ): boolean {
+    if (syncState?.chatJid) return true;
     if (syncState?.downloadMedia !== undefined) return syncState.downloadMedia;
     return this.instances.get(instanceId)?.config.options?.downloadMediaOnSync === true;
+  }
+
+  private async acceptBackfillHistoryMessage(
+    msg: WAMessage,
+    timestamp: Date | null,
+    syncState: typeof this.historySyncCallbacks extends Map<string, infer V> ? V | undefined : never,
+  ): Promise<boolean> {
+    if (syncState?.chatJid && msg.key.remoteJid !== syncState.chatJid) return false;
+    if (await syncState?.shouldCancel?.()) return false;
+    if (timestamp && syncState?.roundTracker && msg.key.remoteJid && msg.key.id) {
+      const tracker = syncState.roundTracker;
+      tracker.received++;
+      tracker.lastActivity = Date.now();
+      if (!tracker.oldest || timestamp.getTime() < tracker.oldest.timestamp) {
+        tracker.oldest = {
+          chatJid: msg.key.remoteJid,
+          messageKey: { remoteJid: msg.key.remoteJid, id: msg.key.id, fromMe: msg.key.fromMe ?? false },
+          timestamp: timestamp.getTime(),
+        };
+      }
+    }
+    return true;
+  }
+
+  private async processHistoryMutation(
+    msg: WAMessage,
+    timestamp: Date,
+    syncState: typeof this.historySyncCallbacks extends Map<string, infer V> ? V | undefined : never,
+    instanceId: string,
+  ): Promise<boolean> {
+    if (!syncState?.onMutation) return false;
+    const ownerJid = this.sockets.get(instanceId)?.user?.id;
+    const { id: actor } = fromJid(
+      msg.key.participant || (msg.key.fromMe ? ownerJid : undefined) || msg.key.remoteJid || '',
+    );
+    const mutation = extractHistoryMutation(msg, timestamp, actor);
+    if (!mutation) return false;
+    await syncState.onMutation(mutation);
+    return true;
+  }
+
+  private async enrichHistoryMedia(
+    instanceId: string,
+    msg: WAMessage,
+    content: HistorySyncMessage['content'],
+    syncState: typeof this.historySyncCallbacks extends Map<string, infer V> ? V | undefined : never,
+  ): Promise<void> {
+    if (!this.shouldDownloadHistoryMedia(instanceId, syncState)) return;
+    const result = await tryDownloadMedia(msg, instanceId, msg.key.id ?? '', this.config.apiBaseUrl);
+    if (result) {
+      content.mediaUrl = result.mediaUrl;
+      content.localPath = result.mediaLocalPath;
+      content.mimeType = result.mimeType;
+    }
   }
 
   private async processHistoryMessage(
@@ -4553,6 +4677,7 @@ export class WhatsAppPlugin extends BaseChannelPlugin {
     }
 
     const timestamp = this.getMessageTimestamp(msg);
+    if (!(await this.acceptBackfillHistoryMessage(msg, timestamp, syncState))) return;
 
     // Messages without a timestamp cannot be reliably ordered or filtered.
     // Skip them instead of fabricating a misleading ingest-time timestamp.
@@ -4570,8 +4695,10 @@ export class WhatsAppPlugin extends BaseChannelPlugin {
       return;
     }
 
+    if (await this.processHistoryMutation(msg, timestamp, syncState, instanceId)) return;
+
     // Extract basic content info
-    const content = this.extractHistoryMessageContent(msg);
+    const content = this.extractHistoryMessageContent(msg, syncState);
     if (!content) {
       this.logger.debug('Skipping history message - no extractable content', {
         instanceId,
@@ -4582,16 +4709,7 @@ export class WhatsAppPlugin extends BaseChannelPlugin {
       return;
     }
 
-    // Download media only when the sync job allows it (#1127). When skipped, content keeps
-    // type/mimeType metadata so the row is still marked as media for later backfill.
-    const mediaResult = this.shouldDownloadHistoryMedia(instanceId, syncState)
-      ? await tryDownloadMedia(msg, instanceId, msg.key.id, this.config.apiBaseUrl)
-      : null;
-    if (mediaResult) {
-      content.mediaUrl = mediaResult.mediaUrl;
-      content.localPath = mediaResult.mediaLocalPath;
-      content.mimeType = mediaResult.mimeType;
-    }
+    await this.enrichHistoryMedia(instanceId, msg, content, syncState);
 
     const chatId = msg.key.remoteJid;
     const { id: senderId } = fromJid(msg.key.fromMe ? chatId : msg.key.participant || chatId);
@@ -4609,7 +4727,7 @@ export class WhatsAppPlugin extends BaseChannelPlugin {
 
     // If we have an active sync callback, use it
     if (syncState?.onMessage) {
-      syncState.onMessage(historyMessage);
+      await syncState.onMessage(historyMessage);
       syncState.totalFetched++;
     } else {
       // No active sync job - this is initial connection history sync
@@ -4774,7 +4892,10 @@ export class WhatsAppPlugin extends BaseChannelPlugin {
    * Simplified version for history sync processing
    * @internal
    */
-  private extractHistoryMessageContent(msg: WAMessage): {
+  private extractHistoryMessageContent(
+    msg: WAMessage,
+    syncState?: { chatJid?: string },
+  ): {
     type: string;
     text?: string;
     mediaUrl?: string;
@@ -4782,7 +4903,7 @@ export class WhatsAppPlugin extends BaseChannelPlugin {
     mimeType?: string;
     caption?: string;
   } | null {
-    const message = msg.message;
+    const message = syncState?.chatJid ? withUnwrappedContent(msg).message : msg.message;
     if (!message) return null;
 
     // Use a lookup approach to reduce complexity

@@ -72,6 +72,32 @@ afterAll(async () => {
   await holder.close();
 });
 
+test('lag uses the tenant-wide head while caughtUp applies caller visibility', async () => {
+  const row = consumer({ agentId: null, cursor: 8 });
+  execute
+    .mockResolvedValueOnce([row])
+    .mockResolvedValueOnce([{ head: 11 }])
+    .mockResolvedValueOnce([]);
+
+  const inspected = await service.inspect(row.name, { ...caller, tenantId: T });
+  expect(inspected.head).toBe(11);
+  expect(inspected.lag).toBe(3);
+  expect(inspected.caughtUp).toBe(true);
+
+  const heads = compile.mock.results
+    .flatMap((result) => (result.type === 'return' ? [result.value] : []))
+    .filter((query) => query.sql.includes('max('));
+  expect(heads).toHaveLength(1);
+  expect(heads[0]?.params).toEqual([T]);
+  expect(heads[0]?.sql).not.toContain('"instance_id"');
+  expect(heads[0]?.sql).not.toContain('"event_type"');
+
+  const [scan] = queries();
+  expect(scan?.params).toContain(I);
+  expect(scan?.params).toContain('access.key_minted');
+  expect(scan?.params).toContain('access.device_authorized');
+});
+
 test('ordered union deduplicates S/A overlap and never advances past an unread match', async () => {
   const row = consumer();
   execute
@@ -98,7 +124,7 @@ test('ordered union deduplicates S/A overlap and never advances past an unread m
   }
 });
 
-test('caller extra and consumer instance scopes occur only on I; S/A correlate active kind and id', async () => {
+test('new-family caller policy covers I/S/A while existing custom grants retain their scope', async () => {
   const row = consumer({ accessFilter: 'allowed', waitForReady: true });
   execute
     .mockResolvedValueOnce([row])
@@ -109,14 +135,17 @@ test('caller extra and consumer instance scopes occur only on I; S/A correlate a
   const [i, s, a] = branches();
   if (!i || !s || !a) throw new Error('Expected three branches');
   expect(i.sql).toContain('"instance_id" is not null');
-  expect(i.params.filter((value) => value === I)).toHaveLength(2);
+  expect(i.params.filter((value) => value === I)).toHaveLength(3);
   for (const grant of [s, a]) {
     expect(grant.sql).toContain('"instance_id" is null');
     expect(grant.sql).toContain('"revoked_at" is null');
     expect(grant.sql).toContain('"agent_source_grants"."agent_id" =');
     expect(grant.sql).toContain('"access_decision" =');
     expect(grant.params).toContain(A);
-    expect(grant.params).not.toContain(I);
+    expect(grant.params).toContain(I);
+    expect(grant.params).toContain('access.key_minted');
+    expect(grant.params).toContain('access.device_authorized');
+    expect(grant.sql).toContain('not (');
   }
   expect(s.sql).toContain('"source_kind" = "omni_events"."source_kind"');
   expect(s.sql).toContain('"source_id" = "omni_events"."source_id"');

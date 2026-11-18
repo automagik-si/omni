@@ -92,20 +92,24 @@ export class AscFlowClient {
    * Authenticated POST. Retries ONCE with a fresh token on an authentication
    * 401 (no `cod_error`); a business 401 is returned to the caller as-is.
    */
-  async post(path: string, payload: Record<string, unknown>): Promise<AscFlowResponse> {
-    let response = await this.rawPost(path, payload, await this.getToken());
+  async post(path: string, payload: Record<string, unknown>, signal?: AbortSignal): Promise<AscFlowResponse> {
+    let response = await this.rawPost(path, payload, await this.getToken(), false, signal);
 
     if (response.status === 401 && codErrorOf(response.body) === undefined) {
       this.logger.info('[asc-flow] 401 without cod_error — re-authenticating and retrying', { path });
-      response = await this.rawPost(path, payload, await this.getToken(true));
+      response = await this.rawPost(path, payload, await this.getToken(true), false, signal);
     }
 
     return response;
   }
 
-  /** Authenticated POST that throws unless the platform reports success. */
-  async call(path: string, payload: Record<string, unknown>): Promise<unknown> {
-    const response = await this.post(path, payload);
+  /**
+   * Authenticated POST that throws unless the platform reports success.
+   * `signal` lets a caller with a shorter deadline give up before the request's
+   * own timeout (the typing indicator does).
+   */
+  async call(path: string, payload: Record<string, unknown>, signal?: AbortSignal): Promise<unknown> {
+    const response = await this.post(path, payload, signal);
     if (isPlatformOk(response)) return response.body;
 
     const codError = codErrorOf(response.body);
@@ -146,8 +150,9 @@ export class AscFlowClient {
     payload: Record<string, unknown>,
     token?: string,
     form = false,
+    signal?: AbortSignal,
   ): Promise<AscFlowResponse> {
-    return this.rawRequest('POST', path, {}, payload, token, form);
+    return this.rawRequest('POST', path, {}, payload, token, form, signal);
   }
 
   /**

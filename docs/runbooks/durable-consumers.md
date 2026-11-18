@@ -92,6 +92,45 @@ is refused with 400). Leases live on the consumer row (`lease_state`,
 compare-and-set), so pullers on different API replicas coordinate through
 PostgreSQL — no extra broker.
 
+## Audited cursor seek (RFC-0002)
+
+Pause followers and finish their outstanding acks before seeking. Use exactly one
+of these targets to move backward or forward:
+
+```bash
+omni events consumers seek deploy-tracker --to-sequence 120
+omni events consumers seek deploy-tracker --to-time '2026-11-15T10:00:00Z'
+```
+
+API: `POST /api/v2/events/consumers/:name/seek` with exactly one of
+`{"toSequence":120}` or `{"toTime":"2026-11-15T10:00:00Z"}`. The sequence is
+an exclusive cursor: the next pull starts **strictly after** it. A time resolves
+to the **lowest `journal_seq`** whose `receivedAt` is at or after that time;
+the cursor is set to the previous journal row's sequence (or 0 for the first
+row), so the resolved row is the first delivered. The publisher's clock may
+be out of journal order. Later journal rows stamped before the target may
+also replay; no row stamped at or after the target is skipped, subject to the
+consumer's read filters.
+
+To replay the journal's oldest row itself, use `toTime` at the journal's oldest
+`receivedAt`. `toSequence` at the oldest sequence starts after that row.
+
+The bound is the journal's oldest sequence through its head, within the consumer's
+tenant when stamped. Time targets outside its oldest/newest `receivedAt` are
+refused; an empty journal is refused. NATS retention does not set the bound.
+The same keys that may ack that consumer may seek it, including full-access
+keys. Seeking backward preserves tenant, instance, agent/source-grant, type,
+payload, and access-verdict read filters.
+
+A shared consumer with **any outstanding lease** returns 409, including expired
+leases awaiting redelivery. Finish/redeliver and ack those pages first. A seek
+with no outstanding leases resets both cursor and claimed watermark atomically;
+concurrent shared pulls retry against that new position. Each accepted request
+writes a `consumer.seek` config-audit row and publishes `custom.consumer.sought`
+with `consumerId`, `name`, `from`, `to`, `by` (key ID), and `when` (UTC timestamp),
+following the route mutation audit/event pattern. Fan-out followers must be
+stopped first: a previously pulled page can still ack progress after a seek.
+
 ## The model
 
 - **Cursor** = last acked `omni_events.journal_seq`, a monotonic journal
@@ -142,3 +181,33 @@ forecloses it; nothing here builds it.
   pass (the RLS coverage gate freezes which tables may carry `tenant_id`).
 - **Filtered lag** — lag is head-minus-cursor, not "matching events behind";
   computing the latter is a full scan.
+
+
+## Change-event families and key visibility
+
+The journal now follows `access.*`, `chat.*`, `identity.*`, `person.*`, and `instance.*`
+from subscription creation onward. `person.created`/`updated`/`merged` describe person
+records; `identity.linked`/`unlinked` describe platform identity links. Record changes
+carry internal IDs and changed field names only. Re-read values through the API.
+Vocabulary remains provisional.
+
+`access.allowed`, `access.denied`, `access.pairing_requested` (pairing credential), and
+`instance.qr_code` never enter the journal. Sensitive lifecycle events require a literal
+`*` scope and no instance restriction, using `isAdminTierKey`. The complete conservative
+classification is `CHANGE_JOURNAL_POLICY` in `packages/api/src/services/journal-visibility.ts`.
+It covers all new-family types; unclassified types stay out until classified. IDs-only
+record changes, `chat.archived`, and `instance.updated` retain normal visibility. A
+restricted key never receives sensitive events or new-family no-instance rows, even when an event
+belongs to an allowed instance. Existing grant-authorized custom/connector no-instance delivery
+for agent-owned consumers remains unchanged. The same filter governs pull, shared leases, SSE pages,
+readiness/caught-up checks, as well as REST list/search/trace/timelines,
+analytics/type inventory/metrics, payload access and journal-backed automation tests.
+An unavailable or forbidden payload parent is a 404; processing does not continue.
+SSE retains the existing maximum lifetime and re-authenticates on reconnect.
+
+The cursor and head remain tenant-wide journal sequence watermarks. Head is not filtered
+by key instance or event-type visibility: `startFrom: now` skips every pre-existing sequence,
+and head-minus-cursor lag may remain positive while `caughtUp` is true because the rows
+past the cursor are hidden or do not match. Neither gaps nor lag count visible events.
+These record notifications cannot be replayed through generic event-ops replay; custom/connector replay is unchanged, and agent replay still reads
+only stored messages. There is no historical backfill.

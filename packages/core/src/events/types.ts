@@ -36,11 +36,19 @@ export const CORE_EVENT_TYPES = [
   'identity.linked',
   'identity.merged',
   'identity.unlinked',
+  // Person records (distinct from platform identity links)
+  'person.created',
+  'person.updated',
+  'person.merged',
   // Instance lifecycle
   'instance.connected',
   'instance.disconnected',
   'instance.qr_code',
   'instance.updated',
+  // Access rule records
+  'access.rule_created',
+  'access.rule_updated',
+  'access.rule_deleted',
   // Access control
   'access.allowed',
   'access.denied',
@@ -66,6 +74,7 @@ export const CORE_EVENT_TYPES = [
   'sync.progress',
   'sync.completed',
   'sync.failed',
+  'sync.cancelled',
   'profile.synced',
   // Reaction lifecycle
   'reaction.received',
@@ -100,6 +109,10 @@ export const CORE_EVENT_TYPES = [
   'conversation.created',
   'conversation.updated',
   'conversation.deleted',
+  // Chat records
+  'chat.created',
+  'chat.updated',
+  'chat.deleted',
   // Idle-chat follow-up sequences
   'chat.idle_timeout',
   'chat.handoff_activated',
@@ -471,6 +484,30 @@ export interface MediaProcessingFailedPayload {
   retryAttempts?: number;
 }
 
+/** Change notifications contain internal IDs and field names only. Values are re-read through the API. */
+export interface PersonChangedPayload {
+  personId: string;
+  changedKeys: string[];
+}
+
+export interface PersonMergedPayload {
+  sourcePersonId: string;
+  targetPersonId: string;
+  mergedIdentityIds: string[];
+}
+
+export interface ChatChangedPayload {
+  chatId: string;
+  instanceId: string | null;
+  changedKeys: string[];
+}
+
+export interface AccessRuleChangedPayload {
+  ruleId: string;
+  instanceId: string | null;
+  changedKeys: string[];
+}
+
 /**
  * Identity event payloads
  */
@@ -677,7 +714,22 @@ export interface AccessKeyUpdatedPayload {
 /**
  * Sync event payloads
  */
+export type ChatBackfillState = 'queued' | 'fetching' | 'done' | 'phone-did-not-answer' | 'cancelled' | 'failed';
+
+export interface ChatCoverage {
+  oldest: string | null;
+  newest: string | null;
+  count: number;
+  countInWindow: number;
+  deletedCount: number;
+  mediaMissing: number;
+  lastInbound: string | null;
+  lastOutbound: string | null;
+}
+
 export interface SyncJobConfig {
+  /** Only the explicit per-chat backfill routes set this; legacy syncs keep their behavior. */
+  backfill?: { chatId: string; chatJid: string; from: string; to: string };
   depth?: '7d' | '30d' | '90d' | '1y' | 'all';
   channelId?: string;
   downloadMedia?: boolean;
@@ -711,6 +763,17 @@ export interface SyncJobProgress {
   duplicates: number;
   mediaDownloaded: number;
   totalEstimated?: number;
+  lastProgressAt?: string;
+  state?: ChatBackfillState;
+  oldestReached?: string | null;
+  mediaMissing?: number;
+  reactionsApplied?: number;
+  editsApplied?: number;
+  deletionsApplied?: number;
+  unmatched?: number;
+  round?: number;
+  outcome?: string;
+  coverage?: ChatCoverage;
 }
 
 export type SyncJobType = 'profile' | 'messages' | 'contacts' | 'groups' | 'all' | 'history-push';
@@ -723,6 +786,7 @@ export interface SyncStartedPayload {
 }
 
 export interface SyncProgressPayload {
+  chatId?: string;
   jobId: string;
   instanceId: string;
   type: SyncJobType;
@@ -1284,6 +1348,15 @@ export interface EventPayloadMap {
   'media.received': MediaReceivedPayload;
   'media.processed': MediaProcessedPayload;
   'media.processing.failed': MediaProcessingFailedPayload;
+  'person.created': PersonChangedPayload;
+  'person.updated': PersonChangedPayload;
+  'person.merged': PersonMergedPayload;
+  'chat.created': ChatChangedPayload;
+  'chat.updated': ChatChangedPayload;
+  'chat.deleted': ChatChangedPayload;
+  'access.rule_created': AccessRuleChangedPayload;
+  'access.rule_updated': AccessRuleChangedPayload;
+  'access.rule_deleted': AccessRuleChangedPayload;
   'identity.created': IdentityCreatedPayload;
   'identity.linked': IdentityLinkedPayload;
   'identity.merged': IdentityMergedPayload;
@@ -1308,6 +1381,7 @@ export interface EventPayloadMap {
   'sync.progress': SyncProgressPayload;
   'sync.completed': SyncCompletedPayload;
   'sync.failed': SyncFailedPayload;
+  'sync.cancelled': SyncCompletedPayload & { chatId?: string };
   'profile.synced': ProfileSyncedPayload;
   'reaction.received': ReactionReceivedPayload;
   'reaction.removed': ReactionRemovedPayload;

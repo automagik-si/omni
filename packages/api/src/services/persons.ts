@@ -16,6 +16,7 @@ import {
   platformIdentities,
 } from '@omni/db';
 import { and, desc, eq, isNotNull, ne, or, sql } from 'drizzle-orm';
+import { changedRecordKeys, publishRecordChange } from '../lib/record-change-events';
 import { scopedHandle } from '../tenancy/tenant-scope';
 import { canonicalizeHandle } from '../utils/canonical-handle';
 
@@ -288,6 +289,10 @@ export class PersonService {
       throw new Error('Failed to create person');
     }
 
+    publishRecordChange(this.eventBus, 'person.created', {
+      personId: created.id,
+      changedKeys: changedRecordKeys(data),
+    });
     return created;
   }
 
@@ -305,6 +310,10 @@ export class PersonService {
       throw new NotFoundError('Person', id);
     }
 
+    publishRecordChange(this.eventBus, 'person.updated', {
+      personId: updated.id,
+      changedKeys: changedRecordKeys(data),
+    });
     return updated;
   }
 
@@ -399,6 +408,7 @@ export class PersonService {
       displayName?: string;
     },
     handle: Database = this.db,
+    onCreated?: (person: Person) => void,
   ): Promise<{ personId?: string; wasLinked: boolean }> {
     try {
       const [newPerson] = await handle
@@ -411,7 +421,19 @@ export class PersonService {
         .onConflictDoNothing() // If phone already exists (UNIQUE constraint), skip insert
         .returning();
 
-      if (newPerson) return { personId: newPerson.id, wasLinked: false };
+      if (newPerson) {
+        if (onCreated) onCreated(newPerson);
+        else
+          publishRecordChange(this.eventBus, 'person.created', {
+            personId: newPerson.id,
+            changedKeys: changedRecordKeys({
+              displayName: linkOptions.displayName,
+              primaryPhone: linkOptions.matchByPhone,
+              primaryEmail: linkOptions.matchByEmail,
+            }),
+          });
+        return { personId: newPerson.id, wasLinked: false };
+      }
 
       // Insert was skipped due to conflict — find and return existing person by phone
       if (linkOptions.matchByPhone) {
@@ -586,7 +608,8 @@ export class PersonService {
     const { data, personId, wasLinked, linkedBy, linkReason, confidence, createPersonOptions } = params;
     const { instanceId, channel, platformUserId } = data;
 
-    return this.db.transaction(async (tx) => {
+    let createdPerson: Person | undefined;
+    const result = await this.db.transaction(async (tx) => {
       // The transaction handle runs the same query builder as the pooled handle;
       // treat it as a `Database` (mirrors `scopedHandle`) so the identity insert,
       // person creation, and person link all share one atomic transaction.
@@ -636,7 +659,9 @@ export class PersonService {
         return { identity: inserted, person, isNew: true, wasLinked };
       }
 
-      const created = await this.createPersonWithConflictHandling(createPersonOptions, txDb);
+      const created = await this.createPersonWithConflictHandling(createPersonOptions, txDb, (person) => {
+        createdPerson = person;
+      });
       if (!created.personId) {
         return { identity: inserted, person: null, isNew: true, wasLinked };
       }
@@ -650,6 +675,16 @@ export class PersonService {
       const person = await this.getById(created.personId, txDb);
       return { identity: linked ?? inserted, person, isNew: true, wasLinked: created.wasLinked };
     });
+    if (createdPerson)
+      publishRecordChange(this.eventBus, 'person.created', {
+        personId: createdPerson.id,
+        changedKeys: changedRecordKeys({
+          displayName: createPersonOptions?.displayName,
+          primaryPhone: createPersonOptions?.matchByPhone,
+          primaryEmail: createPersonOptions?.matchByEmail,
+        }),
+      });
+    return result;
   }
 
   /**
@@ -795,11 +830,17 @@ export class PersonService {
 
     // Both have persons - merge B into A
     if (personIdA && personIdB) {
-      await this.db
+      const moved = await this.db
         .update(platformIdentities)
         .set({ personId: personIdA, linkedBy: 'manual', updatedAt: new Date() })
-        .where(eq(platformIdentities.personId, personIdB));
+        .where(eq(platformIdentities.personId, personIdB))
+        .returning({ id: platformIdentities.id });
       await this.db.delete(persons).where(eq(persons.id, personIdB));
+      publishRecordChange(this.eventBus, 'person.merged', {
+        sourcePersonId: personIdB,
+        targetPersonId: personIdA,
+        mergedIdentityIds: moved.map((row) => row.id),
+      });
       return personIdA;
     }
 
@@ -827,7 +868,7 @@ export class PersonService {
       throw new Error('Cannot use linkIdentities() to link agent-owned identities. Use linkIdentityToAgent() instead.');
     }
 
-    const [newPerson] = await this.db.insert(persons).values({}).returning();
+    const newPerson = await this.create({});
     if (!newPerson) throw new Error('Failed to create person');
 
     await this.db
@@ -886,7 +927,7 @@ export class PersonService {
     }
 
     // Create a new person for this identity
-    const [newPerson] = await this.db.insert(persons).values({}).returning();
+    const newPerson = await this.create({});
 
     if (!newPerson) {
       throw new Error('Failed to create person');
@@ -959,6 +1000,11 @@ export class PersonService {
     await this.db.delete(persons).where(eq(persons.id, sourcePersonId));
 
     const person = await this.getById(targetPersonId);
+    publishRecordChange(this.eventBus, 'person.merged', {
+      sourcePersonId,
+      targetPersonId,
+      mergedIdentityIds: identityIds,
+    });
 
     return {
       person,

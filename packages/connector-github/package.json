@@ -1,0 +1,25 @@
+{
+  "name": "@omni/connector-github",
+  "version": "2.261118.14",
+  "description": "GitHub connector: issues and pull_request webhook events, declared as a code manifest (events only, no GitHub API calls)",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@omni/connector-sdk": "workspace:*",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.4",
+    "typescript": "^5.7.3"
+  }
+}

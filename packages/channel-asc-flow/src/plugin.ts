@@ -229,6 +229,13 @@ const UNDELIVERABLE_ERROR = 'no ASC flow turn is polling this cod_atendimento �
 const HANDOFF_REFUSED_ERROR = 'handoff refused: the transfer never held, so the turn answers without it';
 
 /**
+ * Deadline for `/sendIndicador`. The indicator carries no content, so it does
+ * not get the client's 20s: past a couple of seconds the "digitando…" is no
+ * longer worth showing.
+ */
+const TYPING_TIMEOUT_MS = 2_000;
+
+/**
  * How often `inFlight` is swept for entries past the TTL.
  *
  * The TTL alone does NOT bound the map: it is only consulted when that exact
@@ -574,14 +581,40 @@ export class AscFlowPlugin extends BaseChannelPlugin {
   // Outbound
   // ─────────────────────────────────────────────────────────────
 
-  /** `POST /sendIndicador` — the "digitando…" bubble. */
-  async sendTyping(instanceId: string, chatId: string, _duration?: number): Promise<void> {
+  /**
+   * Deliberately a no-op: on this channel "digitando…" goes out ONCE per
+   * beneficiary message, raised by the plugin itself when the turn lands
+   * (`raiseTyping`, on the inbound path, once the turn is published and without
+   * holding it).
+   *
+   * Every other caller lands here: the dispatcher raises "composing" when the
+   * agent run starts (the same instant as the inbound one), "composing" again
+   * between reply chunks, and "paused" when the run ends — and `/sendIndicador`
+   * has no "stop", so "paused" used to raise the bubble a THIRD time. Each call
+   * is one request the platform relays to Meta: measured in production on
+   * 13/11/2026, ~3 indicators per beneficiary message, most of what we sent the
+   * platform, with HTTP 500 on the ones that collided.
+   */
+  async sendTyping(_instanceId: string, _chatId: string, _duration?: number): Promise<void> {}
+
+  /**
+   * `POST /sendIndicador` — the "digitando…" bubble. Never throws (it is never
+   * worth failing a turn over), so the inbound path fires it WITHOUT awaiting.
+   *
+   * It carries no content, so it gets a short deadline of its own instead of
+   * the client's 20s: a late "digitando…" is worth nothing, and a slow one must
+   * not keep a request open against a platform that is already struggling.
+   */
+  private async raiseTyping(instanceId: string, chatId: string): Promise<void> {
     const state = this.ascFlowInstances.get(instanceId);
     if (!state) return;
     try {
-      await state.client.call('/sendIndicador', { cod: toCodAtendimento(chatId), tipo: 1 });
+      await state.client.call(
+        '/sendIndicador',
+        { cod: toCodAtendimento(chatId), tipo: 1 },
+        AbortSignal.timeout(TYPING_TIMEOUT_MS),
+      );
     } catch (err) {
-      // A typing indicator is never worth failing a turn over.
       this.logger.warn('[asc-flow] sendIndicador failed', { instanceId, chatId, err: String(err) });
     }
   }
@@ -1254,17 +1287,12 @@ export class AscFlowPlugin extends BaseChannelPlugin {
   }
 
   /**
-   * Every bubble EXCEPT the last one, in order, with typing after each so the
-   * next one lands with a beat (the first typing was raised on the inbound
-   * path). The last bubble is not pushed — it goes back in `resposta`.
+   * The bubbles, in order. No typing between them: the one "digitando…" of the
+   * turn was raised on the inbound path (see `sendTyping`).
    *
    * Best-effort: a push refused by the platform must not cost the beneficiary
    * the answer, which the flow will render from `resposta` anyway. Stop at the
    * first failure — the remaining bubbles would arrive out of order.
-   *
-   * Only a failed BUBBLE stops the loop. The typing indicator between bubbles
-   * is cosmetic: when the platform refuses it (HTTP 429 at peak hours), the
-   * next bubble still goes out — the loop is sequential, so order holds.
    */
   private async pushBubbles(state: AscFlowInstanceState, cod: number, bubbles: string[]): Promise<number> {
     let enviadas = 0;
@@ -1286,22 +1314,8 @@ export class AscFlowPlugin extends BaseChannelPlugin {
         return enviadas;
       }
       enviadas++;
-      // Typing between bubbles, for rhythm — never after the last one.
-      if (enviadas < bubbles.length) await this.typingBetweenBubbles(state, cod);
     }
     return enviadas;
-  }
-
-  /** `POST /sendIndicador` between two bubbles. Never throws: a refused indicator must not cost a bubble. */
-  private async typingBetweenBubbles(state: AscFlowInstanceState, cod: number): Promise<void> {
-    try {
-      await state.client.call('/sendIndicador', { cod, tipo: 1 });
-    } catch (err) {
-      this.logger.warn('[asc-flow] typing between bubbles failed — sending the next bubble anyway', {
-        cod,
-        err: String(err),
-      });
-    }
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -1346,14 +1360,10 @@ export class AscFlowPlugin extends BaseChannelPlugin {
       inboundState.seenCods.add(turn.codAtendimento);
     }
 
-    // The quoted-reply read starts now and runs alongside "digitando…" and the
-    // media fetch: its time comes out of the webhook hold (`handlers/webhook.ts`).
+    // The quoted-reply read starts now and runs alongside the media fetch: its
+    // time comes out of the webhook hold (`handlers/webhook.ts`).
     const client = this.ascFlowInstances.get(instanceId)?.client;
     const quote = this.quotedReplyTo(client, instanceId, turn);
-
-    // Raise "digitando…" as soon as the turn lands: the agent run is the slow
-    // part, and the beneficiary is already waiting.
-    await this.sendTyping(instanceId, turn.codAtendimento);
 
     const externalId = turn.messageId ?? crypto.randomUUID();
 
@@ -1433,6 +1443,20 @@ export class AscFlowPlugin extends BaseChannelPlugin {
       this.dropRepublishedTurn(instanceId, turn);
       return false;
     }
+
+    // Raise "digitando…" now that the turn is PUBLISHED: the agent run is the
+    // slow part, and the beneficiary is already waiting. The ONLY one of the
+    // turn, and two things about it are deliberate:
+    //
+    // - not awaited. The message has already gone to the agent, whatever the
+    //   platform does with the indicator (awaited ahead of the publish, a slow
+    //   `/sendIndicador` held every inbound message for up to the client's 20s);
+    // - after the duplicate check, never before. A re-send the journal refuses
+    //   gets no answer, so it gets no "digitando…" either — and the platform
+    //   answers HTTP 500 to exactly those: in production on 16/11/2026, 307 of
+    //   the 374 indicator 500s in 8 minutes were raised for a re-send we then
+    //   dropped (307 of the 310 dropped re-sends).
+    void this.raiseTyping(instanceId, turn.codAtendimento);
 
     if (stamped && stamped.text === turn.text && !stamped.correlationId) stamped.correlationId = correlationId;
 

@@ -66,11 +66,11 @@ export const STREAM_CONFIGS: Record<StreamName, Partial<StreamConfig>> = {
   },
   [STREAM_NAMES.IDENTITY]: {
     name: STREAM_NAMES.IDENTITY,
-    subjects: ['identity.>'],
+    subjects: ['identity.>', 'person.>'],
     max_age: daysToNs(90),
     storage: NATS_STORAGE_FILE,
     retention: NATS_RETENTION_LIMITS,
-    description: 'Identity management events (created, linked, merged, unlinked)',
+    description: 'Person records and platform identity management events',
   },
   [STREAM_NAMES.MEDIA]: {
     name: STREAM_NAMES.MEDIA,
@@ -146,6 +146,7 @@ export function getStreamForEventType(eventType: string): StreamName {
     reaction: STREAM_NAMES.REACTION,
     instance: STREAM_NAMES.INSTANCE,
     identity: STREAM_NAMES.IDENTITY,
+    person: STREAM_NAMES.IDENTITY,
     media: STREAM_NAMES.MEDIA,
     access: STREAM_NAMES.ACCESS,
     session: STREAM_NAMES.SESSION,

@@ -1,10 +1,10 @@
 /* automagik.si on the app's Stage theme (theme.css, generated from the app): cream by day,
    plum at night, the cyan/lilac/pink stage, paper surfaces, hairlines, clay lift and the
    magenta focus ring. Each building block gets its own visual; art is Automagik's own. */
-/* Automagik: the site's components. This is the site's own stylesheet (apps/landing/styles.css, dev@6ba09b59) with its token
-   declarations taken out: colours, shadows, radii and fonts come from tokens.css. What a token cannot hold stays here:
-   the stage gradient, the tile colour mixes and the font short names. Dark values apply under data-theme="dark", and under
-   the reader's dark system setting when no data-theme is set. */
+/* Automagik: the site's components. This is the site's own stylesheet (apps/landing/styles.css), made by
+   scripts/brand-bundle.mjs with its token declarations taken out: colours, shadows, radii and fonts come from tokens.css.
+   What a token cannot hold stays here: the stage gradient, the tile colour mixes and the font short names. Dark values
+   apply under data-theme="dark", and under the reader's dark system setting when no data-theme is set. */
 :root{--bt-font:var(--font-body);--bt-head-font:var(--font-head);--st-stage:linear-gradient(170deg,#d3eff4 0%,#e4dcf5 55%,#f7d9ea 100%);--head:var(--bt-head-font);--body:var(--bt-font);--tile-lilac:color-mix(in srgb,var(--st-lilac) 72%,var(--st-paper));--tile-cyan:color-mix(in srgb,var(--st-cyan) 34%,var(--st-paper));--tile-pink:color-mix(in srgb,var(--bt-user) 70%,var(--st-paper))}
 [data-theme="dark"]{--st-stage:linear-gradient(170deg,#173840 0%,#2a2440 55%,#3d2234 100%);--tile-cyan:color-mix(in srgb,var(--st-cyan) 22%,var(--st-paper));--tile-pink:color-mix(in srgb,var(--bt-user) 55%,var(--st-paper))}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]):not([data-theme="dark"]){--st-stage:linear-gradient(170deg,#173840 0%,#2a2440 55%,#3d2234 100%);--tile-cyan:color-mix(in srgb,var(--st-cyan) 22%,var(--st-paper));--tile-pink:color-mix(in srgb,var(--bt-user) 55%,var(--st-paper))}}
@@ -118,9 +118,9 @@ html:has(.sheet:popover-open) :is(.top,main,.site-footer,.skip){interactivity:in
 .main-nav{margin-right:auto;font:var(--weight-label) .94rem/1 var(--head)}
 .menus{display:flex;gap:2px}
 .menu{display:flex;align-items:center;min-height:var(--top-h)}
-.menu-button,.menu-open{appearance:none;display:inline-flex;align-items:center;gap:7px;border:0;border-radius:999px;background:none;color:color-mix(in srgb,var(--text) 86%,transparent);font:inherit;cursor:pointer}
+.menu-button{appearance:none;display:inline-flex;align-items:center;gap:7px;border:0;border-radius:999px;background:none;color:color-mix(in srgb,var(--text) 86%,transparent);font:inherit;cursor:pointer}
 .menu-button{padding:10px 11px 10px 15px}
-.menu-button:hover,.menu-open:hover{background:var(--bt-hover);color:var(--text)}
+.menu-button:hover{background:var(--bt-hover);color:var(--text)}
 .menu-button[data-here]{background:var(--bt-active);color:var(--text)}
 .menu-here{padding-left:9px;border-left:1px solid var(--line-2);color:var(--accent)}
 .chev{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;opacity:.7;transition:rotate .16s ease}
@@ -149,28 +149,53 @@ html:has(.sheet:popover-open) :is(.top,main,.site-footer,.skip){interactivity:in
   .menus:has(:popover-open) .menu:hover>.menu-panel:not(:popover-open){display:none}
 }
 .top-cta{flex-shrink:0}
-.top-inner>a:last-child:not(.top-cta):not(.menu-fallback){margin-left:auto;font:var(--weight-label) .94rem/1 var(--head)}
-.menu-open,.menu-fallback{display:none}
-.menu-open{min-height:44px;padding:8px 16px 8px 13px;background:var(--bt-hover);font:var(--weight-strong) .92rem/1 var(--head)}
-.menu-glyph{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round}
-/* The phone menu: one sheet under the header with the same three groups. The header stays,
-   and its Menu button closes the sheet again. While the sheet is open the page behind it is
-   hidden from the keyboard and from assistive technology. */
-.menu-glyph.cross,.top:has(.drawer:popover-open) .menu-glyph.bars{display:none}
-.top:has(.drawer:popover-open) .menu-glyph.cross{display:block}
-.top:has(.drawer:popover-open) .menu-open{background:var(--bt-active);color:var(--text)}
-.drawer{position:fixed;inset:var(--top-h) 0 0;width:100%;height:auto;max-width:none;max-height:none;margin:0;padding:6px calc(var(--gutter) - 12px) 40px;border:0;background:var(--bg);color:var(--text);overflow:auto;overscroll-behavior:contain}
-.drawer-label{margin:22px 12px 8px;font:var(--weight-title) .72rem/1.5 var(--head);letter-spacing:.18em;text-transform:uppercase;color:var(--ring)}
-.drawer .menu-list{grid-template-columns:minmax(0,1fr);gap:2px}
-.drawer .menu-item{align-items:center;padding:10px 12px}
-.drawer-foot{margin:26px 12px 0;padding-top:24px;border-top:1px solid var(--line)}
-.drawer-foot .button{width:100%}
-html:has(.drawer:popover-open){overflow:hidden}
-body:has(.drawer:popover-open) :is(main,.site-footer,.skip){visibility:hidden}
-/* A browser without popovers: the panels open on hover or focus, and the phone gets a link
-   to the footer's sitemap in place of the sheet. */
+.top-inner>a:last-child:not(.top-cta){margin-left:auto;font:var(--weight-label) .94rem/1 var(--head)}
+/* THE FAMILY DRAWER on this site. The piece is assets/family/family.css, a byte copy, loaded
+   before this file and never edited. It is written against tokens and a few classes it
+   takes from its host's own system, so this block is the host's side and nothing else:
+   the names the piece reads, given this site's values; the classes it borrows, drawn as
+   this site draws them; and the places where this site differs from the page the piece
+   was drawn on (the theme follows the visitor's system, the header is 72 or 64 px high,
+   the page column has a fluid gutter, and the menus fold at 860 px). No rule here changes
+   what the piece shows or how it behaves. */
+:root{--ground:var(--bg);--text-muted:var(--muted);--text-faint:var(--muted);--card-active:var(--bt-active);
+  --font-mono:var(--head);--font-display:var(--head);--text-label:.6875rem;--text-title:1.3rem;--text-lead:clamp(1.15rem,1rem + .55vw,1.4rem);
+  --space-8:8px;--space-13:13px;--space-21:21px;--radius-pill:999px;--tap-target:44px;
+  --duration-fast:.16s;--duration-base:.24s;--duration-move:.45s;--duration-page:.7s;--ease:ease;--ease-move:cubic-bezier(.2,.8,.2,1)}
+/* The logo keeps the page column and steps right only where the column would run under
+   the button: the piece's own rule for .topbar-in, said with this site's column (.wrap,
+   whose own padding would otherwise win): its fluid gutter and its full width. */
+.top-inner.topbar-in{padding-left:max(var(--gutter),calc(var(--fam-clear) - max(0px,(100% - (var(--max) + 2 * var(--gutter))) / 2)))}
+/* The button stands in the middle of this header's height, on whole pixels. */
+.top .fam-btn{top:calc((var(--top-h) - 48px) / 2)}
+/* The piece's day values, word for word, for a light page: this site sets no data-theme,
+   the visitor's system picks. The ground the piece gives another product's world is this
+   site's own page colour in both themes, so it is named by its token. */
+[data-theme="light"] .fam-btn{--fam-violet:#9062be;--fam-pink:#d03f7c;--fam-cyan:#0781a4}
+[data-theme="light"] .fam-lockup .fam-lock-ink{display:block}
+[data-theme="light"] .fam-lockup .fam-lock-cream{display:none}
+@media (prefers-color-scheme:light){
+  :root:not([data-theme="dark"]) .fam-btn{--fam-violet:#9062be;--fam-pink:#d03f7c;--fam-cyan:#0781a4}
+  :root:not([data-theme="dark"]) .fam-lockup .fam-lock-ink{display:block}
+  :root:not([data-theme="dark"]) .fam-lockup .fam-lock-cream{display:none}
+}
+.fam-world{background:var(--bg);color:var(--text)}
+/* The classes the piece borrows: the label, the quiet link and the small ghost button, as
+   this site draws a label, a footer link and its small secondary button. */
+.fam>.eyebrow{margin-bottom:0}
+.fam .quiet-link{display:inline-flex;align-items:center;min-height:44px;font:var(--weight-label) .94rem/1 var(--head);color:var(--muted);text-decoration:none}
+.fam .quiet-link:hover{color:var(--text)}
+.fam .pill{appearance:none;display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:8px 16px;border-radius:12px;border:1px solid var(--line-2);background:var(--paper);color:var(--text);font:var(--weight-strong) .88rem/1.3 var(--head);cursor:pointer}
+.fam .pill:hover{border-color:var(--ring)}
+/* Type: the title face is set at this system's three weights only, and never tightened
+   past the page title's spacing. */
+.fam-chip,.fam-here,.fam-links a,.fam-item::after{font-weight:var(--weight-label)}
+.fam-world-in b{font-weight:var(--weight-title);letter-spacing:-.02em}
+/* This site's focus ring squares a corner; the round button and the pills stay round. */
+.fam-btn:focus-visible{border-radius:50%}
+.fam-chip:focus-visible{border-radius:var(--radius-pill)}
+/* A browser without popovers: the panels open on hover or focus. */
 @supports not selector(:popover-open){
-  .drawer,.menu-open{display:none !important}
   .menu:hover>.menu-panel,.menu:focus-within>.menu-panel{display:block}
 }
 
@@ -226,7 +251,8 @@ body:has(.drawer:popover-open) :is(main,.site-footer,.skip){visibility:hidden}
 [data-block="mobile"] .tile-art{flex:1;display:flex;justify-content:center;align-items:flex-end;padding:0 24px}
 .tile-phone.phone{--pw:216px;margin-bottom:clamp(24px,2.6vw,36px)}
 [data-block="omni"]{grid-column:span 3;display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr);align-items:center;background:var(--tile-cyan)}
-h1 .product-logo{display:block;width:auto;height:min(128px,11.8vw);object-fit:contain;object-position:left}
+h1 .product-logo{display:block;width:auto;height:min(128px,10.4vw);object-fit:contain;object-position:left}
+.center h1 .product-logo{margin-inline:auto;object-position:center}
 .product-card h3 .product-logo{display:block;width:auto;height:44px}
 .tile-omni{width:min(220px,92%);margin:12px auto;filter:drop-shadow(0 18px 24px rgba(20,60,80,.28))}
 [data-block="genie"]{grid-column:span 3;display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr);align-items:center;background:radial-gradient(120% 90% at 85% 40%,var(--plum-2),var(--plum) 62%);border-color:transparent;color:var(--on-plum)}
@@ -410,24 +436,14 @@ input:focus,textarea:focus,select:focus{outline:0;border-color:var(--ring);box-s
 /* Coming soon */
 .coming{padding-block:clamp(40px,6vw,88px) clamp(24px,3vw,40px)}
 .coming-card{position:relative;isolation:isolate;overflow:clip;border-radius:36px;background:var(--st-stage);padding:clamp(48px,8vw,112px) clamp(20px,4vw,48px)}
-.install-line{margin:32px auto 0;max-width:min(100%,560px);text-align:center}
-.install-line pre{display:inline-block;max-width:100%;margin:0;padding:14px 20px;border-radius:14px;background:var(--code-bg);text-align:left;white-space:pre-wrap;overflow-wrap:anywhere}
-.install-line code{padding:0;border:0;background:none;color:#f3e9dd;font-size:.92rem;user-select:all;-webkit-user-select:all}
-.install-line code::before{content:"$ ";color:#8fe3f3;user-select:none;-webkit-user-select:none}
-.install-line p{margin-top:14px;color:var(--muted);font-size:.95rem}
-.install-line h2{margin-bottom:14px;font:var(--weight-title) .74rem/1.4 var(--head);letter-spacing:.18em;text-transform:uppercase;color:var(--eyebrow,var(--ring))}
-.install-line+.actions{margin-top:26px}
-/* Arca's logo: its kit's icon on Arca's own two grounds, ink on sand in light and ivory on
-   night in dark, with no effect on it. */
-.arca-mark{display:block;flex:none;aspect-ratio:1;border-radius:26%;background:#e6d3b3}
-.arca-mark img{width:100%;height:100%}
-.arca-mark.at-menu{width:44px}
-.menu-icon:has(.arca-mark){border:0;background:none}
-.arca-mark.at-card{width:56px;margin-bottom:18px}
-.arca-mark.at-hero{width:112px;margin:0 auto 28px}
-[data-theme="dark"] .arca-mark{background:#0b0d12}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .arca-mark{background:#0b0d12}}
-.coming-mark{width:120px;margin:0 auto 28px;filter:drop-shadow(0 18px 22px rgba(60,48,73,.28))}
+/* Arca's logo is the ark, in the text colour, never coloured. Alone it is the picture
+   beside the name in the Products menu (in the menu's own square, like every entry's
+   picture) and on the home card. The ark is wider than tall: it is drawn whole, centred in
+   its square. (With its word it is Arca's row in the family drawer, drawn by the piece.) */
+.arca-ark{display:block;flex:none;color:var(--text)}
+.arca-ark svg{display:block;width:100%;height:auto}
+.menu-icon .arca-ark{width:28px}
+.product-card .arca-ark{width:56px;margin-bottom:18px}
 
 /* The way on, on every block page */
 .more{padding-block:clamp(40px,5vw,72px) clamp(56px,7vw,96px);border-top:1px solid var(--line)}
@@ -490,12 +506,11 @@ input:focus,textarea:focus,select:focus{outline:0;border-color:var(--ring);box-s
   [data-block="omni"] .tile-art,[data-block="genie"] .tile-art{padding-bottom:24px}
 }
 @media (max-width:860px){
-  h1 .product-logo{height:min(128px,23vw)}
+  h1 .product-logo{height:min(128px,18.5vw)}
   .main-nav{display:none}
   .top{--top-h:64px}
   .top-cta{margin-left:auto}
-  .menu-open{display:inline-flex}
-  @supports not selector(:popover-open){.menu-fallback{display:inline-flex;align-items:center;min-height:44px;padding:8px 16px;border-radius:999px;background:var(--bt-hover);font:var(--weight-strong) .92rem/1 var(--head);text-decoration:none}}
+  .fam-links{display:grid}
   .footer-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
   .footer-brand{grid-column:1/-1}
   [data-block="cloud"],[data-block="arca"]{grid-column:span 6}
@@ -564,12 +579,9 @@ input:focus,textarea:focus,select:focus{outline:0;border-color:var(--ring);box-s
 }
 @media (max-width:480px){
   .top-cta{display:none}
-  .menu-open{margin-left:auto}
-  .install-line pre{padding:12px 14px}
-  .install-line code{font-size:clamp(.72rem,3.6vw,.8rem)}
 }
 @media (max-width:360px){
-  .brand{--mark:23px}
+  .brand{--mark:24px}
   .bubble{font-size:.74rem}
   .scene-omni{width:78px}
   .bubble{right:calc(1% + 82px)}
@@ -624,24 +636,20 @@ input:focus,textarea:focus,select:focus{outline:0;border-color:var(--ring);box-s
   .tile-omni,.hero-omni,.more-omni{view-transition-name:omni}
   .tile-pet,.hero-pet,.more-pet{view-transition-name:pet}
   ::view-transition-group(genie),::view-transition-group(omni),::view-transition-group(pet){animation-duration:.5s;animation-timing-function:cubic-bezier(.3,.8,.3,1)}
-  /* Menus and the phone sheet ease in. */
+  /* The family's menu button holds still between pages (the family's own rule, word for word). */
+  .fam-btn{view-transition-name:fb-bar}
+  ::view-transition-group(fb-bar){animation:none}
+  /* Menus and the download sheets ease in. */
   .menu-card{transition:opacity .18s ease,translate .26s cubic-bezier(.2,.8,.2,1)}
-  .drawer{transition:opacity .2s ease,translate .3s cubic-bezier(.2,.8,.2,1)}
-  .drawer-group,.drawer-foot{transition:opacity .32s ease,translate .42s cubic-bezier(.2,.8,.2,1)}
-  .drawer-group:nth-child(2){transition-delay:.05s}
-  .drawer-group:nth-child(3){transition-delay:.1s}
-  .drawer-foot{transition-delay:.15s}
   .sheet{transition:opacity .2s ease,translate .32s cubic-bezier(.2,.8,.2,1)}
   .sheet::backdrop{transition:opacity .24s ease}
   @starting-style{
     .sheet:popover-open{opacity:0;translate:0 22px}
     .sheet:popover-open::backdrop{opacity:0}
     .menu-card{opacity:0;translate:0 -10px}
-    .drawer{opacity:0;translate:0 14px}
-    .drawer-group,.drawer-foot{opacity:0;translate:0 18px}
   }
-  /* A page arrives: the heading's lines rise in turn, then its picture. Arca's logo is never moved. */
-  .hero-heading>:not(.arca-mark){animation:rise-in .7s cubic-bezier(.2,.7,.2,1) backwards}
+  /* A page arrives: the heading's lines rise in turn, then its picture. */
+  .hero-heading>*{animation:rise-in .7s cubic-bezier(.2,.7,.2,1) backwards}
   .hero-heading>:nth-child(2){animation-delay:.07s}
   .hero-heading>:nth-child(3){animation-delay:.14s}
   .hero-heading>:nth-child(4){animation-delay:.21s}

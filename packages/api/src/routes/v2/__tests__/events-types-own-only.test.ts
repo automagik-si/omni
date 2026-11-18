@@ -70,7 +70,7 @@ describe('GET /events/types: consumer names for an ownOnly key (#1461)', () => {
       const res = await app.request('/events/types?since=2024-01-01T00:00:00.000Z');
       expect(res.status).toBe(200);
       expect(calls).toHaveLength(1);
-      expect(Object.keys(calls[0] ?? {})).toEqual(['since', 'automations', 'tenantId']);
+      expect(Object.keys(calls[0] ?? {})).toEqual(['since', 'automations', 'tenantId', 'reader']);
       expect(dbReads).toEqual([]);
     });
   }

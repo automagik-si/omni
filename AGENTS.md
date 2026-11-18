@@ -13,6 +13,16 @@ Brand: docs/brand/ is a byte copy of Automagik's (the skill's SOURCE.json names 
 - Prefer safe static gates for routine validation.
 - Use a disposable database for database-backed or full integration tests.
 
+## Two rules for all work
+
+- **General blocks.** Omni is public. It ships general building blocks that any small business can combine into its
+  own private support line. Never bake one deployment's code formats, sites or URLs, wording, tiers, or product,
+  client or people names into code, tests, fixtures, docs, commits, PRs or issues. Make each one a setting; its value
+  lives outside this repository.
+- **Events first.** Omni is event-driven: apps attach to its event streams. New capability ships as events that
+  durable consumers can read, plus the reads and writes those apps need. Add no new design to Omni's built-in agents,
+  agent routes, agent dispatcher or access gate. Existing agent features stay as they are.
+
 ## Design records
 
 - Decisions live in `docs/rfcs/README.md`, the one index: RFCs, the frozen multitenancy `ADR-NNNN` keys, and earlier

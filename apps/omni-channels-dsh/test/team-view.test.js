@@ -110,12 +110,12 @@ test('the Omni endpoints are this plugin\'s, served on the team\'s route, and go
 // name: one browser plugin for the whole team, registered beside TEAM_TOOLS.
 const TEAM_BROWSER_TOOLS = ['browser_back', 'browser_click', 'browser_handoff', 'browser_open', 'browser_press', 'browser_resume', 'browser_screenshot', 'browser_select', 'browser_snapshot', 'browser_tabs', 'browser_type', 'browser_upload']
 // show_canvas is the canvas plugin's, which checks the whole list. The plugin's own tools,
-// and the chat threads' (THREAD_TOOLS), come on top; omni_handoff is gone (the team's
-// browser_handoff is a browser tool, not one of this plugin's).
+// the chat threads' (THREAD_TOOLS) and reading's, come on top; omni_handoff is gone (the
+// team's browser_handoff is a browser tool, not one of this plugin's).
 test('with this plugin, the team registers the tools TEAM_TOOLS names but show_canvas, plus the plugin\'s own', async (t) => {
   const { ctx, stop } = start(undefined, { config: { browser: true } })
   t.after(stop)
-  assert.deepEqual([...ctx.registeredTools.keys()].sort(), [...TEAM_TOOLS.filter(name => name !== 'show_canvas'), ...TEAM_BROWSER_TOOLS, ...THREAD_TOOLS, 'create_thread', 'propose_answer_bot', 'set_child_notes', 'set_answer_shared_notes', 'resume_answer_child', 'answer_chats', 'thread_needs_staff'].sort())
+  assert.deepEqual([...ctx.registeredTools.keys()].sort(), [...TEAM_TOOLS.filter(name => name !== 'show_canvas'), ...TEAM_BROWSER_TOOLS, ...THREAD_TOOLS, 'create_thread', 'propose_answer_bot', 'set_child_notes', 'set_answer_shared_notes', 'resume_answer_child', 'answer_chats', 'thread_needs_staff', 'read_history', 'save_reading_note'].sort())
   assert.equal(ctx.registeredTools.has('omni_handoff'), false)
 })
 
@@ -307,6 +307,9 @@ test('apply registers its listeners, tools and effects after the team\'s, in a f
     'effect omni-channels: stranded thread automations',
     'on session/event',
     'effect omni-channels: omni-answer-requests',
+    'effect omni-channels: omni-code-lists',
+    'effect omni-channels: omni-code-lists-add',
+    'effect omni-channels: omni-outside-check',
     'effect ds-bot: omni events view',
     'effect ds-bot: omni events',
     'effect omni-channels: omni-channel-abilities',
@@ -331,6 +334,9 @@ test('apply registers its listeners, tools and effects after the team\'s, in a f
     'effect omni-channels: omni-kapso-connect',
     'effect omni-channels: omni-kapso-test',
     'effect omni-channels: omni-wab-webhook-setup',
+    'tool read_history',
+    'tool save_reading_note',
+    'effect omni-channels: omni-reading-note',
     'provide omniChannels',
   ])
   assert.ok(!own.includes('on llm/stream'))

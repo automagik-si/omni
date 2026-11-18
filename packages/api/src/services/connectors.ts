@@ -914,7 +914,8 @@ export class ConnectorService {
       }
       const prefix = `connector.${connector.provider}.`;
       const name = parsed.eventType?.startsWith(prefix) ? parsed.eventType : `${prefix}${parsed.eventKey}`;
-      if (!name.startsWith(prefix) || name.length > 255 || !isConnectorEvent(name)) {
+      // Acknowledge-only wins before any subscription match, so a glob cannot publish it.
+      if (parsed.acknowledgeOnly || !name.startsWith(prefix) || name.length > 255 || !isConnectorEvent(name)) {
         return await this.recordUnmatchedConnectorDelivery(connector, tenantId, name);
       }
       const subscriptions = await runTenantWorkDb(this.pool, tenantId, async () => {
@@ -986,6 +987,7 @@ export class ConnectorService {
           providerEventId: z.string().optional(),
           occurredAt: z.string().optional(),
           data: z.record(z.string(), z.unknown()),
+          acknowledgeOnly: z.boolean().optional(),
         })
         .parse(manifest.parseDelivery(rawBody, headers));
     } catch {
@@ -1214,7 +1216,7 @@ export class ConnectorService {
       };
     }
 
-    if (parsed.eventKey !== subscription.providerEventKey) {
+    if (parsed.acknowledgeOnly || parsed.eventKey !== subscription.providerEventKey) {
       return { outcome: { status: 202, body: { received: true, ignored: true } } };
     }
     if (!matchesFilters(parsed.data, subscription.filters ?? {})) {

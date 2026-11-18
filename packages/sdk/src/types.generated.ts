@@ -1110,7 +1110,7 @@ export interface paths {
                                 chatId: string;
                                 /** @description Platform-native message id */
                                 externalId: string;
-                                /** @description Where it came from (platform, api, agent, …) */
+                                /** @description Where it came from: realtime, api, or history (sync, import) */
                                 source: string;
                                 /** @description text, audio, image, video, document, sticker, … */
                                 messageType: string;
@@ -1404,6 +1404,257 @@ export interface paths {
          * @description Terminal close: logs the close in close_contact_logs, pauses the agent, sets closed (won/lost, or escalated after repeated soft closes) or a closeUntil cooldown (other outcomes, tunable per instance via closeContactConfig), and disarms follow-ups. Channels declaring canCloseContact send a native close with `text`. `text` is optional: without it the contact is classified/closed with no farewell — channels also declaring canCloseContactWithoutText still receive the native close event with empty text; other channels skip the channel send and only apply the side effects.
          */
         post: operations["sendCloseContact"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/chats/{id}/backfill": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Queue a chat backfill */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        /** Format: date-time */
+                        from: string;
+                        /** Format: date-time */
+                        to: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Queued */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uuid */
+                            jobId: string;
+                        };
+                    };
+                };
+                /** @description Chat not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                /**
+                                 * @description Error code
+                                 * @example NOT_FOUND
+                                 */
+                                code: string;
+                                /** @description Human-readable error message */
+                                message: string;
+                                /** @description Additional error details */
+                                details?: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/chats/{id}/backfill/{jobId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read chat backfill progress */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    jobId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Job progress and coverage */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                /** Format: uuid */
+                                id: string;
+                                /** Format: uuid */
+                                chatId: string;
+                                /** @enum {string} */
+                                state: "queued" | "fetching" | "done" | "phone-did-not-answer" | "cancelled" | "failed";
+                                fetched: number;
+                                stored: number;
+                                duplicates: number;
+                                mediaDownloaded: number;
+                                mediaMissing: number;
+                                reactionsApplied: number;
+                                editsApplied: number;
+                                deletionsApplied: number;
+                                unmatched: number;
+                                oldestReached: string | null;
+                                outcome?: string;
+                                coverage: {
+                                    oldest: string | null;
+                                    newest: string | null;
+                                    count: number;
+                                    countInWindow: number;
+                                    deletedCount: number;
+                                    mediaMissing: number;
+                                    lastInbound: string | null;
+                                    lastOutbound: string | null;
+                                };
+                            };
+                        };
+                    };
+                };
+                /** @description Chat not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                /**
+                                 * @description Error code
+                                 * @example NOT_FOUND
+                                 */
+                                code: string;
+                                /** @description Human-readable error message */
+                                message: string;
+                                /** @description Additional error details */
+                                details?: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/chats/{id}/backfill/{jobId}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel a chat backfill */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    jobId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Cancelled job */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                /** Format: uuid */
+                                id: string;
+                                /** Format: uuid */
+                                chatId: string;
+                                /** @enum {string} */
+                                state: "queued" | "fetching" | "done" | "phone-did-not-answer" | "cancelled" | "failed";
+                                fetched: number;
+                                stored: number;
+                                duplicates: number;
+                                mediaDownloaded: number;
+                                mediaMissing: number;
+                                reactionsApplied: number;
+                                editsApplied: number;
+                                deletionsApplied: number;
+                                unmatched: number;
+                                oldestReached: string | null;
+                                outcome?: string;
+                                coverage: {
+                                    oldest: string | null;
+                                    newest: string | null;
+                                    count: number;
+                                    countInWindow: number;
+                                    deletedCount: number;
+                                    mediaMissing: number;
+                                    lastInbound: string | null;
+                                    lastOutbound: string | null;
+                                };
+                            };
+                        };
+                    };
+                };
+                /** @description Chat not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                /**
+                                 * @description Error code
+                                 * @example NOT_FOUND
+                                 */
+                                code: string;
+                                /** @description Human-readable error message */
+                                message: string;
+                                /** @description Additional error details */
+                                details?: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;
@@ -1909,7 +2160,7 @@ export interface paths {
         };
         /**
          * List the messages of a chat
-         * @description Newest first, up to limit; before/after bound the time window and mediaOnly keeps media messages.
+         * @description Newest first, up to limit; before/after bound the time window (both inclusive) and mediaOnly keeps media messages. Pass meta.cursor back as cursor for the next page: it continues after the last item, so messages sharing one time are never repeated or skipped. Deleted messages are left out unless includeDeleted=true.
          */
         get: {
             parameters: {
@@ -1918,6 +2169,10 @@ export interface paths {
                     before?: string;
                     after?: string;
                     mediaOnly?: string;
+                    /** @description true also lists deleted messages, with their deletedAt and status */
+                    includeDeleted?: string;
+                    /** @description meta.cursor from the previous page: continues after its last item */
+                    cursor?: string;
                 };
                 header?: never;
                 path: {
@@ -1927,16 +2182,208 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Messages */
+                /** @description A page of messages */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
                         "application/json": {
+                            /** @description Newest first */
                             items: {
-                                [key: string]: unknown;
+                                /**
+                                 * Format: uuid
+                                 * @description Message UUID
+                                 */
+                                id: string;
+                                /**
+                                 * Format: uuid
+                                 * @description Chat the message belongs to
+                                 */
+                                chatId: string;
+                                /** @description Platform-native message id */
+                                externalId: string;
+                                /** @description Where it came from: realtime, api, or history (sync, import) */
+                                source: string;
+                                /** @description text, audio, image, video, document, sticker, … */
+                                messageType: string;
+                                status: string | null;
+                                /** @description Sent by the instance owner */
+                                isFromMe: boolean;
+                                senderDisplayName: string | null;
+                                /** Format: uuid */
+                                senderPersonId: string | null;
+                                textContent: string | null;
+                                /** @description Transcript of a voice note */
+                                transcription: string | null;
+                                hasMedia: boolean;
+                                /** @description ISO time the platform reports */
+                                platformTimestamp: string | null;
+                                createdAt: string;
+                                senderPlatformUserId?: string | null;
+                                /**
+                                 * Format: uuid
+                                 * @description Set when an agent sent it
+                                 */
+                                senderAgentId?: string | null;
+                                mediaMimeType?: string | null;
+                                /** @description Description of an image */
+                                imageDescription?: string | null;
+                                /** @description Description of a video */
+                                videoDescription?: string | null;
+                                /** @description Text read from a document */
+                                documentExtraction?: string | null;
+                                reactions?: {
+                                    emoji: string;
+                                    platformUserId: string;
+                                    personId?: string;
+                                    displayName?: string;
+                                    /** @description ISO time of the reaction */
+                                    at: string;
+                                }[] | null;
+                                /** @description Reactions per emoji */
+                                reactionCounts?: {
+                                    [key: string]: number;
+                                } | null;
+                                editCount?: number;
+                                /** @description ISO time of the last edit */
+                                editedAt?: string | null;
+                                /** @description ISO time it was deleted; listed only with includeDeleted=true */
+                                deletedAt?: string | null;
                             }[];
+                            meta: {
+                                hasMore: boolean;
+                                /** @description Pass as cursor for the next page; null on the last page */
+                                cursor: string | null;
+                            };
+                        };
+                    };
+                };
+                /** @description Invalid query, or a cursor this route did not issue */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                /**
+                                 * @description Error code
+                                 * @example NOT_FOUND
+                                 */
+                                code: string;
+                                /** @description Human-readable error message */
+                                message: string;
+                                /** @description Additional error details */
+                                details?: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Chat not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                /**
+                                 * @description Error code
+                                 * @example NOT_FOUND
+                                 */
+                                code: string;
+                                /** @description Human-readable error message */
+                                message: string;
+                                /** @description Additional error details */
+                                details?: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/chats/{id}/coverage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What Omni holds for a chat
+         * @description Oldest and newest platform times, counts, media still missing a stored file, and the newest message each way. Uses the same rows as GET /chats/{id}/messages, so count is what paging the whole chat returns. Read-only.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    from?: string;
+                    to?: string;
+                    /** @description true also lists deleted messages, with their deletedAt and status */
+                    includeDeleted?: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description The coverage */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                /** @description ISO platform time of the oldest stored message */
+                                oldest: string | null;
+                                /** @description ISO platform time of the newest stored message */
+                                newest: string | null;
+                                /** @description Stored messages, as paging the whole chat returns them */
+                                count: number;
+                                /** @description Those between from and to, both inclusive */
+                                countInWindow: number;
+                                /** @description Media messages with no stored file */
+                                mediaMissing: number;
+                                /** @description Deleted messages, counted whatever includeDeleted says */
+                                deletedCount: number;
+                                /** @description ISO platform time of the newest message not sent from the account */
+                                lastInbound: string | null;
+                                /** @description ISO platform time of the newest message sent from the account */
+                                lastOutbound: string | null;
+                            };
+                        };
+                    };
+                };
+                /** @description Invalid query */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                /**
+                                 * @description Error code
+                                 * @example NOT_FOUND
+                                 */
+                                code: string;
+                                /** @description Human-readable error message */
+                                message: string;
+                                /** @description Additional error details */
+                                details?: unknown;
+                            };
                         };
                     };
                 };
@@ -2374,7 +2821,7 @@ export interface paths {
                                 chatId: string;
                                 /** @description Platform-native message id */
                                 externalId: string;
-                                /** @description Where it came from (platform, api, agent, …) */
+                                /** @description Where it came from: realtime, api, or history (sync, import) */
                                 source: string;
                                 /** @description text, audio, image, video, document, sticker, … */
                                 messageType: string;
@@ -2465,7 +2912,7 @@ export interface paths {
                                 chatId: string;
                                 /** @description Platform-native message id */
                                 externalId: string;
-                                /** @description Where it came from (platform, api, agent, …) */
+                                /** @description Where it came from: realtime, api, or history (sync, import) */
                                 source: string;
                                 /** @description text, audio, image, video, document, sticker, … */
                                 messageType: string;
@@ -3225,6 +3672,26 @@ export interface paths {
          * @description Effective paired-agent consumer flag and OFF reason. Needs system:read.
          */
         get: operations["getPairedAgentsStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/two-responders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Instances two responders may answer
+         * @description Read-only. Lists each instance the caller key may see where an active instance agent is set (so Omni answers its trigger messages) and at least one active durable consumer receives those messages and has a reader that may send on the instance, so an attached app may answer the same person again. Writes nothing. Needs system:read.
+         */
+        get: operations["getTwoResponders"];
         put?: never;
         post?: never;
         delete?: never;
@@ -4078,6 +4545,26 @@ export interface paths {
         get: operations["streamEventConsumer"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/events/consumers/{name}/seek": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Seek a durable consumer cursor backward or forward (audited)
+         * @description Exactly one target is required. Sequence positions must be within the tenant journal oldest row and head. A time must be within the journal timestamp range and resolves to the lowest journal_seq whose receivedAt is at or after that time, positioning just before it so that row is delivered. Publisher timestamps can arrive out of order, so later journal rows stamped before the target may also replay; matching rows are never skipped. Uses the same authorization as ack, including full-access keys, and preserves all read filters. Refused while any shared lease is outstanding, even expired leases awaiting redelivery. Writes a config audit entry and publishes custom.consumer.sought with from, to, by and when. Pause followers and finish outstanding fan-out acks before seeking.
+         */
+        post: operations["seekEventConsumer"];
         delete?: never;
         options?: never;
         head?: never;
@@ -7029,6 +7516,85 @@ export interface components {
             /** Format: uuid */
             personId: string | null;
         };
+        ChatMessage: {
+            /**
+             * Format: uuid
+             * @description Message UUID
+             */
+            id: string;
+            /**
+             * Format: uuid
+             * @description Chat the message belongs to
+             */
+            chatId: string;
+            /** @description Platform-native message id */
+            externalId: string;
+            /** @description Where it came from: realtime, api, or history (sync, import) */
+            source: string;
+            /** @description text, audio, image, video, document, sticker, … */
+            messageType: string;
+            status: string | null;
+            /** @description Sent by the instance owner */
+            isFromMe: boolean;
+            senderDisplayName: string | null;
+            /** Format: uuid */
+            senderPersonId: string | null;
+            textContent: string | null;
+            /** @description Transcript of a voice note */
+            transcription: string | null;
+            hasMedia: boolean;
+            /** @description ISO time the platform reports */
+            platformTimestamp: string | null;
+            createdAt: string;
+            senderPlatformUserId?: string | null;
+            /**
+             * Format: uuid
+             * @description Set when an agent sent it
+             */
+            senderAgentId?: string | null;
+            mediaMimeType?: string | null;
+            /** @description Description of an image */
+            imageDescription?: string | null;
+            /** @description Description of a video */
+            videoDescription?: string | null;
+            /** @description Text read from a document */
+            documentExtraction?: string | null;
+            reactions?: {
+                emoji: string;
+                platformUserId: string;
+                personId?: string;
+                displayName?: string;
+                /** @description ISO time of the reaction */
+                at: string;
+            }[] | null;
+            /** @description Reactions per emoji */
+            reactionCounts?: {
+                [key: string]: number;
+            } | null;
+            editCount?: number;
+            /** @description ISO time of the last edit */
+            editedAt?: string | null;
+            /** @description ISO time it was deleted; listed only with includeDeleted=true */
+            deletedAt?: string | null;
+        };
+        ChatCoverage: {
+            /** @description ISO platform time of the oldest stored message */
+            oldest: string | null;
+            /** @description ISO platform time of the newest stored message */
+            newest: string | null;
+            /** @description Stored messages, as paging the whole chat returns them */
+            count: number;
+            /** @description Those between from and to, both inclusive */
+            countInWindow: number;
+            /** @description Media messages with no stored file */
+            mediaMissing: number;
+            /** @description Deleted messages, counted whatever includeDeleted says */
+            deletedCount: number;
+            /** @description ISO platform time of the newest message not sent from the account */
+            lastInbound: string | null;
+            /** @description ISO platform time of the newest message sent from the account */
+            lastOutbound: string | null;
+        };
         StoredMessage: {
             /**
              * Format: uuid
@@ -7042,7 +7608,7 @@ export interface components {
             chatId: string;
             /** @description Platform-native message id */
             externalId: string;
-            /** @description Where it came from (platform, api, agent, …) */
+            /** @description Where it came from: realtime, api, or history (sync, import) */
             source: string;
             /** @description text, audio, image, video, document, sticker, … */
             messageType: string;
@@ -8246,6 +8812,45 @@ export interface components {
                 /** @enum {string|null} */
                 reason: "flag_unset" | "multitenancy_enabled" | null;
             };
+        };
+        TwoResponders: {
+            /** @description A consumer counts only when its updated_at moved within this many days */
+            activeWindowDays: number;
+            instances: {
+                /** Format: uuid */
+                instanceId: string;
+                instanceName: string;
+                channel: string;
+                /** Format: uuid */
+                agentId: string;
+                agentName: string;
+                consumers: {
+                    /** Format: uuid */
+                    id: string;
+                    name: string;
+                    /** @description The consumer type filter (exact type or trailing-* glob) */
+                    eventType: string;
+                    /**
+                     * Format: date-time
+                     * @description When the consumer updated_at last moved: an ack, a skipped page, a shared lease, or the create
+                     */
+                    lastMovedAt: string;
+                    /**
+                     * @description owner-key: the stored owner key may send on the instance (active, unexpired, messages:send, instance allowed). owning-agent: an agent-owned consumer whose agent is active. unrecorded: no owner key is stored, so any instance-unrestricted key with events:write may pull it
+                     * @enum {string}
+                     */
+                    reader: "owner-key" | "owning-agent" | "unrecorded";
+                    /** Format: uuid */
+                    ownerKeyId: string | null;
+                    /**
+                     * Format: uuid
+                     * @description The agent that owns the consumer, if any
+                     */
+                    agentId: string | null;
+                    /** @description The consumer belongs to the instance's own agent: that agent gets each message on both paths */
+                    sameAgent: boolean;
+                }[];
+            }[];
         };
         Provider: {
             /**
@@ -20262,6 +20867,49 @@ export interface operations {
             };
         };
     };
+    getTwoResponders: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Flagged instances */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["TwoResponders"];
+                    };
+                };
+            };
+            /** @description Needs system:read */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            /**
+                             * @description Error code
+                             * @example NOT_FOUND
+                             */
+                            code: string;
+                            /** @description Human-readable error message */
+                            message: string;
+                            /** @description Additional error details */
+                            details?: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
     getUpdateStatus: {
         parameters: {
             query?: never;
@@ -25308,6 +25956,196 @@ export interface operations {
             };
             /** @description Too many open streams on this server or for this key (EVENT_STREAM_MAX_PER_PROCESS / _PER_KEY) */
             429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            /**
+                             * @description Error code
+                             * @example NOT_FOUND
+                             */
+                            code: string;
+                            /** @description Human-readable error message */
+                            message: string;
+                            /** @description Additional error details */
+                            details?: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    seekEventConsumer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Set the cursor to this journal_seq; the next pull starts strictly after it */
+                    toSequence?: number;
+                    /**
+                     * Format: date-time
+                     * @description Resolve to the first journal row at or after this RFC 3339 timestamp and set the cursor just before it
+                     */
+                    toTime?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Cursor positioned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            /**
+                             * Format: uuid
+                             * @description Owning agent, or null for a legacy consumer. Only its proven keys and admin-tier keys can access it.
+                             */
+                            agentId: string | null;
+                            /**
+                             * Format: uuid
+                             * @description Consumer UUID
+                             */
+                            id: string;
+                            /**
+                             * Format: uuid
+                             * @description Authenticated creator tenant. Tenant keys see only their own stamped consumers; unstamped legacy rows are hidden from tenant keys.
+                             */
+                            tenantId: string | null;
+                            /** @description Unique consumer name (the follow/ack handle) */
+                            name: string;
+                            /** @description Type filter: exact event type or trailing-* prefix glob */
+                            eventType: string;
+                            /** @description Type globs dropped from the stream (exclusion wins over eventType), or null */
+                            excludeTypes: string[] | null;
+                            /** @description Payload conditions (AND), or null */
+                            filters: {
+                                /** @description Dot-notation path into the event's rawPayload (e.g. user.id) */
+                                field: string;
+                                /**
+                                 * @description Comparison operator (same matcher as automation trigger conditions)
+                                 * @enum {string}
+                                 */
+                                operator: "eq" | "neq" | "gt" | "lt" | "gte" | "lte" | "contains" | "not_contains" | "exists" | "not_exists" | "regex";
+                                /** @description Comparison value. Ignored for 'exists'/'not_exists' */
+                                value?: unknown;
+                            }[] | null;
+                            /** @description Last acked journal_seq; delivery resumes strictly after it */
+                            cursor: number;
+                            /** @description true = competing consumers (pullers on this name split the stream); false = own cursor (fan-out) */
+                            shared: boolean;
+                            /**
+                             * @description Access filter over the ingest access verdict: 'all' (default, every row) or only rows whose access_decision is 'allowed' / 'denied'
+                             * @enum {string}
+                             */
+                            accessFilter: "all" | "allowed" | "denied";
+                            /** @description true = opt-in journal readiness gate: claimed-but-unfilled rows are held (not delivered, cursor not moved past them) until filled or older than the settle window; false = today's behaviour */
+                            waitForReady: boolean;
+                            /** @description true = instance-scoped consumer: pulls only its instanceIds, visible only to its owner key and to instance-unrestricted keys within its tenant. Restricted keys always create scoped consumers; false = no instance restriction for unrestricted keys; tenant ownership still applies */
+                            scoped: boolean;
+                            /** @description Scoped consumers: the instances whose journal rows it pages; null when unscoped */
+                            instanceIds: string[] | null;
+                            /**
+                             * Format: uuid
+                             * @description Id of the API key that owns it: set for scoped consumers and for every consumer created by a key with events:consume but not events:write; null otherwise
+                             */
+                            ownerKeyId: string | null;
+                            /** @description Highest journal_seq currently in the journal */
+                            head: number;
+                            /** @description head - cursor (all journal rows past the cursor, not only matches) */
+                            lag: number;
+                            /** @description No type-matching journal row past the cursor (lag may still count other types) */
+                            caughtUp: boolean;
+                            /**
+                             * Format: date-time
+                             * @description Creation timestamp
+                             */
+                            createdAt: string;
+                            /**
+                             * Format: date-time
+                             * @description Last cursor/registry update timestamp
+                             */
+                            updatedAt: string;
+                        };
+                    };
+                };
+            };
+            /** @description Invalid target, outside the journal bound, or empty journal */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            /**
+                             * @description Error code
+                             * @example NOT_FOUND
+                             */
+                            code: string;
+                            /** @description Human-readable error message */
+                            message: string;
+                            /** @description Additional error details */
+                            details?: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Restricted key cannot mutate an unscoped consumer */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            /**
+                             * @description Error code
+                             * @example NOT_FOUND
+                             */
+                            code: string;
+                            /** @description Human-readable error message */
+                            message: string;
+                            /** @description Additional error details */
+                            details?: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description No visible consumer */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            /**
+                             * @description Error code
+                             * @example NOT_FOUND
+                             */
+                            code: string;
+                            /** @description Human-readable error message */
+                            message: string;
+                            /** @description Additional error details */
+                            details?: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Outstanding shared leases must be acked first */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

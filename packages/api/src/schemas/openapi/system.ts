@@ -49,9 +49,48 @@ export const PairedAgentsStatusSchema = z
   })
   .openapi('PairedAgentsStatus');
 
+const TwoResponderConsumerSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  eventType: z.string().openapi({ description: 'The consumer type filter (exact type or trailing-* glob)' }),
+  lastMovedAt: z.string().datetime().openapi({
+    description: 'When the consumer updated_at last moved: an ack, a skipped page, a shared lease, or the create',
+  }),
+  reader: z.enum(['owner-key', 'owning-agent', 'unrecorded']).openapi({
+    description:
+      'owner-key: the stored owner key may send on the instance (active, unexpired, messages:send, instance ' +
+      'allowed). owning-agent: an agent-owned consumer whose agent is active. unrecorded: no owner key is ' +
+      'stored, so any instance-unrestricted key with events:write may pull it',
+  }),
+  ownerKeyId: z.string().uuid().nullable(),
+  agentId: z.string().uuid().nullable().openapi({ description: 'The agent that owns the consumer, if any' }),
+  sameAgent: z.boolean().openapi({
+    description: "The consumer belongs to the instance's own agent: that agent gets each message on both paths",
+  }),
+});
+
+export const TwoRespondersSchema = z
+  .object({
+    activeWindowDays: z.number().int().positive().openapi({
+      description: 'A consumer counts only when its updated_at moved within this many days',
+    }),
+    instances: z.array(
+      z.object({
+        instanceId: z.string().uuid(),
+        instanceName: z.string(),
+        channel: z.string(),
+        agentId: z.string().uuid(),
+        agentName: z.string(),
+        consumers: z.array(TwoResponderConsumerSchema).min(1),
+      }),
+    ),
+  })
+  .openapi('TwoResponders');
+
 export function registerSystemSchemas(registry: OpenAPIRegistry): void {
   registry.register('UpdateStatus', UpdateStatusSchema);
   registry.register('PairedAgentsStatus', PairedAgentsStatusSchema);
+  registry.register('TwoResponders', TwoRespondersSchema);
   registry.registerPath({
     method: 'get',
     path: '/system/paired-agents',
@@ -60,6 +99,20 @@ export function registerSystemSchemas(registry: OpenAPIRegistry): void {
     summary: 'Paired-agent feature status',
     description: 'Effective paired-agent consumer flag and OFF reason. Needs system:read.',
     responses: { 200: ok(PairedAgentsStatusSchema, 'Paired-agent status'), 403: error('Needs system:read') },
+  });
+
+  registry.registerPath({
+    method: 'get',
+    path: '/system/two-responders',
+    operationId: 'getTwoResponders',
+    tags: ['System'],
+    summary: 'Instances two responders may answer',
+    description:
+      'Read-only. Lists each instance the caller key may see where an active instance agent is set (so Omni ' +
+      'answers its trigger messages) and at least one active durable consumer receives those messages and has ' +
+      'a reader that may send on the instance, so an attached app may answer the same person again. Writes ' +
+      'nothing. Needs system:read.',
+    responses: { 200: ok(TwoRespondersSchema, 'Flagged instances'), 403: error('Needs system:read') },
   });
 
   registry.registerPath({

@@ -1,4 +1,6 @@
 import { channelProblem } from './problem-words.js'
+import omniMarkInk from '../../../../docs/brand/logo/svg/omni-mark-ink-32.svg'
+import omniMarkCream from '../../../../docs/brand/logo/svg/omni-mark-cream-32.svg'
 import { createElement as h, Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { ConnectPrompt, openConnectWizard } from './wizard.js'
 import { UpdateBar } from './omni-update.js'
@@ -227,17 +229,31 @@ export function TickMark({ status }) {
     tick.marks.map((Mark, index) => h(Mark, { key: index })))
 }
 
+// The photo beside the first of a run from the other side (#1775): who wrote it, from Omni
+// (`authorPhoto`, host omni.js messageOf), else in a direct chat the chat's own photo, else
+// their initials. In a group, each sender's own; staff's and Omni's side has none.
+function SenderPhoto({ message, chat }) {
+  const group = chat?.kind === 'group'
+  const name = (group ? message.author : chat?.name ?? message.author) || '?'
+  const photo = message.authorPhoto ?? (group ? null : chat?.avatarUrl ?? null)
+  return h('span', { className: 'oc-msg-ava', 'aria-hidden': true },
+    h(ChatAvatar, { chat: { name, initials: !group && chat?.initials ? chat.initials : initialsOf(name), avatarUrl: photo }, size: 28 }))
+}
+
 // A chat's messages, as the chat page and the chat pane draw them: the day over its first
-// message, the sender over the first of a run (whose bubble has the tail), each file in its
-// bubble with Omni's text for it under it, and the time inside each bubble, with the delivery
-// mark after it on what staff and Omni sent. Names and text from the chat are text only.
-export function ChatMessages({ messages, onSized }) {
+// message, the sender over the first of a run (whose bubble has the tail), with their photo
+// beside it on the other side, each file in its bubble with Omni's text for it under it, and
+// the time inside each bubble, with the delivery mark after it on what staff and Omni sent.
+// Names and text from the chat are text only. `chat` is the chat's row (its kind, name and
+// photo), when the view has it.
+export function ChatMessages({ messages, onSized, chat }) {
   return messages.map((message, index) => {
     const mine = message.from !== 'them'
     const newDay = index === 0 || dayKey(messages[index - 1].at) !== dayKey(message.at)
     const first = newDay || messages[index - 1].from !== message.from || messages[index - 1].author !== message.author
     return h(Fragment, { key: message.id }, newDay ? h('div', { className: 'oc-day' }, dayLabel(message.at)) : null, h('div', { className: `oc-msg oc-msg-${message.from}${first ? ' oc-msg-first' : ''}` },
       first && !mine && message.author ? h('span', { className: 'oc-msg-author' }, message.author) : null,
+      first && !mine ? h(SenderPhoto, { message, chat }) : null,
       first && message.from === 'omni' ? h('span', { className: 'oc-msg-author oc-msg-omni' }, h(OmniMark, { size: 12 }), 'Omni') : null,
       h('div', { className: 'oc-bubble', 'data-sending': message.sending || undefined, 'data-media': drawnMedia(message) ? message.type : undefined },
         drawnMedia(message) ? h(MediaPart, { message, onSized }) : null,
@@ -377,7 +393,7 @@ export function ChatPage({ actions }) {
     h('div', { ref: scroller, className: 'oc-thread', onScroll, role: 'log', 'aria-label': t('Conversation with {name}', { name: chat.name }) },
       h('div', { className: 'oc-thread-in' },
         loading ? h('div', { className: 'oc-day' }, h('span', { className: 'oc-spinner', 'aria-hidden': true }), t('Loading messages…')) : null,
-        h(ChatMessages, { messages, onSized }))),
+        h(ChatMessages, { messages, onSized, chat }))),
     h(MessageBar, { className: 'oc-compose-wrap', value: draft, onChange: setDraft, onSend: send, disabled: !live, placeholder: t('Reply on {channel}', { channel: type.label }), label: t('Reply') },
       failed ? h('button', { type: 'button', className: 'oc-compose-note oc-compose-fail', role: 'alert', onClick: () => setDraft(failed.text) }, t('Not sent: {reason}', { reason: failed.message }), ' ', h('u', null, t('Put it back'))) : null,
       !writable ? h('div', { className: 'oc-compose-note oc-compose-info' }, t('This device\'s key can\'t send messages; ask your Omni\'s owner.'))
@@ -676,8 +692,16 @@ function SampleQr({ seed = 1 }) {
 
 const TONES = '[data-tone=ok]{--oc-tone:#16a34a}[data-tone=busy]{--oc-tone:#0ea5e9}[data-tone=warn]{--oc-tone:#f59e0b}[data-tone=off]{--oc-tone:#94a3b8}'
 
-// The footer's way into channel management: the connected channels as small tiles, a dot
-// when one needs attention, and the Channels page (connect, health) on click.
+// The Omni mark: the tentacle vortex (#1793), the brand's own drawing for this size, in the two
+// grounds the product ships (ink on light, cream on dark). It is the official file, copied by
+// scripts/brand-sync.mjs — never redrawn here.
+const VORTEX = {
+  ink: 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(omniMarkInk),
+  cream: 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(omniMarkCream),
+}
+
+// The footer's way into channel management: the Omni mark, a dot when a channel needs attention,
+// and the Channels page (connect, health) on click.
 export function ChannelsFooter({ wide, actions }) {
   const state = useOmni()
   useEffect(() => { startLive(call) }, [])
@@ -685,16 +709,22 @@ export function ChannelsFooter({ wide, actions }) {
   const summary = healthSummary(state)
   const label = summary.attention > 0 ? t('{n} channel needs attention', { n: summary.attention }) : t('Channels and their health')
   return h('span', { className: 'bt-connect-wrap' }, h('button', { type: 'button', className: 'bt-connect bt-connect-foot bt-channels-foot', title: label, 'aria-label': `${t('Channels')}, ${label}`, onClick: () => actions.selectPanel(CHANNELS_PANEL) },
-    h('span', { className: 'bt-channels-tiles', 'aria-hidden': true }, state.channels.slice(0, 4).map(channel => h(Tile, { key: channel.id, type: channel.type, size: 18 }))),
+    h('span', { className: 'bt-channels-mark', 'aria-hidden': true },
+      h('img', { className: 'oc-vortex oc-vortex-ink', src: VORTEX.ink, alt: '', width: 32, height: 32 }),
+      h('img', { className: 'oc-vortex oc-vortex-cream', src: VORTEX.cream, alt: '', width: 32, height: 32 })),
     t('Channels'),
     summary.attention > 0 ? h('span', { className: 'oc-warn-dot', 'aria-hidden': true }) : h('span', { className: 'bt-channels-count' }, `${summary.connected}/${summary.total}`)))
 }
 
 export const CHANNELS_CSS = `
 .bt-channels-foot{gap:8px;justify-content:flex-start;padding:0 12px 0 8px}
-.bt-channels-tiles{display:inline-flex}
-.bt-channels-tiles .oc-tile{margin-left:-5px;box-shadow:0 0 0 1.5px var(--bt-main)}
-.bt-channels-tiles .oc-tile:first-child{margin-left:0}
+/* The control keeps the bar's own row height, so the mark and the update button sit on one line. */
+.bt-channels-foot{min-height:36px;gap:8px}
+.bt-channels-mark{display:inline-flex;align-items:center;justify-content:center;flex:none;width:32px;height:32px}
+.bt-channels-mark .oc-vortex{display:block;width:32px;height:32px}
+.bt-channels-mark .oc-vortex-cream{display:none}
+body[data-ds-dark-theme] .bt-channels-mark .oc-vortex-ink{display:none}
+body[data-ds-dark-theme] .bt-channels-mark .oc-vortex-cream{display:block}
 .bt-channels-count{margin-left:auto;font-size:12px;color:var(--bt-ink-3)}
 .bt-channels-foot .oc-warn-dot{margin-left:auto}
 ${TONES}
@@ -742,8 +772,8 @@ body[data-ds-dark-theme] .oc-ava{background:hsl(var(--oc-hue) 30% 26%);color:hsl
    same header, log and bar from the DSH tokens alone. Light: white bubbles in from the person
    on a soft wallpaper, accent-tinted bubbles out; dark: the team's bubble surface in, its accent
    tint out. The wallpaper's pattern is two staggered dot grids of the ink. */
-.oc-chat,.op-pane{--oc-wall:color-mix(in srgb,var(--bt-ink) 4%,var(--bt-main));--oc-in:var(--bt-card);--oc-out:color-mix(in srgb,var(--bt-accent) 14%,var(--bt-card));--oc-dot:color-mix(in srgb,var(--bt-ink) 9%,transparent);--oc-shade:color-mix(in srgb,var(--bt-ink) 12%,transparent)}
-body[data-ds-dark-theme] :is(.oc-chat,.op-pane){--oc-wall:var(--bt-main);--oc-in:var(--bt-bubble);--oc-out:color-mix(in srgb,var(--bt-accent) 26%,var(--bt-bubble));--oc-dot:color-mix(in srgb,var(--bt-ink) 6%,transparent);--oc-shade:color-mix(in srgb,var(--bt-main) 70%,transparent)}
+.oc-chat,.op-pane{--oc-me:var(--bt-accent);--oc-them:var(--bt-magic-pink);--oc-wall:color-mix(in srgb,var(--bt-ink) 4%,var(--bt-main));--oc-in:color-mix(in srgb,var(--oc-them) 16%,var(--bt-card));--oc-out:color-mix(in srgb,var(--oc-me) 20%,var(--bt-card));--oc-dot:color-mix(in srgb,var(--bt-ink) 9%,transparent);--oc-shade:color-mix(in srgb,var(--bt-ink) 12%,transparent)}
+body[data-ds-dark-theme] :is(.oc-chat,.op-pane){--oc-wall:var(--bt-main);--oc-in:color-mix(in srgb,var(--oc-them) 26%,var(--bt-bubble));--oc-out:color-mix(in srgb,var(--oc-me) 34%,var(--bt-bubble));--oc-dot:color-mix(in srgb,var(--bt-ink) 6%,transparent);--oc-shade:color-mix(in srgb,var(--bt-main) 70%,transparent)}
 .oc-chat{container:oc-chat/inline-size}
 .oc-chat-empty{align-items:center;justify-content:center;gap:12px;color:var(--bt-ink-3)}
 .oc-chat-head{position:relative;z-index:1;flex:none;display:grid;grid-template-columns:auto minmax(0,1fr) auto;grid-template-rows:auto auto;column-gap:12px;align-items:center;min-height:60px;padding:8px 12px 8px 16px;box-sizing:border-box;border-bottom:.5px solid var(--bt-line-2);background:var(--bt-main)}
@@ -768,7 +798,9 @@ body[data-ds-dark-theme] :is(.oc-chat,.op-pane){--oc-wall:var(--bt-main);--oc-in
 .oc-msg{display:flex;flex-direction:column;max-width:min(80%,560px);animation:oc-msg-in .2s cubic-bezier(.2,0,0,1)}
 @keyframes oc-msg-in{from{opacity:0;transform:translateY(4px)}}
 .oc-msg-first{margin-top:8px}
-.oc-msg-them{align-self:flex-start;align-items:flex-start}
+.oc-msg-them{align-self:flex-start;align-items:flex-start;position:relative;box-sizing:border-box;padding-left:36px;max-width:min(calc(80% + 36px),596px)}
+.oc-msg-ava{position:absolute;left:0;top:0;display:flex}
+.oc-msg-author~.oc-msg-ava{top:18px}
 .oc-msg-omni,.oc-msg-you{align-self:flex-end;align-items:flex-end}
 .oc-msg-author{display:inline-flex;align-items:center;gap:4px;margin:0 10px 2px;font-size:12px;line-height:16px;font-weight:600;color:var(--bt-ink-2)}
 .oc-msg-omni .oc-msg-author{color:var(--bt-accent)}
@@ -779,7 +811,7 @@ body[data-ds-dark-theme] :is(.oc-chat,.op-pane){--oc-wall:var(--bt-main);--oc-in
 .oc-msg-them.oc-msg-first .oc-bubble::before{left:-7px;clip-path:polygon(0 0,100% 0,100% 100%)}
 :is(.oc-msg-omni,.oc-msg-you).oc-msg-first .oc-bubble{border-top-right-radius:0}
 :is(.oc-msg-omni,.oc-msg-you).oc-msg-first .oc-bubble::before{right:-7px;clip-path:polygon(0 0,100% 0,0 100%)}
-.oc-meta{float:right;position:relative;display:inline-flex;align-items:center;gap:3px;margin:6px -2px -5px 12px;font-size:11px;line-height:15px;white-space:nowrap;color:var(--bt-ink-2)}
+.oc-meta{float:right;position:relative;display:inline-flex;align-items:center;gap:3px;margin:6px -2px -5px 12px;font-size:11px;line-height:15px;white-space:nowrap;color:color-mix(in srgb,var(--bt-ink) 70%,transparent)}
 .oc-meta time{font-variant-numeric:tabular-nums}
 .oc-tick{display:inline-flex;align-items:center}
 .oc-tick svg{width:15px;height:15px}

@@ -23,8 +23,8 @@ or legacy overlays.
 | Realm | Cluster | Values file | Images | Database | Media | Who operates it |
 |---|---|---|---|---|---|---|
 | **dev / self-host** | Local or self-managed k8s (OrbStack, k3d, kind, …) | [`values-dev.yaml`](helm/omni/values-dev.yaml) | Locally built `omni-api:dev` + `autopg:dev` (`pullPolicy: Never`) or an explicitly selected public version | Bundled **autopg** subchart (Postgres 18, in-cluster) | Bundled **MinIO** (in-cluster S3) | The self-hoster |
-| **HML** (`hml.omni.khal.ai`) | Private arm64 cluster | Private GitOps repo | Follows `dev` via `ghcr.io/automagik-dev/omni-api:dev-<sha12>` (built by `.github/workflows/image-dev.yml`: one image per merged PR to `dev`, called by `version.yml` with the version bump commit; direct commits never build; a manual dispatch rebuilds the `dev` head), pinned by digest in the private GitOps repo (`git.namastex.io/khal/deploy`) | Private | Private | The private GitOps repo (Argo CD) |
-| **prod** | Private arm64 cluster | Private GitOps repo | Pinned to the verified candidate digest by the private GitOps repo; the public repo only declares the candidate (`image-publish.yml`, `.well-known/latest.json`) | Private | Private | The private GitOps repo (Argo CD) |
+| **HML** (`hml.omni.khal.ai`) | Private arm64 cluster | Private GitOps repo | Follows `dev` via `ghcr.io/automagik-dev/omni-api:dev-<sha12>` (built by `.github/workflows/image-dev.yml`: dispatch-only; no merge builds an image; legacy consumers retain their pin until an intentional dispatch and private pin update), pinned by digest in the private GitOps repo (`git.namastex.io/khal/deploy`) | Private | Private | The private GitOps repo (Argo CD) |
+| **prod** | Private arm64 cluster | Private GitOps repo | Pinned to the verified candidate digest by the private GitOps repo; images are built on demand for a chosen version; software releases and public software pins do not imply an image exists | Private | Private | The private GitOps repo (Argo CD) |
 
 - **One replica per installation** — a WhatsApp credential maps to a single live
   Baileys socket; see the "replicas + scaling" notes in
@@ -57,16 +57,18 @@ make -C deploy health
 ```
 
 To skip local builds entirely, point the dev-shape install at the public
-registry images instead. Use the pinned public candidate — the `version` in
-`.well-known/latest.json`, which is also the chart's default `image.tag` in
-`deploy/helm/omni/values.yaml`. `Chart.appVersion` tracks every dev bump and
-is not guaranteed to have a published image, so do not derive the tag from it:
+registry images instead. The chart's `image.repository` and `image.tag` in
+`deploy/helm/omni/values.yaml` point to the last verified image built on demand,
+not to every software release. Neither `.well-known/latest.json` nor
+`Chart.appVersion` guarantees a corresponding image exists:
 
 ```bash
+IMAGE_TAG=$(awk '$1 == "tag:" {gsub(/"/, "", $2); print $2; exit}' deploy/helm/omni/values.yaml)
+IMAGE_REPOSITORY=$(awk '$1 == "repository:" {print $2; exit}' deploy/helm/omni/values.yaml)
 helm upgrade --install omni deploy/helm/omni -n omni --create-namespace \
   -f deploy/helm/omni/values-dev.yaml \
-  --set image.repository=ghcr.io/automagik-dev/omni-api \
-  --set image.tag="v$(jq -r .version .well-known/latest.json)" --set image.pullPolicy=IfNotPresent \
+  --set image.repository="${IMAGE_REPOSITORY}" \
+  --set image.tag="${IMAGE_TAG}" --set image.pullPolicy=IfNotPresent \
   --set autopg.image.repository=ghcr.io/automagik-dev/autopg \
   --set autopg.image.tag=v3.0.7 --set autopg.image.pullPolicy=IfNotPresent
 ```
@@ -81,23 +83,33 @@ Adjust `ingress.host`, the dev-only passwords, and `service.type` in a copy of
 `imagePullSecrets` stays `[]` in every overlay, and nothing in this repo will
 ever ask you to configure registry auth for these images.
 
-Provenance is verifiable for the already-published public candidate. The
-verification-only `main` workflow checks the existing cosign signatures and
-GitHub-native provenance attestations (the OCI image's, and each release
-tarball's shipped `.provenance.json` bundle); it does not create them. They are
-created when an operator mints a candidate with the dispatch-only
-`image-build.yml` at an exact `v<version>` tag
-(`gh workflow run image-build.yml --ref refs/tags/v<version> -f version=<version>`;
-see `docs/deployment/public-launch-readiness.md`, "Candidate minting"):
+Software releases are automatic; images are built only on demand. In Actions,
+open `image-build.yml`, select the candidate tag in **Use workflow from**, and
+optionally enter that same `v<version>` as `version`. An empty input selects the
+newest stable candidate. A branch start fails with the newest tag to choose.
 
 ```bash
-# The verifiable tag is the pinned public candidate: `.well-known/latest.json`
-# "version" (= the chart's default image.tag), not Chart.appVersion.
-gh attestation verify "oci://ghcr.io/automagik-dev/omni-api:v$(jq -r .version .well-known/latest.json)" -R automagik-dev/omni
+# Intentionally build a selected tag; run this only when an image is wanted.
+gh workflow run image-build.yml --ref v<version> -f version=v<version>
 ```
 
-Only images published after attestation support landed (July 2026) carry
-these; older tags report "no attestations found".
+The native amd64/arm64 build publishes one immutable version alias, verifies
+its index/platforms and GitHub attestation, then dispatches the existing pin
+writer in image-only mode. That writer updates only the Helm image repository
+and tag. It never advances software pins, publishes npm, or deploys a cluster.
+Every verified image is available for enterprise consumers to select by digest.
+The chart advances when the image-only pin run succeeds; inspect that run if
+an image build succeeded but the chart still names an older image.
+
+Image provenance stays bound to the exact tag SHA and `image-build.yml` signer.
+Software promotion verifies signed release tarballs and npm without requiring
+an image. Tags predating the image-only workflow retain their historical workflow
+copies; use a post-adoption candidate for the new on-demand behavior.
+
+```bash
+# Verify the chart's selected image, independent of the software channel pin.
+gh attestation verify "oci://${IMAGE_REPOSITORY}:${IMAGE_TAG}" --repo <owner>/omni
+```
 
 ### Proving the self-host path end-to-end
 

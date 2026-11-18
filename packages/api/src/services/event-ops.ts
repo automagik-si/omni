@@ -28,6 +28,7 @@ import { runTenantWorkDb } from '../tenancy/worker-tenant-context';
 import { ConnectorProvenanceError, restoreConnectorEvent } from './connectors';
 import { cleanupDeadLettersForTenants } from './dead-letter-maintenance';
 import type { DeadLetterService } from './dead-letters';
+import { type JournalReader, changeJournalReplayExclusion, journalVisibilityClause } from './journal-visibility';
 import type { PayloadStoreService } from './payload-store';
 
 const log = createLogger('event-ops');
@@ -255,7 +256,7 @@ export class EventOpsService {
   /**
    * Get comprehensive event metrics
    */
-  async getMetrics(): Promise<EventMetrics> {
+  async getMetrics(reader?: JournalReader): Promise<EventMetrics> {
     const now = new Date();
     const last24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
     const last7d = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
@@ -272,25 +273,26 @@ export class EventOpsService {
         avgAgentLatency: sql<number>`avg(${omniEvents.agentLatencyMs})::int`,
         p95ProcessingTime: sql<number>`percentile_cont(0.95) within group (order by ${omniEvents.processingTimeMs})::int`,
       })
-      .from(omniEvents);
+      .from(omniEvents)
+      .where(journalVisibilityClause(reader));
 
     // 24h count
     const [last24hStats] = await this.db
       .select({ count: sql<number>`count(*)::int` })
       .from(omniEvents)
-      .where(gte(omniEvents.receivedAt, last24h));
+      .where(and(gte(omniEvents.receivedAt, last24h), journalVisibilityClause(reader)));
 
     // 7d count
     const [last7dStats] = await this.db
       .select({ count: sql<number>`count(*)::int` })
       .from(omniEvents)
-      .where(gte(omniEvents.receivedAt, last7d));
+      .where(and(gte(omniEvents.receivedAt, last7d), journalVisibilityClause(reader)));
 
     // 1h count
     const [lastHourStats] = await this.db
       .select({ count: sql<number>`count(*)::int` })
       .from(omniEvents)
-      .where(gte(omniEvents.receivedAt, lastHour));
+      .where(and(gte(omniEvents.receivedAt, lastHour), journalVisibilityClause(reader)));
 
     // Error stages
     const errorStages = await this.db
@@ -299,7 +301,7 @@ export class EventOpsService {
         count: sql<number>`count(*)::int`,
       })
       .from(omniEvents)
-      .where(sql`${omniEvents.errorStage} is not null`)
+      .where(and(sql`${omniEvents.errorStage} is not null`, journalVisibilityClause(reader)))
       .groupBy(omniEvents.errorStage);
 
     // Dead letter stats
@@ -382,7 +384,7 @@ export class EventOpsService {
    * Build WHERE clause for replay queries
    */
   private buildReplayWhereClause(options: ReplayOptions) {
-    const conditions = [gte(omniEvents.receivedAt, options.since)];
+    const conditions = [gte(omniEvents.receivedAt, options.since), changeJournalReplayExclusion()];
 
     if (options.until) {
       conditions.push(lte(omniEvents.receivedAt, options.until));

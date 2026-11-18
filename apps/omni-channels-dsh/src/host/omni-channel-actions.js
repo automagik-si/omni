@@ -12,6 +12,7 @@
 // stays read-only for channels, without messages:send for replies. An Omni from before that
 // route is tried, and a 403 says the key cannot.
 import { z } from 'zod'
+import { answerSettingsOf } from './threads.js'
 import { settingsSchemas } from './channel-settings.js'
 import { answerersOf } from './omni.js'
 const Settings = settingsSchemas(z)
@@ -50,6 +51,18 @@ const PENDING_TTL_MS = 30 * 60_000
 const invalid = message => Object.assign(new Error(message), { code: 'bot/invalid' })
 const refused = message => Object.assign(new Error(message), { code: 'bot/refused' })
 
+const redactToken = (value, submitted) => typeof value === 'string' && submitted ? value.replaceAll(submitted, '[REDACTED]') : value
+// These operations return flat receipts. Keep only sanitized words and a fresh error;
+// retaining a provider's error/cause/stack could retain the credential too.
+async function tokenSafe(body, run) {
+  const submitted = typeof body?.token === 'string' ? body.token.trim() : ''
+  try {
+    return Object.fromEntries(Object.entries(await run()).map(([key, value]) => [key, redactToken(value, submitted)]))
+  } catch (error) {
+    throw Object.assign(new Error(redactToken(error?.message ?? 'Could not reach your Omni. Try again in a moment.', submitted)), { code: error?.code ?? 'bot/refused' })
+  }
+}
+
 const id = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
 const token = z.string().trim().min(8).max(4096).regex(/^\S+$/)
 const CreatePayload = z.object({
@@ -57,6 +70,13 @@ const CreatePayload = z.object({
   name: z.string().trim().min(1).max(80),
   token: token.optional(),
 })
+const TelegramAttach = z.object({
+  name: CreatePayload.shape.name,
+  token: token.regex(/^\d{6,12}:[A-Za-z0-9_-]{30,}$/),
+  source: z.string().trim().max(200).optional(),
+  answerBot: z.string().min(1).max(200).optional(),
+}).strict()
+const TelegramBotId = z.union([z.number().int().positive(), z.string().regex(/^\d+$/)])
 const ChannelPayload = z.object({ id })
 const PhonePayload = z.object({ id, phone: z.string().trim().regex(/^\+?[\d\s().-]{8,24}$/) })
 const ActPayload = z.object({ id, action: z.enum(['reconnect', 'pause', 'resume', 'token', 'delete']), token: token.optional() })
@@ -164,6 +184,10 @@ export function install(rt) {
   }
 
   async function create(body) {
+    return tokenSafe(body, () => createChannel(body))
+  }
+
+  async function createChannel(body) {
     const payload = parse(CreatePayload, body, 'Name the channel, and paste its token when it takes one')
     const kind = LIVE_TYPES[payload.type]
     if (kind === 'token' && !payload.token) throw invalid('Paste the bot token')
@@ -174,6 +198,40 @@ export function install(rt) {
     const invite = payload.type === 'discord' ? discordInviteUrl(payload.token) : null
     return { id: created.data.id, type: created.data.channel, name: created.data.name, ...(invite ? { inviteUrl: invite } : {}) }
   }
+
+  // RFC-0001: trusted wizard host only, after confirmation and the old listener's
+  // off receipt. Deliberately absent from ENDPOINTS, tools and the page.
+  rt.omniTelegramAttach = body => tokenSafe(body, async () => {
+    const input = parse(TelegramAttach, body, 'Paste the bot token')
+    if (rt.readOnly?.() !== undefined) throw refused(rt.readOnly())
+    if (input.answerBot !== undefined) {
+      await rt.load()
+      if (rt.botOf(input.answerBot)?.kind !== 'omni') throw refused('Answer mode needs a channel bot.')
+    }
+    const made = await createChannel({ type: 'telegram', name: input.name, token: input.token })
+    const status = parse(Status, await must('GET', `/instances/${made.id}/status`), 'Omni did not say how the channel is').data
+    const reportedBot = TelegramBotId.safeParse(status.botId)
+    const receipt = {
+      channelId: made.id, channelName: made.name,
+      connected: status.isConnected === true || status.state === 'connected', detail: status.profileName || null,
+      ...(reportedBot.success ? { botId: reportedBot.data } : {}),
+    }
+    if (input.answerBot !== undefined) {
+      const action = (name, value) => rt.extended.endpointOf(name).fn(value)
+      const bot = rt.botOf(input.answerBot)
+      if (bot?.kind !== 'omni') throw refused('Answer mode needs a channel bot.')
+      const proposal = await action('propose_answer_bot', { name: bot.name, channelIds: [made.id] })
+      await action('confirm_answer_bot', proposal)
+      await rt.load()
+      const settings = answerSettingsOf(rt.botOf(input.answerBot))
+      const otherChannels = Object.entries(rt.state.omniOwnership?.channels ?? {}).some(([id, owner]) => id !== made.id && owner === input.answerBot)
+      const answering = settings.enabled || !otherChannels
+      if (answering && !settings.enabled) await action('omni-answer-settings', { ...settings, botId: input.answerBot, enabled: true })
+      Object.assign(receipt, { answerBot: input.answerBot, answering, ...(!answering ? { reason: 'other-channels' } : {}) })
+    }
+    if (input.source !== undefined) rt.ctx.logger?.info?.('omni-channels: Telegram attached %s (source: %s)', made.id, redactToken(input.source.replace(/\s+/g, ' '), input.token))
+    return receipt
+  })
 
   // The channel types this Omni has loaded, of the ones the page can add; null when the Omni
   // cannot say, and the page then offers them all.
@@ -385,8 +443,10 @@ export function install(rt) {
   async function send(body) {
     const payload = parse(SendPayload, body, 'Type a message')
     const chat = parse(Chat, await must('GET', `/chats/${payload.chatId}`, undefined, FORBIDDEN_SEND), 'Omni does not know that chat')
-    await must('POST', '/messages/send', { instanceId: chat.data.instanceId, to: chat.data.externalId, text: payload.text }, FORBIDDEN_SEND)
-    return { sent: true }
+    const reply = await must('POST', '/messages/send', { instanceId: chat.data.instanceId, to: chat.data.externalId, text: payload.text }, FORBIDDEN_SEND)
+    // The channel's id for the message: the chat page knows Omni's row for it by it (#1773).
+    const messageId = reply?.data?.messageId
+    return { sent: true, ...(typeof messageId === 'string' && messageId !== '' ? { messageId } : {}) }
   }
 
   const ENDPOINTS = {

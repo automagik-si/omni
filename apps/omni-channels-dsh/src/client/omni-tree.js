@@ -5,6 +5,8 @@ import { openConnectWizard } from './wizard.js'
 import { isOmniBot, omniActions, startLive, typeOf, unreadOf } from './omni-store.js'
 import { openPhone, requestPhone, threadName } from './omni-phone.js'
 import { call, hostText, icons, relativeShort, t } from './core.js'
+import { CODE_LISTS_CSS, CodeLists } from './code-lists.js'
+import { OUTSIDE_CHECK_CSS, OutsideCheck } from './outside-check.js'
 const { ChevronRightIcon, CloseIcon, DotsIcon, PlusIcon, SparkIcon } = icons
 
 // Under the Omni Bot's sidebar row: one collapsible item per channel of the linked Omni, each
@@ -578,6 +580,8 @@ const ANSWER_TOOLS = [['read', 'Read files'], ['read_image', 'Read images'], ['g
 const SHARED_NOTES_MAX = 32000
 // The host's STRANGER_REPLY_MAX (src/host/threads.js).
 const STRANGER_REPLY_MAX = 1000
+// The host's CODE_WELCOME_MAX (src/host/threads.js).
+const CODE_WELCOME_MAX = 1000
 
 // The Bot team's switch (bt-switch) in a row that is not a label, as the team draws its own: a
 // click on the words must not flip it twice. The switch is named by the words.
@@ -603,9 +607,9 @@ function staffChatOptions(chats, threads, chosen, several) {
   return chosen && !options.some(option => option.id === chosen) ? [{ id: chosen, label: 'The chosen chat' }, ...options] : options
 }
 
-// #1713: the people who wrote, were not let in and got the reply (host answer-strangers.js), newest
-// first; read-only, read when staff open them.
-function StrangerRequests({ botId }) {
+// #1713: the people who wrote and were not let in (host answer-strangers.js), newest first;
+// read-only, read when staff open them.
+function StrangerRequests({ botId, confirmedLabel }) {
   const [shown, setShown] = useState(false)
   const [requests, setRequests] = useState(null)
   const [problem, setProblem] = useState(null)
@@ -631,7 +635,11 @@ function StrangerRequests({ botId }) {
       : h('ul', { className: 'ot-requests' }, requests.map(request => h('li', { key: request.chatUuid, className: 'ot-request' },
         h('span', { className: 'ot-request-who', title: (request.senders ?? []).join(', ') }, (request.senders ?? []).join(' · ')),
         h('span', { className: 'ot-request-text', title: request.text }, request.text),
-        h('span', { className: 'ot-picker-at' }, `${relativeShort(request.lastAt)} · ${messages(request.count)}`)))))
+        h('span', { className: 'ot-picker-at' }, `${relativeShort(request.lastAt)} · ${messages(request.count)}`),
+        // #1732: a chat a code from a staff list let in, so staff do not let them in again by hand.
+        request.admitted ? h('span', { className: 'ot-picker-tag' }, t('Admitted by code')) : null,
+        // #1742: a chat whose code the bot's outside check confirmed, with the label staff set for it.
+        request.confirmed && confirmedLabel ? h('span', { className: 'ot-picker-tag' }, confirmedLabel) : null))))
 }
 
 // Owner-only endpoint; no model tool can enable answer mode or widen its tools.
@@ -650,6 +658,7 @@ export function AnswerSettings({ bot, value = {}, channels = [], threads = [] })
   const [staffChat, setStaffChat] = useState(value.needsStaffChatId ?? '')
   const [staffChats, setStaffChats] = useState([])
   const [strangerReply, setStrangerReply] = useState(value.strangerReply ?? '')
+  const [codeWelcome, setCodeWelcome] = useState(value.codeWelcome ?? '')
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState(null)
   useEffect(() => {
@@ -657,8 +666,8 @@ export function AnswerSettings({ bot, value = {}, channels = [], threads = [] })
     setAllowedTools(value.allowedTools ?? []); setSharedNotes(value.sharedNotes ?? '')
     setNewChildMode(value.newChildMode ?? 'training'); setGraduates(Number.isInteger(value.graduateAfter)); setGraduateAfter(String(value.graduateAfter ?? 5))
     setResumeMinutes(minutesOf(value.resumeAfterMs)); setKnowledgeFolder(value.knowledgeFolder ?? ''); setPersonBinding(value.personBinding === true)
-    setStaffChat(value.needsStaffChatId ?? ''); setStrangerReply(value.strangerReply ?? '')
-  }, [value.enabled, value.visibility, JSON.stringify(value.allowedTools), value.sharedNotes, value.newChildMode, value.graduateAfter, value.resumeAfterMs, value.knowledgeFolder, value.personBinding, value.needsStaffChatId, value.strangerReply])
+    setStaffChat(value.needsStaffChatId ?? ''); setStrangerReply(value.strangerReply ?? ''); setCodeWelcome(value.codeWelcome ?? '')
+  }, [value.enabled, value.visibility, JSON.stringify(value.allowedTools), value.sharedNotes, value.newChildMode, value.graduateAfter, value.resumeAfterMs, value.knowledgeFolder, value.personBinding, value.needsStaffChatId, value.strangerReply, value.codeWelcome])
   // The staff chats to pick from, read when the settings open (the picker's own read).
   const channelIds = channels.map(channel => channel.id).join(',')
   useEffect(() => {
@@ -685,7 +694,9 @@ export function AnswerSettings({ bot, value = {}, channels = [], threads = [] })
     const staff = staffChat || value.needsStaffChatId ? { needsStaffChatId: staffChat || null } : {}
     // #1713: the same: sent while set or being cleared.
     const stranger = strangerReply.trim() || value.strangerReply ? { strangerReply: strangerReply.trim() || null } : {}
-    try { await call('omni-answer-settings', { botId: bot.id, enabled, visibility, allowedTools, sharedNotes, newChildMode, graduateAfter: graduates ? count : null, resumeAfterMs: minutes * 60_000, knowledgeFolder: knowledgeFolder.trim() || null, ...person, ...staff, ...stranger }); setOpen(false) }
+    // #1732: the same.
+    const welcome = codeWelcome.trim() || value.codeWelcome ? { codeWelcome: codeWelcome.trim() || null } : {}
+    try { await call('omni-answer-settings', { botId: bot.id, enabled, visibility, allowedTools, sharedNotes, newChildMode, graduateAfter: graduates ? count : null, resumeAfterMs: minutes * 60_000, knowledgeFolder: knowledgeFolder.trim() || null, ...person, ...staff, ...stranger, ...welcome }); setOpen(false) }
     catch (error) { setProblem(error.message) } finally { setBusy(false) }
   }
   const tool = (name, on) => setAllowedTools(before => (on ? [...before.filter(item => item !== name), name] : before.filter(item => item !== name)))
@@ -719,7 +730,7 @@ export function AnswerSettings({ bot, value = {}, channels = [], threads = [] })
           staffOptions.map(option => h('option', { key: option.id, value: option.id }, option.label)))),
       h(Field, { label: 'Reply to people who are not let in', note: 'Sent once a day to each person no rule lets in. Empty: no reply.' },
         h('textarea', { className: 'bt-input bt-input-area ot-answer-stranger', maxLength: STRANGER_REPLY_MAX, value: strangerReply, onChange: event => setStrangerReply(event.target.value) })),
-      h(StrangerRequests, { botId: bot.id }),
+      h(StrangerRequests, { botId: bot.id, confirmedLabel: value.outsideCheck?.label ?? null }),
       h('div', { className: 'ot-answer-tools', role: 'group', 'aria-label': 'Children may also' },
         h('span', { className: 'bt-field-label', 'aria-hidden': true }, 'Children may also'),
         ANSWER_TOOLS.map(([name, label]) => h(SwitchRow, { key: name, label, title: name, on: allowedTools.includes(name), onChange: on => tool(name, on) }))),
@@ -728,6 +739,12 @@ export function AnswerSettings({ bot, value = {}, channels = [], threads = [] })
         h('input', { className: 'bt-input ot-answer-folder', type: 'text', value: knowledgeFolder, title: knowledgeFolder || undefined, placeholder: '/path/to/folder', spellCheck: false, autoComplete: 'off', onChange: event => setKnowledgeFolder(event.target.value) })),
       h(SwitchRow, { label: 'Bind each child to its person', on: personBinding, onChange: setPersonBinding }),
       h('p', { className: 'bt-note' }, 'A child then takes the notes and the capability in its person\'s access rule, and answers only messages that rule lets in. Needs isolated visibility, and the file tools off or limited to a knowledge folder.'),
+      // #1732: a person whose first message carries an open code from a staff list is let in (host answer-codes.js).
+      h(Field, { label: t('Message when a code admits someone'), note: t('Sent to the person once a code from a list admits them; their child answers from their next message. Empty: no message, and the child answers the one with the code.') },
+        h('textarea', { className: 'bt-input bt-input-area ot-answer-welcome', maxLength: CODE_WELCOME_MAX, value: codeWelcome, onChange: event => setCodeWelcome(event.target.value) })),
+      h(CodeLists),
+      // #1742: a code from a person not let in is checked with this outside service (host answer-outside-check.js).
+      h(OutsideCheck, { botId: bot.id, value: value.outsideCheck }),
       h(Field, { label: 'Shared notes for collective children' },
         h('textarea', { className: 'bt-input bt-input-area', maxLength: SHARED_NOTES_MAX, value: sharedNotes, onChange: event => setSharedNotes(event.target.value) })),
       problem ? h('p', { className: 'ot-picker-problem', role: 'alert' }, hostText(problem)) : null,
@@ -985,4 +1002,4 @@ ${stackedRow('.ot-thread[data-answer]:has(.ot-thread-reason)')}
 @keyframes ot-in{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion:reduce){.ot-chats{transition:none}.ot-chats .ot-thread{animation:none}.ot-chevron{transition:none}.ot-thread-acts{transition:none}}
 body[data-omni-thread] .bt-voice,body[data-omni-thread] .bt-plus,body[data-omni-thread] .bt-composer-model,body[data-omni-thread] .bt-mw-dock,body[data-omni-thread] .bt-btw-dock{display:none!important}
-`
+${CODE_LISTS_CSS}${OUTSIDE_CHECK_CSS}`

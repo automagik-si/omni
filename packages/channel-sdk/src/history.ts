@@ -1,3 +1,5 @@
+import { z } from 'zod';
+
 /**
  * Shared history sync types for channel plugins
  *
@@ -28,6 +30,22 @@ export interface HistorySyncMessage {
   rawPayload: unknown;
 }
 
+const historyMutationBase = z.object({
+  id: z.string().min(1),
+  chatId: z.string().min(1),
+  targetExternalId: z.string().min(1),
+  actor: z.string().min(1),
+  at: z.date(),
+});
+
+/** Historical state updates travel only on the explicit job callback, never the message event bus. */
+export const HistorySyncMutationSchema = z.discriminatedUnion('kind', [
+  historyMutationBase.extend({ kind: z.literal('reaction'), emoji: z.string() }),
+  historyMutationBase.extend({ kind: z.literal('edit'), text: z.string() }),
+  historyMutationBase.extend({ kind: z.literal('deletion') }),
+]);
+export type HistorySyncMutation = z.infer<typeof HistorySyncMutationSchema>;
+
 /**
  * Options for fetchHistory method
  *
@@ -47,7 +65,11 @@ export interface FetchHistoryOptions {
   /** Callback for progress updates */
   onProgress?: (fetched: number, total?: number) => void;
   /** Callback for each message synced */
-  onMessage?: (message: HistorySyncMessage) => void;
+  onMessage?: (message: HistorySyncMessage) => void | Promise<void>;
+  /** Explicit chat backfills only: cancellation and awaited round receipts. */
+  shouldCancel?: () => Promise<boolean>;
+  onMutation?: (mutation: HistorySyncMutation) => Promise<void>;
+  onRound?: (round: { round: number; received: number; oldestReached: string | null }) => Promise<void>;
 }
 
 /**
