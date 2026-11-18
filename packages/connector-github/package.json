@@ -1,6 +1,6 @@
 {
   "name": "@omni/connector-github",
-  "version": "2.261118.4",
+  "version": "2.261118.5",
   "description": "GitHub connector: issues and pull_request webhook events, declared as a code manifest (events only, no GitHub API calls)",
   "license": "Apache-2.0",
   "type": "module",
