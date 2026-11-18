@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, test } from 'node:test'
+import { setImmediate } from 'node:timers/promises'
 import { install as installOmni, KEY } from '../src/host/omni.js'
 import { cleanOmniUrl, install, LINK_FILE, marketUrlAllowed } from '../src/host/omni-link.js'
 import { install as installThreadKeys, KEYS_FILE, NOT_LINKED } from '../src/host/thread-keys.js'
@@ -95,7 +96,7 @@ const INSTANCE = '0b5f1c1e-6a51-4d5e-9a41-0c0d9b6f1a01'
 const CHAT = '1c6f2d2e-7b62-4e6f-8b52-1d1e0c7f2b02'
 
 // The link, Omni's requests and the threads' keys (thread-keys.js), as index.js installs them.
-function runtime({ omniUrl, profileKey, settings } = {}) {
+function runtime({ omniUrl, profileKey, settings, onSync } = {}) {
   const home = mkdtempSync(join(tmpdir(), 'omni-link-'))
   const synced = []
   const disposers = []
@@ -104,7 +105,10 @@ function runtime({ omniUrl, profileKey, settings } = {}) {
     config: omniUrl ? { omni: { url: omniUrl } } : {},
     ctx: { effect: (run) => { const dispose = run(); if (typeof dispose === 'function') disposers.push(dispose) }, settings, get: name => (name === 'credentials' ? { resolve: async ref => (ref === KEY && profileKey ? { value: profileKey } : undefined) } : undefined) },
     teamResume: { ready: true, reason: null },
-    syncOmniEvents: () => synced.push(Date.now()),
+    syncOmniEvents: () => {
+      synced.push(Date.now())
+      onSync?.()
+    },
   }
   installHooks(rt)
   install(rt)
@@ -347,15 +351,22 @@ test('the market is offered only over https or this machine\'s loopback, and lea
   assert.deepEqual(rows[0].value.indexes, [])
 })
 
-test('a sign-in the desktop app started from an omni:// link finishes by itself once approved', async (t) => {
+test('a sign-in the desktop app started from an omni:// link finishes by itself once approved', { timeout: 5000 }, async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
   const omni = fakeOmni()
-  const { rt, home, stop } = runtime()
+  const { promise: saved, resolve: onSync } = Promise.withResolvers()
+  const { rt, home, stop } = runtime({ onSync })
   t.after(stop)
   const started = await rt.omniLinkEndpoint('omni-pair-start', { url: 'https://omni.example.com', auto: true })
   assert.equal(started.pairing.approveUrl, 'https://omni.example.com/login/device?user_code=K7Q4X9ZP')
   omni.approve()
   // Nobody polls: the host does, on the pairing's own interval (2 s).
-  for (let waited = 0; waited < 8000 && !existsSync(join(home, LINK_FILE)); waited += 100) await new Promise(resolve => setTimeout(resolve, 100))
+  t.mock.timers.tick(1999)
+  assert.equal(omni.asked.some(call => call.path === '/api/auth/device/token'), false)
+  t.mock.timers.tick(1)
+  await saved
+  // The poll clears its pairing after saving the link.
+  await setImmediate()
   assert.equal(JSON.parse(readFileSync(join(home, LINK_FILE), 'utf8')).key, 'omni_sk_device')
   assert.equal((await rt.omniLinkEndpoint('omni-pair-poll')).status, 'idle')
 })
