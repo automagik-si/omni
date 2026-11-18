@@ -122,7 +122,7 @@ test('the step registers on settings.onboarding with its stage styles', async ()
     entryPoints: [fileURLToPath(new URL('../src/client/connect-step.js', import.meta.url))],
     bundle: true, format: 'cjs', platform: 'node', write: false, logLevel: 'silent',
     external: ['react', 'react-dom', '@automagik/bots-dsh/client'],
-    loader: { '.css': 'text' },
+    loader: { '.css': 'text', '.svg': 'text' },
   })
   const module = { exports: {} }
   const react = {
