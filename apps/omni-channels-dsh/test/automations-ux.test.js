@@ -14,7 +14,7 @@ async function load() {
     stdin: { contents: entry, resolveDir: fileURLToPath(new URL('../src/client/', import.meta.url)), loader: 'js' },
     bundle: true, format: 'cjs', platform: 'node', write: false, logLevel: 'silent',
     external: ['react', 'react-dom', '@automagik/bots-dsh/client'],
-    loader: { '.css': 'text' },
+    loader: { '.css': 'text', '.svg': 'text' },
   })
   const module = { exports: {} }
   // Elements come back as plain data, so a test can read what a component draws.

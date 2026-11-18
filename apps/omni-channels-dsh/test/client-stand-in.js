@@ -165,7 +165,8 @@ export async function bundleClient(lines, { globals = {}, team, modules = {} }) 
     stdin: { contents: lines.join('\n'), resolveDir: fileURLToPath(new URL('../src/client/', import.meta.url)), loader: 'js' },
     bundle: true, format: 'cjs', platform: 'node', write: false, logLevel: 'silent',
     external: ['react', 'react-dom', '@automagik/bots-dsh/client', ...Object.keys(modules)],
-    loader: { '.css': 'text' },
+    // The brand's marks are copied in as text too, as the plugin's own build does.
+    loader: { '.css': 'text', '.svg': 'text' },
     supported: Object.keys(modules).length ? { 'dynamic-import': false } : undefined,
   })
   const module = { exports: {} }
