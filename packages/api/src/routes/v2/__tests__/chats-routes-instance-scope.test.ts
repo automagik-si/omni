@@ -178,7 +178,7 @@ test.each([
     body: JSON.stringify({ instanceId, externalId: NATIVE_ID, chatType: 'dm', channel: 'whatsapp-baileys' }),
   });
   expect(response.status).toBe(status);
-  expect(fixture.effects).toEqual(effects);
+  expect(fixture.effects).toEqual([...effects]);
 });
 
 describe.each(ROUTES)('$method /chats/:id$path (explicit instance: $explicitInstance)', (route) => {
