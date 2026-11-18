@@ -108,6 +108,10 @@ function mount(apiKey: ApiKeyData) {
           effects.push('nameForRead');
           return items;
         },
+        create: async (body: { instanceId: string }) => {
+          effects.push('create');
+          return { id: CHAT_A, instanceId: body.instanceId };
+        },
         update: effect('update'),
         delete: effect('delete'),
         archive: effect('archive'),
@@ -162,6 +166,20 @@ function request(app: ReturnType<typeof mount>['app'], route: RouteCase, chatId:
     ...(body ? { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : {}),
   });
 }
+
+test.each([
+  { instanceId: INSTANCE_A, status: 201, effects: ['create'] },
+  { instanceId: INSTANCE_B, status: 400, effects: [] },
+])('chat creation checks the legacy instance restriction ($status)', async ({ instanceId, status, effects }) => {
+  const fixture = mount(key([INSTANCE_A]));
+  const response = await fixture.app.request('/chats', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ instanceId, externalId: NATIVE_ID, chatType: 'dm', channel: 'whatsapp-baileys' }),
+  });
+  expect(response.status).toBe(status);
+  expect(fixture.effects).toEqual(effects);
+});
 
 describe.each(ROUTES)('$method /chats/:id$path (explicit instance: $explicitInstance)', (route) => {
   test('another instance and a missing chat answer the same 404 before any effect', async () => {

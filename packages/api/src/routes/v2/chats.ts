@@ -218,6 +218,7 @@ chatsRoutes.get('/', zValidator('query', listQuerySchema), async (c) => {
  */
 chatsRoutes.post('/', zValidator('json', createChatSchema), async (c) => {
   const body = c.req.valid('json');
+  checkInstanceAccess(c.get('apiKey'), body.instanceId);
   const services = c.get('services');
 
   const chat = await services.chats.create(body);
