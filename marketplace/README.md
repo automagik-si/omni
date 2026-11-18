@@ -3,15 +3,15 @@
 `automagik.json` is Omni's own [DeepSeek Harness](https://github.com/deepseek-ai) plugin market index (format 1):
 Omni's plugins, with their titles, categories and labels, plus the Automagik plugins they build on (the Bot team
 and the welcome) at the release Omni was tested with. It lists nothing else: the outside plugins Automagik vetted
-for bringing your own AI are in [Automagik's index](https://github.com/automagik-dev/automagik/tree/dev/marketplace).
+for bringing your own AI are in [Automagik's index](https://github.com/automagik-si/automagik/tree/dev/marketplace).
 Every Omni serves this index for its own release (below), and the Automagik market lists it at each Omni release,
 beside Automagik's other products:
 
 ```
-https://raw.githubusercontent.com/automagik-dev/dsh-marketplace/main/index.json
+https://raw.githubusercontent.com/automagik-si/dsh-marketplace/main/index.json
 ```
 
-That is the URL to add to a DSH without an Omni ([automagik-dev/dsh-marketplace](https://github.com/automagik-dev/dsh-marketplace)
+That is the URL to add to a DSH without an Omni ([automagik-si/dsh-marketplace](https://github.com/automagik-si/dsh-marketplace)
 follows Omni's releases and lists Omni's plugins at each one, each at its own version).
 
 Each of Omni's plugins carries the Omni version of its last change: a release moves a plugin to its version only
@@ -48,7 +48,7 @@ point `OMNI_MARKET_DIR` at a `bun scripts/pack-market.ts <dir>` output to serve 
 `OMNI_PUBLIC_URL` when it is set, else the address the request came in on.
 
 The release's Bot team and welcome are a floor, not a ceiling. Automagik publishes its plugins on a signed lane of
-their own (`plugin-lane` in automagik-dev/automagik, see its `plugin-lane/README.md`), and an Omni serves a newer one
+their own (`plugin-lane` in automagik-si/automagik, see its `plugin-lane/README.md`), and an Omni serves a newer one
 from there, the same way, without a new Omni release (`packages/api/src/market/lane.ts`). It looks a minute after it
 starts, then hourly, and takes a lane only when all of it checks out:
 
@@ -75,7 +75,7 @@ The market ships with DSH as an optional bundle. Turn it on, then add the index:
    - id: plugin-market
      config:
        indexes:
-         - https://raw.githubusercontent.com/automagik-dev/dsh-marketplace/main/index.json
+         - https://raw.githubusercontent.com/automagik-si/dsh-marketplace/main/index.json
    ```
 
 DSH asks before it installs anything, and installs exactly the version listed.
@@ -84,10 +84,10 @@ DSH asks before it installs anything, and installs exactly the version listed.
 
 | Plugin | Source | Notes |
 |--------|--------|-------|
-| `@automagik/bots-dsh` | [automagik-dev/automagik](https://github.com/automagik-dev/automagik), `apps/bots-dsh`, at the release `apps/automagik.json` pins, or newer from its plugin lane | The Bot team the others build on (formerly `@automagik/omni-dsh`). Keeps its files in `~/.omni`, never in your DSH profile. |
+| `@automagik/bots-dsh` | [automagik-si/automagik](https://github.com/automagik-si/automagik), `apps/bots-dsh`, at the release `apps/automagik.json` pins, or newer from its plugin lane | The Bot team the others build on (formerly `@automagik/omni-dsh`). Keeps its files in `~/.omni`, never in your DSH profile. |
 | `@automagik/omni-channels-dsh` | this repository, `apps/omni-channels-dsh`, pinned to a commit | Omni channels: link your Omni, its channels, chats and automations. Needs the Bot team. |
 | `@automagik/omni-canvas-dsh` | this repository, `apps/omni-canvas-dsh`, pinned to a commit | Omni canvases: live UI in the chat, drawn from your Omni. Needs the Bot team and channels. |
-| `@automagik/welcome-dsh` | automagik-dev/automagik, `apps/welcome-dsh`, at the release `apps/automagik.json` pins, or newer from its plugin lane | The welcome and Connect AI (formerly `@automagik/omni-ai-dsh`). |
+| `@automagik/welcome-dsh` | automagik-si/automagik, `apps/welcome-dsh`, at the release `apps/automagik.json` pins, or newer from its plugin lane | The welcome and Connect AI (formerly `@automagik/omni-ai-dsh`). |
 
 The Claude Code provider and the AI subscriptions add-ons moved to Automagik's index with the rest of the
 outside plugins Automagik vets; `make marketplace-check` refuses any source other than a commit of this

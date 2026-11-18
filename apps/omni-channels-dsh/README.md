@@ -3,7 +3,7 @@
 `@automagik/omni-channels-dsh` brings your Omni into the Bot team for DeepSeek Harness
 (DSH): link this DSH to an Omni, see its channels and chats, and let Omni, the Main Bot,
 operate the platform and run your automations. It sits on the team plugin
-(`@automagik/bots-dsh`, [apps/bots-dsh in automagik-dev/automagik](https://github.com/automagik-dev/automagik/tree/dev/apps/bots-dsh#three-plugins))
+(`@automagik/bots-dsh`, [apps/bots-dsh in automagik-si/automagik](https://github.com/automagik-si/automagik/tree/dev/apps/bots-dsh#three-plugins))
 and needs it; the canvas plugin (`@automagik/omni-canvas-dsh`) sits on this one.
 
 > Labs release. Features, tools and the saved data format can still change.
@@ -309,7 +309,7 @@ the bundle patch (`cordis.patch.yml`), which adds one row, `id: omni-channels`, 
 nothing else. Restart DSH.
 
 From a checkout, link it into a profile next to the team plugin; the team's
-[README](https://github.com/automagik-dev/automagik/tree/dev/apps/bots-dsh#install) has the profile.
+[README](https://github.com/automagik-si/automagik/tree/dev/apps/bots-dsh#install) has the profile.
 
 ## Connect to an Omni
 
@@ -511,7 +511,7 @@ The folder's own lockfile is npm's: Bun resolves every peer from the registry, a
 peers on the Omni plugins, which ship through the Automagik market rather than npm.
 
 `client.js` is generated from `src/client` and committed, so git and `link:` installs need
-no build step. The tests load the team plugin from automagik-dev/automagik at the release
+no build step. The tests load the team plugin from automagik-si/automagik at the release
 `apps/automagik.json` pins (`node ../automagik.mjs source` fetches its `apps/bots-dsh` into
 `apps/.automagik`; or `OMNI_DSH_CORE`): its `index.js`, its test context, and its committed
 `client.js`.

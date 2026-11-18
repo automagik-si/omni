@@ -5,10 +5,10 @@ Omni's DSH plugins, the channels (`@automagik/omni-channels-dsh`) and the canvas
 new Omni release updates them in the app without a new app.
 
 The lane is the same schemaVersion 1 lane that Automagik and Genie publish. Its format is in
-automagik-dev/automagik `plugin-lane/README.md`. Omni's lane is at:
+automagik-si/automagik `plugin-lane/README.md`. Omni's lane is at:
 
-- https://github.com/automagik-dev/omni/releases/download/plugin-lane/lane.json
-- https://github.com/automagik-dev/omni/releases/download/plugin-lane/lane.json.sig
+- https://github.com/automagik-si/omni/releases/download/plugin-lane/lane.json
+- https://github.com/automagik-si/omni/releases/download/plugin-lane/lane.json.sig
 
 `keys.json` lists the public keys, as `{ keys: [{ keyId, publicKey }] }` with PEM (SPKI).
 Consumers pin them in their code. The signature is ed25519 over the exact bytes of
