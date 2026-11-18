@@ -2107,7 +2107,13 @@ export class SlackPlugin extends BaseChannelPlugin {
     // Only a 1:1 has a single counterpart whose name can stand in for the
     // conversation name. For an mpim it would name the chat after whichever
     // member happened to speak. Channels carry their own name (#1162).
-    const chatName = isOneToOne ? displayName : !isDm ? await this.resolveChannelName(instanceId, chatId) : undefined;
+    const chatName = isOneToOne
+      ? rawPayload.isFromMe === true
+        ? undefined
+        : displayName
+      : !isDm
+        ? await this.resolveChannelName(instanceId, chatId)
+        : undefined;
 
     return {
       ...rawPayload,
@@ -2435,14 +2441,17 @@ export class SlackPlugin extends BaseChannelPlugin {
           // the message's own externalId — the bot's reply will create a thread
           // under that ts, so typing indicators must target it. This also prevents
           // stale thread context from leaking into unrelated channel messages.
-          const threadTs = rawPayload.threadTs as string | undefined;
-          this.trackActiveThread(instanceId, chatId, threadTs ?? externalId);
+          if (rawPayload.noAgentDispatch !== true) {
+            const threadTs = rawPayload.threadTs as string | undefined;
+            this.trackActiveThread(instanceId, chatId, threadTs ?? externalId);
+            this.addAckReaction(instanceId, chatId, externalId, attachment, config);
+          }
 
-          // Add ack reaction on message receipt (fire-and-forget)
-          this.addAckReaction(instanceId, chatId, externalId, attachment, config);
-
-          // Enrich rawPayload with cross-channel identity contract
-          const enrichedPayload = await this.buildEnrichedPayload(instanceId, from, chatId, rawPayload);
+          // Mutations already have enough data to update the original message.
+          const enrichedPayload =
+            content.type === 'text'
+              ? await this.buildEnrichedPayload(instanceId, from, chatId, rawPayload)
+              : rawPayload;
 
           const files = enrichedPayload.files as unknown[] | undefined;
           if (files && files.length > 0) {
@@ -2693,7 +2702,10 @@ export class SlackPlugin extends BaseChannelPlugin {
     rawPayload: Record<string, unknown>,
     platformTimestamp?: number,
   ): Promise<void> {
-    const timings = platformTimestamp ? this.captureInboundTimings(platformTimestamp) : undefined;
+    const timings =
+      rawPayload.noAgentDispatch !== true && platformTimestamp
+        ? this.captureInboundTimings(platformTimestamp)
+        : undefined;
 
     const senderName =
       typeof rawPayload.senderName === 'string'
