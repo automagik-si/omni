@@ -1,16 +1,15 @@
-// The Channels control in the footer (#1793): the owner asked for the Omni mark there instead of
-// the connected channels' logos ("turn channels icon into omni icon"). A regression here would put
-// the channel tiles back, so this test pins the mark, the class and the CSS.
+// The Channels control in the footer (#1793): the owner chose the brand's Omni mark — the tentacle
+// vortex — for it, and his word was "sim!". The triskle is Automagik's alone (brand rule 1) and a pet
+// is never a mark (rule 3), so this pins the vortex and refuses both the old channel logos and the
+// triskle coming back through the team's OmniMark.
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { bundleClient, mount, nodes, react } from './client-stand-in.js'
 import { omni } from './omni-client.js'
 
-// The team's OmniMark, counted: the control must draw it (at 16) and nothing else where the
-// channel logos used to be.
-const seen = []
-const OMNI_MARK_ATTR = 'data-omni-mark'
-const team = { omni: { ...omni, ui: { ...omni.ui, OmniMark: props => { seen.push(props); return react.createElement('svg', { [OMNI_MARK_ATTR]: String(props.size) }, []) } } } }
+// The team's OmniMark draws the triskle; if the control draws it, this records it.
+const trisklе = []
+const team = { omni: { ...omni, ui: { ...omni.ui, OmniMark: props => { trisklе.push(props); return react.createElement('svg', {}, []) } } } }
 const ui = await bundleClient([
   "export { ChannelsFooter, CHANNELS_CSS } from './channels.js'",
 ], {
@@ -18,26 +17,33 @@ const ui = await bundleClient([
   team,
 })
 
-test('the Channels control draws the Omni mark, not the channels logos', () => {
+test('the Channels control draws the brand vortex, never the triskle or the channel logos', () => {
   // Effects off: the footer subscribes to the live store on mount, which is not this test's subject.
   const view = mount(() => react.createElement(ui.ChannelsFooter, { wide: true, actions: { selectPanel() {} } }), { effects: false })
   try {
     const all = nodes(view.draw())
     const button = all.find(node => node.type === 'button' && String(node.props?.className ?? '').includes('bt-channels-foot'))
     assert.ok(button, 'the footer control draws its button')
-    assert.equal(seen.length, 1, 'the button draws one mark')
-    assert.equal(Number(seen[0].size), 16, 'at the size the bar uses for a control icon')
-    const slot = nodes(button).find(node => String(node.props?.className ?? '') === 'bt-channels-mark')
-    assert.ok(slot, 'the button draws the mark slot the app styles')
-    const drawn = nodes(slot).find(node => node.props?.[OMNI_MARK_ATTR] !== undefined)
-    assert.ok(drawn, 'the mark element itself sits inside that slot')
-    assert.equal(drawn.props[OMNI_MARK_ATTR], '16', 'drawn from the 16px props, not from a stray child')
-    // The old shape: the connected channels as overlapping tiles. It must not come back.
+    // The triskle (the team's OmniMark) must not appear in this control.
+    assert.equal(trisklе.length, 0, 'the control does not draw the team OmniMark (the triskle)')
     const inside = nodes(button)
+    // The old shape: the connected channels as overlapping tiles.
     assert.equal(inside.some(node => String(node.props?.className ?? '').includes('bt-channels-tiles')), false, 'no tile stack in the control')
     assert.equal(inside.some(node => String(node.props?.className ?? '').includes('oc-tile')), false, 'no channel tile in the control')
+    // The mark slot carries the two official drawings, one per ground.
+    const slot = inside.find(node => String(node.props?.className ?? '') === 'bt-channels-mark')
+    assert.ok(slot, 'the button draws the mark slot the app styles')
+    const images = nodes(slot).filter(node => node.type === 'img')
+    assert.equal(images.length, 2, 'the ink and the cream drawing')
+    const src = image => String(image.props?.src ?? '')
+    assert.equal(images.some(image => src(image).startsWith('data:image/svg+xml')), true, 'both are the brand files, inlined')
+    assert.deepEqual(images.map(image => String(image.props?.className)).sort(), ['oc-vortex oc-vortex-cream', 'oc-vortex oc-vortex-ink'])
+    assert.equal(images.every(image => image.props?.width === 32 && image.props?.height === 32), true, 'the 32px drawing, at its own size')
+    // And the stylesheet switches them by ground, at that size, over the control's own row height.
+    assert.match(ui.CHANNELS_CSS, /\.bt-channels-mark[^}]*width:32px;height:32px/)
+    assert.match(ui.CHANNELS_CSS, /body\[data-ds-dark-theme\] \.bt-channels-mark \.oc-vortex-cream\{display:block\}/)
+    assert.match(ui.CHANNELS_CSS, /\.bt-channels-foot\{min-height:36px/)
     assert.equal(/bt-channels-tiles/.test(ui.CHANNELS_CSS), false, 'the tile stack CSS is gone')
-    assert.match(ui.CHANNELS_CSS, /\.bt-channels-mark\{/)
   } finally {
     view.unmount()
   }

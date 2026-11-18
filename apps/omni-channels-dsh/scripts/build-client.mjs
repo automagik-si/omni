@@ -36,8 +36,9 @@ export async function bundleClient() {
     platform: 'browser',
     target: 'es2022',
     external: [...PLATFORM_MODULES, ...EXTERNAL_BUNDLES],
-    // xterm's stylesheet joins the page's styles as text (src/client/omni-terminal.js).
-    loader: { '.css': 'text' },
+    // xterm's stylesheet joins the page's styles as text (src/client/omni-terminal.js); the brand's
+    // marks are copied in as text too, so the Channels control carries the real drawing (docs/brand).
+    loader: { '.css': 'text', '.svg': 'text' },
     treeShaking: false,
     charset: 'utf8',
     write: false,

@@ -1,4 +1,6 @@
 import { channelProblem } from './problem-words.js'
+import omniMarkInk from '../../../../docs/brand/logo/svg/omni-mark-ink-32.svg'
+import omniMarkCream from '../../../../docs/brand/logo/svg/omni-mark-cream-32.svg'
 import { createElement as h, Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { ConnectPrompt, openConnectWizard } from './wizard.js'
 import { UpdateBar } from './omni-update.js'
@@ -690,8 +692,16 @@ function SampleQr({ seed = 1 }) {
 
 const TONES = '[data-tone=ok]{--oc-tone:#16a34a}[data-tone=busy]{--oc-tone:#0ea5e9}[data-tone=warn]{--oc-tone:#f59e0b}[data-tone=off]{--oc-tone:#94a3b8}'
 
-// The footer's way into channel management: the connected channels as small tiles, a dot
-// when one needs attention, and the Channels page (connect, health) on click.
+// The Omni mark: the tentacle vortex (#1793), the brand's own drawing for this size, in the two
+// grounds the product ships (ink on light, cream on dark). It is the official file, copied by
+// scripts/brand-sync.mjs — never redrawn here.
+const VORTEX = {
+  ink: 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(omniMarkInk),
+  cream: 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(omniMarkCream),
+}
+
+// The footer's way into channel management: the Omni mark, a dot when a channel needs attention,
+// and the Channels page (connect, health) on click.
 export function ChannelsFooter({ wide, actions }) {
   const state = useOmni()
   useEffect(() => { startLive(call) }, [])
@@ -699,14 +709,22 @@ export function ChannelsFooter({ wide, actions }) {
   const summary = healthSummary(state)
   const label = summary.attention > 0 ? t('{n} channel needs attention', { n: summary.attention }) : t('Channels and their health')
   return h('span', { className: 'bt-connect-wrap' }, h('button', { type: 'button', className: 'bt-connect bt-connect-foot bt-channels-foot', title: label, 'aria-label': `${t('Channels')}, ${label}`, onClick: () => actions.selectPanel(CHANNELS_PANEL) },
-    h('span', { className: 'bt-channels-mark', 'aria-hidden': true }, h(OmniMark, { size: 16 })),
+    h('span', { className: 'bt-channels-mark', 'aria-hidden': true },
+      h('img', { className: 'oc-vortex oc-vortex-ink', src: VORTEX.ink, alt: '', width: 32, height: 32 }),
+      h('img', { className: 'oc-vortex oc-vortex-cream', src: VORTEX.cream, alt: '', width: 32, height: 32 })),
     t('Channels'),
     summary.attention > 0 ? h('span', { className: 'oc-warn-dot', 'aria-hidden': true }) : h('span', { className: 'bt-channels-count' }, `${summary.connected}/${summary.total}`)))
 }
 
 export const CHANNELS_CSS = `
 .bt-channels-foot{gap:8px;justify-content:flex-start;padding:0 12px 0 8px}
-.bt-channels-mark{display:inline-flex;align-items:center}
+/* The control keeps the bar's own row height, so the mark and the update button sit on one line. */
+.bt-channels-foot{min-height:36px;gap:8px}
+.bt-channels-mark{display:inline-flex;align-items:center;justify-content:center;flex:none;width:32px;height:32px}
+.bt-channels-mark .oc-vortex{display:block;width:32px;height:32px}
+.bt-channels-mark .oc-vortex-cream{display:none}
+body[data-ds-dark-theme] .bt-channels-mark .oc-vortex-ink{display:none}
+body[data-ds-dark-theme] .bt-channels-mark .oc-vortex-cream{display:block}
 .bt-channels-count{margin-left:auto;font-size:12px;color:var(--bt-ink-3)}
 .bt-channels-foot .oc-warn-dot{margin-left:auto}
 ${TONES}
