@@ -16,12 +16,36 @@ concurrency:
 permissions: {}
 
 jobs:
-  cut:
-    name: Cut candidate tag
+  verify-bump:
+    name: Verify automatic bump
     if: >-
-      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'push' &&
       (startsWith(github.event.head_commit.message, 'chore(version): bump to ') &&
        github.event.head_commit.author.email == 'github-actions[bot]@users.noreply.github.com')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      eligible: ${{ steps.parent.outputs.eligible }}
+    steps:
+      - name: Require one commit directly on the previous dev tip
+        id: parent
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          parents=$(gh api "repos/${GITHUB_REPOSITORY}/git/commits/${GITHUB_SHA}" --jq '.parents[].sha')
+          if [[ "${parents}" == "${BEFORE}" ]]; then
+            echo "eligible=true" >> "${GITHUB_OUTPUT}"
+          fi
+
+  cut:
+    name: Cut candidate tag
+    needs: verify-bump
+    if: >-
+      !cancelled() &&
+      (github.event_name == 'workflow_dispatch' || needs.verify-bump.outputs.eligible == 'true')
     uses: ./.github/workflows/version.yml
     # Candidate cuts only bump and tag; software publication follows below.
     permissions:
