@@ -157,11 +157,7 @@ export async function resolveChatRow(c: ChatContext, raw: string, explicitInstan
  * raw param to a UUID column and a JID (`120363...@g.us`) made postgres-js
  * throw "invalid input syntax for type uuid" (500).
  */
-export async function resolveChatIdParam(
-  c: ChatContext,
-  raw: string,
-  explicitInstanceId?: string,
-): Promise<string | null> {
+async function resolveChatIdParam(c: ChatContext, raw: string, explicitInstanceId?: string): Promise<string | null> {
   const handed = handedChat(c, raw);
   if (handed) return handed.id;
   if (isChatUuid(raw)) return raw;
@@ -172,17 +168,30 @@ export async function resolveChatIdParam(
 /**
  * Resolve a `:id` URL param to a chat's internal UUID.
  *
- * Like `resolveChatIdParam`, but a UUID's chat must also be on one of the key's
- * legacy `instanceIds`. A native id already passes that check: it is looked up
- * only on an instance the key reaches. A UUID is not looked up there, so its
- * row is read here when the key has an `instanceIds` list. A missing chat and a
- * chat on another instance both answer null (the route's 404), so the answer
- * never tells that a chat exists elsewhere. A key without the list resolves
- * exactly as `resolveChatIdParam` does, with no extra read.
+ * Chat routes treat a chat outside a restricted key's instances as not found.
+ * A UUID's row must also match an explicit body instance, when given. Native
+ * ids keep their instance-scoped resolution. Without either restriction a
+ * UUID needs no read. Reuse a checked row for subsequent pre-effect reads;
+ * reads after a mutation must still go to the service.
  */
-export async function resolveChatIdInKeyInstances(c: ChatContext, raw: string): Promise<string | null> {
+export async function resolveChatIdInKeyInstances(
+  c: ChatContext,
+  raw: string,
+  explicitInstanceId?: string,
+): Promise<string | null> {
   const instanceIds = c.get('apiKey')?.instanceIds;
-  if (!Array.isArray(instanceIds) || !isChatUuid(raw)) return resolveChatIdParam(c, raw);
-  const chat = await resolveChatRow(c, raw);
-  return chat?.instanceId && ApiKeyService.instanceAllowed(instanceIds, chat.instanceId) ? chat.id : null;
+  if (!isChatUuid(raw) || (!Array.isArray(instanceIds) && !explicitInstanceId)) {
+    return resolveChatIdParam(c, raw, explicitInstanceId);
+  }
+  const chat = await resolveChatRow(c, raw, explicitInstanceId);
+  if (!chat) return null;
+  if (
+    Array.isArray(instanceIds) &&
+    (!chat.instanceId || !ApiKeyService.instanceAllowed(instanceIds, chat.instanceId))
+  ) {
+    return null;
+  }
+  if (explicitInstanceId && chat.instanceId !== explicitInstanceId) return null;
+  c.set('resolvedChat', { raw, chat });
+  return chat.id;
 }

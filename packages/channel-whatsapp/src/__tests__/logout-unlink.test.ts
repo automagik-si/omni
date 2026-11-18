@@ -5,9 +5,10 @@
  * much as the live one.
  */
 
-import { afterEach, describe, expect, it, mock } from 'bun:test';
+import { afterEach, describe, expect, it, jest, mock } from 'bun:test';
 import { EventEmitter } from 'node:events';
 import type { PluginStorage } from '@omni/channel-sdk';
+import type { WAVersion } from 'baileys';
 
 // Keep the real exports: `mock.module` is process-wide, so the fakes below
 // only take over while a test sets `fakeSocketFactory`.
@@ -15,8 +16,9 @@ const realBaileys = await import('baileys');
 const realMakeWASocket = realBaileys.default;
 const realFetchLatestBaileysVersion = realBaileys.fetchLatestBaileysVersion;
 
-type SocketOptions = { auth: { creds: { me?: { id: string } }; keys: unknown } };
+type SocketOptions = { auth: { creds: { me?: { id: string } }; keys: unknown }; version: WAVersion };
 let fakeSocketFactory: ((options: SocketOptions) => FakeSocket) | null = null;
+let fakeVersionLookup: typeof realFetchLatestBaileysVersion | undefined;
 
 mock.module('baileys', () => ({
   ...realBaileys,
@@ -25,11 +27,12 @@ mock.module('baileys', () => ({
       ? fakeSocketFactory(options)
       : realMakeWASocket(options as unknown as Parameters<typeof realMakeWASocket>[0]),
   fetchLatestBaileysVersion: async () =>
-    fakeSocketFactory ? { version: [2, 3000, 0], isLatest: true } : realFetchLatestBaileysVersion(),
+    fakeVersionLookup?.() ??
+    (fakeSocketFactory ? { version: [2, 3000, 0], isLatest: true } : realFetchLatestBaileysVersion()),
 }));
 
 const { WhatsAppPlugin } = await import('../plugin');
-const { logoutStoredSession } = await import('../socket');
+const { createSocket, logoutStoredSession } = await import('../socket');
 
 const ID = 'wa-1275';
 const CREDS_KEY = `auth:${ID}:creds`;
@@ -100,6 +103,41 @@ function socketThatReports(update: Record<string, unknown>) {
 
 afterEach(() => {
   fakeSocketFactory = null;
+  fakeVersionLookup = undefined;
+});
+
+describe('createSocket', () => {
+  it('uses the last good version after five seconds and shares a stalled lookup across reconnects', async () => {
+    const auth = { creds: {}, keys: {} } as never;
+    const opened = socketThatReports({ connection: 'open' });
+    const goodVersion: WAVersion = [2, 3000, 99];
+    fakeVersionLookup = async () => ({ version: goodVersion, isLatest: true });
+    await createSocket({ auth });
+
+    const lookup = Promise.withResolvers<Awaited<ReturnType<typeof realFetchLatestBaileysVersion>>>();
+    const stalled = mock(() => lookup.promise);
+    fakeVersionLookup = stalled;
+    const realSetImmediate = setImmediate;
+    const settlePromises = () => new Promise<void>((resolve) => realSetImmediate(resolve));
+    jest.useFakeTimers();
+    const reconnect = createSocket({ auth });
+    const concurrent = createSocket({ auth });
+
+    try {
+      jest.advanceTimersByTime(4_999);
+      await settlePromises();
+      expect(opened).toHaveLength(1);
+      jest.advanceTimersByTime(1);
+      await settlePromises();
+      expect(opened).toHaveLength(3);
+      expect(opened.slice(1).map((socket) => socket.options?.version)).toEqual([goodVersion, goodVersion]);
+      expect(stalled).toHaveBeenCalledTimes(1);
+    } finally {
+      lookup.resolve({ version: goodVersion, isLatest: true });
+      jest.useRealTimers();
+      await Promise.all([reconnect, concurrent]);
+    }
+  });
 });
 
 describe('WhatsAppPlugin.logout unlinks the device (#1275)', () => {

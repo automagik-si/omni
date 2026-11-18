@@ -79,6 +79,18 @@ if ! make typecheck; then
   exit 1
 fi
 
+# The real-NATS suites in @omni/core and @omni/api spawn throwaway nats-server
+# instances and fail (never skip) without the binary. Install the pinned,
+# size- and sha256-checked release into bin/ exactly as CI does; a no-op when
+# the verified binary is already there.
+echo "▶ pre-push: pinned nats-server (scripts/ensure-nats.sh)"
+if ! ./scripts/ensure-nats.sh; then
+  echo ""
+  echo "✗ could not install the pinned nats-server (download or checksum failed); the real NATS tests need it."
+  echo "  → Re-run ./scripts/ensure-nats.sh, or set NATS_RELEASE_BASE to a mirror."
+  exit 1
+fi
+
 # Full test suite, per-package via turbo. Coverage is identical to the old
 # `bun test packages` (every workspace with test files has a `test`
 # script — keep it that way when adding packages). --concurrency=4 bounds

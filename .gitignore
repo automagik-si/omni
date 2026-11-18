@@ -29,6 +29,7 @@ logs/
 .pgserve-data/
 data/
 bin/nats-server
+bin/nats-server.pin
 
 # PM2
 .pm2/
