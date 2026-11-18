@@ -13338,16 +13338,14 @@ function ChannelsFooter({ wide, actions }) {
   return (0, import_react5.createElement)("span", { className: "bt-connect-wrap" }, (0, import_react5.createElement)(
     "button",
     { type: "button", className: "bt-connect bt-connect-foot bt-channels-foot", title: label, "aria-label": `${t("Channels")}, ${label}`, onClick: () => actions.selectPanel(CHANNELS_PANEL) },
-    (0, import_react5.createElement)("span", { className: "bt-channels-tiles", "aria-hidden": true }, state.channels.slice(0, 4).map((channel) => (0, import_react5.createElement)(Tile, { key: channel.id, type: channel.type, size: 18 }))),
+    (0, import_react5.createElement)("span", { className: "bt-channels-mark", "aria-hidden": true }, (0, import_react5.createElement)(OmniMark, { size: 16 })),
     t("Channels"),
     summary.attention > 0 ? (0, import_react5.createElement)("span", { className: "oc-warn-dot", "aria-hidden": true }) : (0, import_react5.createElement)("span", { className: "bt-channels-count" }, `${summary.connected}/${summary.total}`)
   ));
 }
 var CHANNELS_CSS = `
 .bt-channels-foot{gap:8px;justify-content:flex-start;padding:0 12px 0 8px}
-.bt-channels-tiles{display:inline-flex}
-.bt-channels-tiles .oc-tile{margin-left:-5px;box-shadow:0 0 0 1.5px var(--bt-main)}
-.bt-channels-tiles .oc-tile:first-child{margin-left:0}
+.bt-channels-mark{display:inline-flex;align-items:center}
 .bt-channels-count{margin-left:auto;font-size:12px;color:var(--bt-ink-3)}
 .bt-channels-foot .oc-warn-dot{margin-left:auto}
 ${TONES}
