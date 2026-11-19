@@ -366,25 +366,25 @@ describe('outputRedactorMiddleware (HTTP)', () => {
   });
 
   describe('a WhatsApp Flow body (flow.data carries option ids and labels)', () => {
-    // The shape of the profile Flow: two option groups, each a list of {id, title}.
-    // Ids and labels are illustrative; the client project owns the real ones.
+    // A form Flow with two option groups, each a list of {id, title}, filled per
+    // send through `data`. Ids and labels are neutral placeholders.
     const flowBody = {
       instanceId: 'i-1',
       to: 'j@s',
-      text: 'Qual é o seu curso?',
+      text: 'Escolha uma opção',
       flow: {
         flowId: '1234567890',
-        screen: 'PROFILE',
+        screen: 'FORM',
         cta: 'Escolher',
         flowToken: 'test-flow-token',
         data: {
-          levels: [
-            { id: 'undergraduate', title: 'Graduação' },
-            { id: 'graduate', title: 'Pós-graduação' },
+          options: [
+            { id: 'option_a', title: 'Opção A' },
+            { id: 'option_b', title: 'Opção B' },
           ],
-          modalities: [
-            { id: 'on_campus', title: 'Presencial' },
-            { id: 'online', title: 'EAD ou semipresencial' },
+          extras: [
+            { id: 'extra_a', title: 'Extra A' },
+            { id: 'extra_b', title: 'Extra B detalhado' },
           ],
         },
       },
@@ -415,11 +415,11 @@ describe('outputRedactorMiddleware (HTTP)', () => {
 
     test('the redactor does walk flow.data: a denylisted label is replaced and reported', async () => {
       const { received, calls } = await send(
-        mkKey({ profile: 'coworker', profileOverrides: { denylistExtras: ['semipresencial'] } }),
+        mkKey({ profile: 'coworker', profileOverrides: { denylistExtras: ['detalhado'] } }),
       );
-      const modalities = (received as typeof flowBody).flow.data.modalities;
-      expect(modalities[1]).toEqual({ id: 'online', title: `EAD ou ${REDACTION_MARKER}` });
-      expect(calls.map((c) => c.payload.field)).toEqual(['flow.data.modalities.1.title']);
+      const extras = (received as typeof flowBody).flow.data.extras;
+      expect(extras[1]).toEqual({ id: 'extra_b', title: `Extra B ${REDACTION_MARKER}` });
+      expect(calls.map((c) => c.payload.field)).toEqual(['flow.data.extras.1.title']);
     });
   });
 

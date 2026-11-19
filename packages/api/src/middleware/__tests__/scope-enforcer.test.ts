@@ -642,7 +642,7 @@ describe('chat key — the recipient lock binds what it delivers, not what it re
 });
 
 describe('a WhatsApp Flow on POST /messages/send keeps the recipient lock', () => {
-  const flow = { flowId: '1234567890', screen: 'PROFILE', cta: 'Escolher', flowToken: 'test-flow-token' };
+  const flow = { flowId: '1234567890', screen: 'FORM', cta: 'Escolher', flowToken: 'test-flow-token' };
   const sendKey = () => mkKey({ scopes: ['messages:send'], outboundRecipientAllowlist: [OWN_JID] });
 
   test('the body to stays the recipient when the body carries a flow', () => {

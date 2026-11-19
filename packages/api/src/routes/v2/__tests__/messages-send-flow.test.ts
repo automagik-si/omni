@@ -15,7 +15,7 @@ import type { AppVariables } from '../../../types';
 import { messagesRoutes } from '../messages';
 
 const INSTANCE_ID = '11111111-1111-4111-8111-111111111111';
-const FLOW = { flowId: '1234567890', screen: 'PROFILE', cta: 'Escolher', flowToken: 'test-flow-token' };
+const FLOW = { flowId: '1234567890', screen: 'FORM', cta: 'Escolher', flowToken: 'test-flow-token' };
 
 type SentMessage = {
   to: string;
@@ -67,7 +67,7 @@ async function postSend(app: Hono<{ Variables: AppVariables }>, body: Record<str
   return app.request('/messages/send', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ instanceId: INSTANCE_ID, to: '5511999998888', text: 'Qual é o seu curso?', ...body }),
+    body: JSON.stringify({ instanceId: INSTANCE_ID, to: '5511999998888', text: 'Escolha uma opção', ...body }),
   });
 }
 
@@ -86,19 +86,19 @@ async function errorOf(
 describe('POST /messages/send with flow', () => {
   test('sends content.type flow with metadata.flow, the body from text and the caller flowToken echoed', async () => {
     const { app, sendMessage } = mountMessagesRoutes();
-    const data = { levels: [{ id: 'level_a', title: 'Nível A' }] };
+    const data = { options: [{ id: 'option_a', title: 'Opção A' }] };
 
     const res = await postSend(app, { flow: { ...FLOW, data, flowAction: 'navigate' } });
 
     expect(res.status).toBe(201);
     expect(sendMessage).toHaveBeenCalledTimes(1);
     const message = sentMessage(sendMessage);
-    expect(message.content).toEqual({ type: 'flow', text: 'Qual é o seu curso?' });
+    expect(message.content).toEqual({ type: 'flow', text: 'Escolha uma opção' });
     expect(message.metadata?.flow).toEqual({
       ...FLOW,
       data,
       flowAction: 'navigate',
-      bodyText: 'Qual é o seu curso?',
+      bodyText: 'Escolha uma opção',
     });
     const json = (await res.json()) as { data: Record<string, unknown> };
     expect(json.data).toMatchObject({ messageId: 'SENT-MSG-ID', status: 'sent', flowToken: FLOW.flowToken });
@@ -132,7 +132,7 @@ describe('POST /messages/send with flow', () => {
     const { app, sendMessage } = mountMessagesRoutes();
     const { screen: _screen, ...noScreen } = FLOW;
 
-    const res = await postSend(app, { flow: { ...noScreen, data: { levels: [] } } });
+    const res = await postSend(app, { flow: { ...noScreen, data: { options: [] } } });
 
     expect(res.status).toBe(400);
     const error = await errorOf(res);
@@ -144,7 +144,7 @@ describe('POST /messages/send with flow', () => {
   test('whatsapp-business refuses data on a data_exchange flow, whose endpoint decides the first screen', async () => {
     const { app, sendMessage } = mountMessagesRoutes();
 
-    const res = await postSend(app, { flow: { ...FLOW, flowAction: 'data_exchange', data: { levels: [] } } });
+    const res = await postSend(app, { flow: { ...FLOW, flowAction: 'data_exchange', data: { options: [] } } });
 
     expect(res.status).toBe(400);
     expect((await errorOf(res)).code).toBe('VALIDATION_ERROR');
@@ -316,7 +316,7 @@ describe('POST /messages/send with flow — the body goes through the outbound f
 describe('POST /messages/send with flow on asc-flow', () => {
   // What the ASC platform carries: the flow id, the button label, the body,
   // header and footer, and `data` as the payload. No screen, no token.
-  const ASC_FLOW = { flowId: '1234567890', cta: 'Escolher', data: { levels: [{ id: 'level_a', title: 'Nível A' }] } };
+  const ASC_FLOW = { flowId: '1234567890', cta: 'Escolher', data: { options: [{ id: 'option_a', title: 'Opção A' }] } };
 
   test('takes the flow by flowId and answers 201 without a flowToken, which the platform does not carry', async () => {
     const { app, sendMessage } = mountMessagesRoutes('asc-flow');
@@ -326,7 +326,7 @@ describe('POST /messages/send with flow on asc-flow', () => {
     expect(res.status).toBe(201);
     const message = sentMessage(sendMessage);
     expect(message.content.type).toBe('flow');
-    expect(message.metadata?.flow).toMatchObject({ ...ASC_FLOW, bodyText: 'Qual é o seu curso?' });
+    expect(message.metadata?.flow).toMatchObject({ ...ASC_FLOW, bodyText: 'Escolha uma opção' });
     expect(message.metadata?.flow && 'flowToken' in message.metadata.flow).toBe(false);
     const json = (await res.json()) as { data: Record<string, unknown> };
     expect(json.data).toMatchObject({ messageId: 'SENT-MSG-ID', status: 'sent' });
@@ -335,7 +335,7 @@ describe('POST /messages/send with flow on asc-flow', () => {
 
   const unsupported: Array<[string, Record<string, unknown>]> = [
     ['flowName', { flowId: undefined, flowName: 'perfil' }],
-    ['screen', { screen: 'PROFILE' }],
+    ['screen', { screen: 'FORM' }],
     ['flowAction', { flowAction: 'data_exchange' }],
     ['draft', { draft: true }],
     ['flowToken', { flowToken: 'test-flow-token' }],
@@ -355,30 +355,31 @@ describe('POST /messages/send with flow on asc-flow', () => {
   }
 });
 
-describe('POST /messages/send with flow — the cogna-cx-agent chat kit request', () => {
-  // The shape the kit sends: whatsapp-business, the body in text, and every
-  // Flow field it relies on. It must keep going out exactly like this.
-  const KIT_FLOW = {
+describe('POST /messages/send with flow — a complete form Flow on whatsapp-business', () => {
+  // A request that uses every Flow field an integration needs for a form: the
+  // body in text, a first screen with its data, the caller's token and the
+  // navigate action. It must keep going out exactly like this.
+  const FORM_FLOW = {
     flowId: '1234567890',
-    screen: 'PROFILE',
+    screen: 'FORM',
     cta: 'Escolher',
     flowToken: 'test-flow-token',
     flowAction: 'navigate',
     data: {
-      levels: [{ id: 'level_a', title: 'Nível A' }],
-      modalities: [{ id: 'modality_a', title: 'Modalidade A' }],
+      options: [{ id: 'option_a', title: 'Opção A' }],
+      extras: [{ id: 'extra_a', title: 'Extra A' }],
     },
   };
 
   test('goes out as one Flow with the body from text and answers 201 with flowToken and deliveredAs flow', async () => {
     const { app, sendMessage } = mountMessagesRoutes();
 
-    const res = await postSend(app, { flow: KIT_FLOW });
+    const res = await postSend(app, { flow: FORM_FLOW });
 
     expect(res.status).toBe(201);
     const message = sentMessage(sendMessage);
-    expect(message.content).toEqual({ type: 'flow', text: 'Qual é o seu curso?' });
-    expect(message.metadata?.flow).toEqual({ ...KIT_FLOW, bodyText: 'Qual é o seu curso?' });
+    expect(message.content).toEqual({ type: 'flow', text: 'Escolha uma opção' });
+    expect(message.metadata?.flow).toEqual({ ...FORM_FLOW, bodyText: 'Escolha uma opção' });
     const json = (await res.json()) as { data: Record<string, unknown> };
     expect(json.data).toMatchObject({ status: 'sent', flowToken: 'test-flow-token', deliveredAs: 'flow' });
   });
