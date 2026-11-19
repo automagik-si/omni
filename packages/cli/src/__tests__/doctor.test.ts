@@ -23,7 +23,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { OmniApiError, createOmniClient } from '@omni/sdk';
-import { type DoctorDeps, checkConnectorUnmatched, runDoctor } from '../commands/doctor.js';
+import { type DoctorDeps, checkConnectorUnmatched, checkTwoResponders, runDoctor } from '../commands/doctor.js';
 import type { Config, ServerConfig } from '../config.js';
 import type { MigrationResult } from '../lib/embedded-canonical-migration.js';
 import { DEFAULT_PGSERVE_PORT, buildRuntimeEnv } from '../runtime-env.js';
@@ -277,6 +277,7 @@ function mkDeps(state: HarnessState): DoctorDeps {
   return {
     fetchPairedAgentsStatus: async () => ({ enabled: true, reason: null }),
     listConnectors: async () => ({ items: [], meta: { hasMore: false, cursor: null } }),
+    fetchTwoResponders: async () => ({ activeWindowDays: 7, instances: [] }),
     getPm2Processes: async () => {
       // Build a pm2-jlist-shaped response driven by harness state.
       const expected = buildRuntimeEnv(state.serverConfig, state.cliConfig);
@@ -590,7 +591,7 @@ describe('runDoctor — read-only mode', () => {
 
     const report = await runDoctor({ fix: false }, deps);
 
-    expect(report.checks).toHaveLength(15);
+    expect(report.checks).toHaveLength(16);
     const ids = report.checks.map((c) => c.id);
     expect(ids).toEqual([
       'pm2-env-drift',
@@ -608,11 +609,12 @@ describe('runDoctor — read-only mode', () => {
       'embedded-data-orphaned',
       'nats-bind-address',
       'paired-agents',
+      'two-responders',
     ]);
     for (const check of report.checks) {
       expect(check.level).toBe('OK');
     }
-    expect(report.summary).toEqual({ ok: 15, warn: 0, fail: 0 });
+    expect(report.summary).toEqual({ ok: 16, warn: 0, fail: 0 });
     expect(report.fixesApplied).toEqual([]);
   });
 
@@ -1641,4 +1643,125 @@ describe('paired-agent doctor status', () => {
     expect(check?.detail).toContain('offline');
     expect(check?.detail).not.toContain('\x1b');
   });
+});
+
+describe('two-responder doctor check', () => {
+  type TwoResponders = Awaited<ReturnType<DoctorDeps['fetchTwoResponders']>>;
+  const consumer = (overrides: Partial<TwoResponders['instances'][number]['consumers'][number]>) => ({
+    id: '66666666-6666-4666-8666-666666666666',
+    name: 'app-inbox',
+    eventType: 'message.received',
+    lastMovedAt: '2026-11-15T11:00:00.000Z',
+    reader: 'unrecorded' as const,
+    ownerKeyId: null,
+    agentId: null,
+    sameAgent: false,
+    ...overrides,
+  });
+  const flagged = (name: string, consumers: ReturnType<typeof consumer>[]) => ({
+    instanceId: `${name}-id`,
+    instanceName: name,
+    channel: 'whatsapp-baileys',
+    agentId: 'agent-1',
+    agentName: 'helper',
+    consumers,
+  });
+
+  test('warns once per instance, naming the instance, the agent and each consumer', async () => {
+    const checks = await checkTwoResponders({
+      fetchTwoResponders: async () => ({
+        activeWindowDays: 7,
+        instances: [
+          flagged('support-line', [
+            consumer({ name: 'app-inbox' }),
+            consumer({ name: 'crm-sync', reader: 'owner-key', ownerKeyId: 'key-9' }),
+          ]),
+          flagged('sales-line', [
+            consumer({ name: 'paired-inbox', reader: 'owning-agent', agentId: 'agent-2' }),
+            consumer({ name: 'own-inbox', reader: 'owning-agent', agentId: 'agent-1', sameAgent: true }),
+          ]),
+        ],
+      }),
+    });
+    expect(checks).toEqual([
+      {
+        id: 'two-responders',
+        level: 'WARN',
+        detail:
+          'support-line (support-line-id): agent helper (agent-1) answers here, and these consumers may answer too: ' +
+          'app-inbox (owner key not recorded); crm-sync (owner key key-9 may send)',
+      },
+      {
+        id: 'two-responders',
+        level: 'WARN',
+        detail:
+          'sales-line (sales-line-id): agent helper (agent-1) answers here, and these consumers may answer too: ' +
+          'paired-inbox (owned by agent agent-2); own-inbox (the same agent also reads it: one agent, two delivery paths)',
+      },
+    ]);
+  });
+
+  test('one OK line when no instance is flagged, and the run keeps its exit status', async () => {
+    const deps = mkDeps(mkHarness());
+    const report = await runDoctor({}, deps);
+    expect(report.checks.filter((check) => check.id === 'two-responders')).toEqual([
+      {
+        id: 'two-responders',
+        level: 'OK',
+        detail:
+          'no instance has both an Omni agent and an attached app that may answer (consumers active in the last 7 days)',
+      },
+    ]);
+  });
+
+  test('a flagged instance is a WARN, never a FAIL', async () => {
+    const deps = mkDeps(mkHarness());
+    const baseline = await runDoctor({}, deps);
+    deps.fetchTwoResponders = async () => ({
+      activeWindowDays: 7,
+      instances: [flagged('support-line', [consumer({})])],
+    });
+    const report = await runDoctor({}, deps);
+    expect(report.summary.fail).toBe(baseline.summary.fail);
+    expect(report.summary.warn).toBe(baseline.summary.warn + 1);
+  });
+
+  test('strips terminal controls from names', async () => {
+    const checks = await checkTwoResponders({
+      fetchTwoResponders: async () => ({
+        activeWindowDays: 7,
+        instances: [flagged('line\u001b[31m', [consumer({ name: 'inbox\u001b[0m' })])],
+      }),
+    });
+    expect(checks[0]?.detail).not.toContain('\u001b');
+    expect(checks[0]?.detail).toStartWith('line (line-id): agent helper');
+    expect(checks[0]?.detail).toEndWith('inbox (owner key not recorded)');
+  });
+
+  for (const [name, error, detail] of [
+    [
+      '403',
+      new OmniApiError('Forbidden', 'FORBIDDEN', undefined, 403),
+      'Two-responder check unavailable; it needs system:read and a server with GET /system/two-responders.',
+    ],
+    [
+      'an older server',
+      new OmniApiError('Not found', 'NOT_FOUND', undefined, 404),
+      'Two-responder check unavailable: this server has no GET /system/two-responders yet.',
+    ],
+    [
+      'a network failure',
+      new Error('Connection refused\u001b[0m'),
+      'Two-responder check unavailable: Connection refused',
+    ],
+  ] as const) {
+    test(`reports ${name} as one WARN`, async () => {
+      const checks = await checkTwoResponders({
+        fetchTwoResponders: async () => {
+          throw error;
+        },
+      });
+      expect(checks).toEqual([{ id: 'two-responders', level: 'WARN', detail }]);
+    });
+  }
 });

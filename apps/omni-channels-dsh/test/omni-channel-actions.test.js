@@ -79,6 +79,24 @@ test('a token channel is created with its token; a missing token is refused befo
   await assert.rejects(run('omni-channel-create', { type: 'slack', name: 'Slack', token: 'xoxb-1234567890' }), { code: 'bot/invalid' })
 })
 
+test('create redacts every occurrence of the submitted token from API errors before returning to the page', async () => {
+  const token = `824600000:${'a'.repeat(35)}`
+  const { run } = host({ 'POST /instances': () => [500, { error: { message: `Refused ${token}; retry ${token}` } }] })
+  await assert.rejects(run('omni-channel-create', { type: 'telegram', name: 'Helper', token: ` ${token} ` }), error => {
+    assert.equal(error.code, 'bot/refused')
+    assert.equal(error.message, 'Refused [REDACTED]; retry [REDACTED]')
+    assert.equal(String(error.stack).includes(token), false)
+    assert.equal(error.cause, undefined)
+    return true
+  })
+})
+
+test('create never echoes the token even when Omni puts it in receipt text', async () => {
+  const token = `824600000:${'b'.repeat(35)}`
+  const { run } = host({ 'POST /instances': () => [201, { data: { id: CHANNEL, channel: 'telegram', name: token, token } }] })
+  assert.deepEqual(await run('omni-channel-create', { type: 'telegram', name: 'Helper', token }), { id: CHANNEL, type: 'telegram', name: '[REDACTED]' })
+})
+
 test('cancelling deletes only a channel this flow created and that has not connected', async () => {
   const { run, calls } = host({ 'POST /instances': created, [`DELETE /instances/${CHANNEL}`]: () => [200, { success: true }] })
   const other = '99999999-2222-4333-8444-555555555555'
@@ -135,7 +153,8 @@ test('a reply goes to the chat\'s own instance and address; refusals say why', a
     [`GET /chats/${CHAT}`]: () => [200, { data: { id: CHAT, instanceId: CHANNEL, externalId: '5511988887777@s.whatsapp.net' } }],
     'POST /messages/send': () => [200, { data: { messageId: 'x' } }],
   })
-  assert.deepEqual(await run('omni-send', { chatId: CHAT, text: 'Oi!' }), { sent: true })
+  // The channel's id for the message comes back: the chat page knows Omni's row for it by it (#1773).
+  assert.deepEqual(await run('omni-send', { chatId: CHAT, text: 'Oi!' }), { sent: true, messageId: 'x' })
   assert.deepEqual(calls[1].body, { instanceId: CHANNEL, to: '5511988887777@s.whatsapp.net', text: 'Oi!' })
   await assert.rejects(run('omni-send', { chatId: CHAT, text: '   ' }), { code: 'bot/invalid' })
 

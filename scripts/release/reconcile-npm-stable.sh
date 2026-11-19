@@ -10,7 +10,7 @@ fail() { printf 'npm stable reconciliation failed: %s\n' "$*" >&2; exit 1; }
 # 3 --verify-only and the registry still needs a mutation (nothing was written);
 # 75 transient registry failure: 404/5xx fetching a tarball, 5xx on publish, a
 # readback that has not converged after the publish, or a tarball URL that
-# stayed 404 (the registry is slow, not wrong). image-build.yml finalize
+# stayed 404 (the registry is slow, not wrong). release-stable.yml
 # re-dispatches the publish only on the 75 marker.
 transient() {
   printf '::warning::npm_registry_transient: %s\n' "$*" >&2
@@ -164,7 +164,7 @@ for delay in "${converge_delays[@]}"; do
   [[ "${final_state}" != "npm_action=none" ]] || break
 done
 # The registry accepted the mutation and only its readback lags: transient, so
-# image-build.yml's bounded retry re-dispatches instead of failing the mint.
+# release-stable.yml's bounded retry re-dispatches instead of failing the mint.
 [[ "${final_state}" == "npm_action=none" ]] || \
   transient "registry state did not converge after ${action} (published=${published_after:-<none>} latest=${latest_after:-<none>}, expected ${expected})"
 npm view "@automagik/omni@${expected}" dist --json > "${dist_file}"

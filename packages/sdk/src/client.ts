@@ -14,6 +14,8 @@ export type Person = components['schemas']['Person'];
 export type Event = components['schemas']['Event'];
 export type AccessRule = components['schemas']['AccessRule'];
 export type Setting = components['schemas']['Setting'];
+export type ChatMessage = components['schemas']['ChatMessage'];
+export type ChatCoverage = components['schemas']['ChatCoverage'];
 export type Provider = components['schemas']['Provider'];
 export type HealthResponse = components['schemas']['HealthResponse'];
 export type PaginationMeta = components['schemas']['PaginationMeta'];
@@ -706,6 +708,36 @@ export interface ListChatMessagesParams {
   before?: string;
   after?: string;
   mediaOnly?: boolean;
+}
+
+/**
+ * Query parameters for one page of a chat's messages
+ */
+export interface ChatMessagesPageParams extends ListChatMessagesParams {
+  /** Also list deleted messages */
+  includeDeleted?: boolean;
+  /** meta.cursor from the previous page */
+  cursor?: string;
+}
+
+/**
+ * One page of a chat's messages, newest first
+ */
+export interface ChatMessagesPage {
+  items: ChatMessage[];
+  meta: { hasMore: boolean; cursor: string | null };
+}
+
+/**
+ * Query parameters for a chat's coverage
+ */
+export interface ChatCoverageParams {
+  /** ISO date: countInWindow counts from here, inclusive */
+  from?: string;
+  /** ISO date: countInWindow counts up to here, inclusive */
+  to?: string;
+  /** Count deleted messages too */
+  includeDeleted?: boolean;
 }
 
 /**
@@ -2020,6 +2052,30 @@ export function createOmniClient(config: OmniClientConfig) {
      * Note: Uses fetch directly until SDK types are regenerated
      */
     chats: {
+      /** Queue history for just this chat and range. */
+      async backfill(id: string, body: { from: string; to: string }) {
+        const { data, error, response } = await client.POST('/chats/{id}/backfill', {
+          params: { path: { id } },
+          body,
+        });
+        if (error) throw OmniApiError.from(error, response.status);
+        return data as { jobId: string };
+      },
+      async backfillStatus(id: string, jobId: string) {
+        const { data, error, response } = await client.GET('/chats/{id}/backfill/{jobId}', {
+          params: { path: { id, jobId } },
+        });
+        if (error) throw OmniApiError.from(error, response.status);
+        return data?.data;
+      },
+      async cancelBackfill(id: string, jobId: string) {
+        const { data, error, response } = await client.POST('/chats/{id}/backfill/{jobId}/cancel', {
+          params: { path: { id, jobId } },
+        });
+        if (error) throw OmniApiError.from(error, response.status);
+        return data?.data;
+      },
+
       /**
        * List chats
        */
@@ -2138,6 +2194,41 @@ export function createOmniClient(config: OmniClientConfig) {
         const json = (await resp.json()) as { items?: Message[] };
         if (!resp.ok) throw OmniApiError.from(json, resp.status);
         return json?.items ?? [];
+      },
+
+      /**
+       * One page of a chat's messages, newest first. Pass meta.cursor back as
+       * cursor for the next page; it is null on the last one.
+       */
+      async pageMessages(id: string, params?: ChatMessagesPageParams): Promise<ChatMessagesPage> {
+        const query = new URLSearchParams();
+        if (params?.limit) query.set('limit', String(params.limit));
+        if (params?.before) query.set('before', params.before);
+        if (params?.after) query.set('after', params.after);
+        if (params?.mediaOnly) query.set('mediaOnly', 'true');
+        if (params?.includeDeleted) query.set('includeDeleted', 'true');
+        if (params?.cursor) query.set('cursor', params.cursor);
+        const resp = await apiFetch(`${baseUrl}/api/v2/chats/${id}/messages?${query}`, {});
+        const json = (await resp.json()) as Partial<ChatMessagesPage>;
+        if (!resp.ok) throw OmniApiError.from(json, resp.status);
+        return { items: json?.items ?? [], meta: json?.meta ?? { hasMore: false, cursor: null } };
+      },
+
+      /**
+       * What Omni holds for a chat: oldest and newest times, counts, media
+       * still missing a file, and the newest message each way
+       */
+      async getCoverage(id: string, params?: ChatCoverageParams): Promise<ChatCoverage> {
+        const query = new URLSearchParams();
+        if (params?.from) query.set('from', params.from);
+        if (params?.to) query.set('to', params.to);
+        if (params?.includeDeleted) query.set('includeDeleted', 'true');
+        const resp = await apiFetch(`${baseUrl}/api/v2/chats/${id}/coverage?${query}`, {});
+        const json = (await resp.json()) as { data?: ChatCoverage };
+        if (!resp.ok) throw OmniApiError.from(json, resp.status);
+        if (!json?.data)
+          throw new OmniApiError('Failed to read chat coverage', 'COVERAGE_FAILED', undefined, resp.status);
+        return json.data;
       },
 
       /**
@@ -4975,6 +5066,16 @@ export function createOmniClient(config: OmniClientConfig) {
         const { data, error, response } = await healthClient.GET('/health');
         throwIfError(response, error);
         return data ?? { status: 'unhealthy' };
+      },
+
+      /**
+       * Instances an Omni agent and an attached app may both answer (read-only; needs system:read)
+       */
+      async twoResponders(): Promise<components['schemas']['TwoResponders']> {
+        const { data, error, response } = await client.GET('/system/two-responders');
+        throwIfError(response, error);
+        if (!data?.data) throw new OmniApiError('Empty two-responders response', 'INTERNAL_ERROR', undefined, 502);
+        return data.data;
       },
     },
 

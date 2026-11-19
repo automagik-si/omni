@@ -11,23 +11,25 @@ import type { ChannelType } from '@omni/core/types';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { checkInstanceAccess, resolveChatIdParam } from '../../lib/resolve-chat-id';
+import { checkInstanceAccess, resolveChatIdInKeyInstances } from '../../lib/resolve-chat-id';
+import { readBackfillCoverage } from '../../plugins/chat-backfill';
 import { clearAgentSession } from '../../plugins/session-cleaner';
 import { optionalDateParam } from '../../schemas/date-query';
 import type { Services } from '../../services';
 import { type InstanceOwner, withIsGroup } from '../../services/chats';
 import { isSelfChat } from '../../services/message-context';
+import { decodeChatMessagesCursor } from '../../services/messages';
 import type { AppVariables } from '../../types';
 
 const chatsRoutes = new Hono<{ Variables: AppVariables }>();
 
 // `:id` is resolved by lib/resolve-chat-id.ts, shared with the scope lock: for
 // a key with an instance lock the lock has already resolved it and handed the
-// row over (`c.get('resolvedChat')`), and `resolveChatIdParam` returns its id.
+// row over (`c.get('resolvedChat')`), and `resolveChatIdInKeyInstances` returns its id.
 
 /**
  * The chat row for a resolved `:id`, as `services.chats.getById(id)` reads it
- * (a hidden chat is not found). The row the lock handed over for the same
+ * (a hidden chat is not found). The row the resolver or lock handed over for the same
  * `raw` is reused when it is not hidden; otherwise the row is read again. Only
  * for a read before the route changes the chat: a read after a change must go
  * to the database.
@@ -216,6 +218,7 @@ chatsRoutes.get('/', zValidator('query', listQuerySchema), async (c) => {
  */
 chatsRoutes.post('/', zValidator('json', createChatSchema), async (c) => {
   const body = c.req.valid('json');
+  checkInstanceAccess(c.get('apiKey'), body.instanceId);
   const services = c.get('services');
 
   const chat = await services.chats.create(body);
@@ -253,11 +256,11 @@ chatsRoutes.get('/by-external', async (c) => {
  *
  * Accepts either a chat UUID or a platform-native id (WhatsApp JID, Telegram
  * numeric id, etc.) — the latter is resolved to the internal UUID via the
- * API key's active-instance context. See `resolveChatIdParam`.
+ * API key's active-instance context. See `resolveChatIdInKeyInstances`.
  */
 chatsRoutes.get('/:id', async (c) => {
   const raw = c.req.param('id');
-  const id = await resolveChatIdParam(c, raw);
+  const id = await resolveChatIdInKeyInstances(c, raw);
   if (id === null) return chatNotFoundResponse(c, raw);
   const services = c.get('services');
 
@@ -274,7 +277,7 @@ chatsRoutes.get('/:id', async (c) => {
  */
 chatsRoutes.patch('/:id', zValidator('json', updateChatSchema), async (c) => {
   const raw = c.req.param('id');
-  const id = await resolveChatIdParam(c, raw);
+  const id = await resolveChatIdInKeyInstances(c, raw);
   if (id === null) return chatNotFoundResponse(c, raw);
   const body = c.req.valid('json');
   const services = c.get('services');
@@ -289,7 +292,7 @@ chatsRoutes.patch('/:id', zValidator('json', updateChatSchema), async (c) => {
  */
 chatsRoutes.delete('/:id', async (c) => {
   const raw = c.req.param('id');
-  const id = await resolveChatIdParam(c, raw);
+  const id = await resolveChatIdInKeyInstances(c, raw);
   if (id === null) return chatNotFoundResponse(c, raw);
   const services = c.get('services');
 
@@ -379,7 +382,7 @@ async function applyChatModifyOnChannel(
 chatsRoutes.post('/:id/archive', zValidator('json', chatChannelActionSchema), async (c) => {
   const raw = c.req.param('id');
   const body = c.req.valid('json');
-  const id = await resolveChatIdParam(c, raw, body?.instanceId);
+  const id = await resolveChatIdInKeyInstances(c, raw, body?.instanceId);
   if (id === null) return chatNotFoundResponse(c, raw);
   const services = c.get('services');
   const channelRegistry = c.get('channelRegistry');
@@ -415,7 +418,7 @@ chatsRoutes.post('/:id/archive', zValidator('json', chatChannelActionSchema), as
 chatsRoutes.post('/:id/unarchive', zValidator('json', chatChannelActionSchema), async (c) => {
   const raw = c.req.param('id');
   const body = c.req.valid('json');
-  const id = await resolveChatIdParam(c, raw, body?.instanceId);
+  const id = await resolveChatIdInKeyInstances(c, raw, body?.instanceId);
   if (id === null) return chatNotFoundResponse(c, raw);
   const services = c.get('services');
   const channelRegistry = c.get('channelRegistry');
@@ -454,7 +457,7 @@ const labelBodySchema = z.object({
  */
 chatsRoutes.post('/:id/hide', async (c) => {
   const raw = c.req.param('id');
-  const id = await resolveChatIdParam(c, raw);
+  const id = await resolveChatIdInKeyInstances(c, raw);
   if (id === null) return chatNotFoundResponse(c, raw);
   const services = c.get('services');
 
@@ -469,7 +472,7 @@ chatsRoutes.post('/:id/hide', async (c) => {
  */
 chatsRoutes.post('/:id/unhide', async (c) => {
   const raw = c.req.param('id');
-  const id = await resolveChatIdParam(c, raw);
+  const id = await resolveChatIdInKeyInstances(c, raw);
   if (id === null) return chatNotFoundResponse(c, raw);
   const services = c.get('services');
 
@@ -484,7 +487,7 @@ chatsRoutes.post('/:id/unhide', async (c) => {
  */
 chatsRoutes.post('/:id/label', zValidator('json', labelBodySchema), async (c) => {
   const raw = c.req.param('id');
-  const id = await resolveChatIdParam(c, raw);
+  const id = await resolveChatIdInKeyInstances(c, raw);
   if (id === null) return chatNotFoundResponse(c, raw);
   const { label } = c.req.valid('json');
   const services = c.get('services');
@@ -500,7 +503,7 @@ chatsRoutes.post('/:id/label', zValidator('json', labelBodySchema), async (c) =>
  */
 chatsRoutes.delete('/:id/label', zValidator('json', labelBodySchema), async (c) => {
   const raw = c.req.param('id');
-  const id = await resolveChatIdParam(c, raw);
+  const id = await resolveChatIdInKeyInstances(c, raw);
   if (id === null) return chatNotFoundResponse(c, raw);
   const { label } = c.req.valid('json');
   const services = c.get('services');
@@ -517,7 +520,7 @@ chatsRoutes.delete('/:id/label', zValidator('json', labelBodySchema), async (c) 
 chatsRoutes.post('/:id/pin', zValidator('json', z.object({ instanceId: z.string().uuid() })), async (c) => {
   const raw = c.req.param('id');
   const { instanceId } = c.req.valid('json');
-  const id = await resolveChatIdParam(c, raw, instanceId);
+  const id = await resolveChatIdInKeyInstances(c, raw, instanceId);
   if (id === null) return chatNotFoundResponse(c, raw);
   const services = c.get('services');
   const channelRegistry = c.get('channelRegistry');
@@ -536,7 +539,7 @@ chatsRoutes.post('/:id/pin', zValidator('json', z.object({ instanceId: z.string(
 chatsRoutes.post('/:id/unpin', zValidator('json', z.object({ instanceId: z.string().uuid() })), async (c) => {
   const raw = c.req.param('id');
   const { instanceId } = c.req.valid('json');
-  const id = await resolveChatIdParam(c, raw, instanceId);
+  const id = await resolveChatIdInKeyInstances(c, raw, instanceId);
   if (id === null) return chatNotFoundResponse(c, raw);
   const services = c.get('services');
   const channelRegistry = c.get('channelRegistry');
@@ -555,7 +558,7 @@ chatsRoutes.post('/:id/unpin', zValidator('json', z.object({ instanceId: z.strin
 chatsRoutes.post('/:id/mute', zValidator('json', muteActionSchema), async (c) => {
   const raw = c.req.param('id');
   const { instanceId, duration } = c.req.valid('json');
-  const id = await resolveChatIdParam(c, raw, instanceId);
+  const id = await resolveChatIdInKeyInstances(c, raw, instanceId);
   if (id === null) return chatNotFoundResponse(c, raw);
   const services = c.get('services');
   const channelRegistry = c.get('channelRegistry');
@@ -574,7 +577,7 @@ chatsRoutes.post('/:id/mute', zValidator('json', muteActionSchema), async (c) =>
 chatsRoutes.post('/:id/unmute', zValidator('json', z.object({ instanceId: z.string().uuid() })), async (c) => {
   const raw = c.req.param('id');
   const { instanceId } = c.req.valid('json');
-  const id = await resolveChatIdParam(c, raw, instanceId);
+  const id = await resolveChatIdInKeyInstances(c, raw, instanceId);
   if (id === null) return chatNotFoundResponse(c, raw);
   const services = c.get('services');
   const channelRegistry = c.get('channelRegistry');
@@ -592,7 +595,7 @@ chatsRoutes.post('/:id/unmute', zValidator('json', z.object({ instanceId: z.stri
  */
 chatsRoutes.get('/:id/participants', async (c) => {
   const raw = c.req.param('id');
-  const id = await resolveChatIdParam(c, raw);
+  const id = await resolveChatIdInKeyInstances(c, raw);
   if (id === null) return chatNotFoundResponse(c, raw);
   const services = c.get('services');
 
@@ -606,7 +609,7 @@ chatsRoutes.get('/:id/participants', async (c) => {
  */
 chatsRoutes.post('/:id/participants', zValidator('json', addParticipantSchema), async (c) => {
   const raw = c.req.param('id');
-  const chatId = await resolveChatIdParam(c, raw);
+  const chatId = await resolveChatIdInKeyInstances(c, raw);
   if (chatId === null) return chatNotFoundResponse(c, raw);
   const body = c.req.valid('json');
   const services = c.get('services');
@@ -624,7 +627,7 @@ chatsRoutes.post('/:id/participants', zValidator('json', addParticipantSchema), 
  */
 chatsRoutes.delete('/:id/participants/:platformUserId', async (c) => {
   const raw = c.req.param('id');
-  const chatId = await resolveChatIdParam(c, raw);
+  const chatId = await resolveChatIdInKeyInstances(c, raw);
   if (chatId === null) return chatNotFoundResponse(c, raw);
   const platformUserId = c.req.param('platformUserId');
   const services = c.get('services');
@@ -642,7 +645,7 @@ chatsRoutes.patch(
   zValidator('json', updateParticipantRoleSchema),
   async (c) => {
     const raw = c.req.param('id');
-    const chatId = await resolveChatIdParam(c, raw);
+    const chatId = await resolveChatIdInKeyInstances(c, raw);
     if (chatId === null) return chatNotFoundResponse(c, raw);
     const platformUserId = c.req.param('platformUserId');
     const { role } = c.req.valid('json');
@@ -654,6 +657,12 @@ chatsRoutes.patch(
   },
 );
 
+const includeDeletedParam = z
+  .string()
+  .optional()
+  .transform((v) => v === 'true')
+  .describe('true also lists deleted messages, with their deletedAt and status');
+
 export const listMessagesQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(1000).default(100),
   before: optionalDateParam('before'),
@@ -662,6 +671,21 @@ export const listMessagesQuerySchema = z.object({
     .string()
     .optional()
     .transform((v) => v === 'true'),
+  includeDeleted: includeDeletedParam,
+  cursor: z
+    .string()
+    .optional()
+    .transform((v, ctx) => {
+      if (v === undefined || v === '') return undefined;
+      const decoded = decodeChatMessagesCursor(v);
+      if (decoded) return decoded;
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'invalid cursor parameter: pass meta.cursor from the previous page unchanged',
+      });
+      return z.NEVER;
+    })
+    .describe('meta.cursor from the previous page: continues after its last item'),
 });
 
 /**
@@ -669,19 +693,111 @@ export const listMessagesQuerySchema = z.object({
  */
 chatsRoutes.get('/:id/messages', zValidator('query', listMessagesQuerySchema), async (c) => {
   const raw = c.req.param('id');
-  const chatId = await resolveChatIdParam(c, raw);
+  const chatId = await resolveChatIdInKeyInstances(c, raw);
   if (chatId === null) return chatNotFoundResponse(c, raw);
-  const { limit, before, after, mediaOnly } = c.req.valid('query');
+  const { limit, before, after, mediaOnly, includeDeleted, cursor } = c.req.valid('query');
   const services = c.get('services');
 
-  const messages = await services.messages.getChatMessages(chatId, {
+  const page = await services.messages.pageChatMessages(chatId, {
     limit,
     before,
     after,
     mediaOnly,
+    includeDeleted,
+    cursor,
   });
 
-  return c.json({ items: messages });
+  return c.json({ items: page.items, meta: { hasMore: page.hasMore, cursor: page.cursor } });
+});
+
+export const chatCoverageQuerySchema = z.object({
+  from: optionalDateParam('from'),
+  to: optionalDateParam('to'),
+  includeDeleted: includeDeletedParam,
+});
+
+/**
+ * GET /chats/:id/coverage - What Omni holds for a chat
+ */
+chatsRoutes.get('/:id/coverage', zValidator('query', chatCoverageQuerySchema), async (c) => {
+  const raw = c.req.param('id');
+  const chatId = await resolveChatIdInKeyInstances(c, raw);
+  if (chatId === null) return chatNotFoundResponse(c, raw);
+  const { from, to, includeDeleted } = c.req.valid('query');
+
+  const coverage = await c.get('services').messages.getChatCoverage(chatId, { from, to, includeDeleted });
+
+  return c.json({ data: coverage });
+});
+
+export const chatBackfillSchema = z
+  .object({
+    from: z.string().datetime({ offset: true }),
+    to: z.string().datetime({ offset: true }),
+  })
+  .strict()
+  .refine((window) => new Date(window.from) < new Date(window.to), {
+    message: 'from must be before to',
+    path: ['to'],
+  });
+export const chatBackfillParams = z.object({ id: z.string().min(1), jobId: z.string().uuid() });
+
+/** POST /chats/:id/backfill - Queue one chat history backfill for the chosen range */
+chatsRoutes.post('/:id/backfill', zValidator('json', chatBackfillSchema), async (c) => {
+  const raw = c.req.param('id');
+  const chatId = await resolveChatIdInKeyInstances(c, raw);
+  if (chatId === null) return chatNotFoundResponse(c, raw);
+  const services = c.get('services');
+  const chat = await chatForRoute(c, raw, chatId);
+  if (!chat.instanceId) return c.json({ error: 'Chat has no channel instance' }, 400);
+  checkInstanceAccess(c.get('apiKey'), chat.instanceId);
+  const instance = await services.instances.getById(chat.instanceId);
+  const { from, to } = c.req.valid('json');
+  const job = await services.syncJobs.create({
+    instanceId: chat.instanceId,
+    channelType: instance.channel,
+    type: 'messages',
+    config: { backfill: { chatId, chatJid: chat.externalId, from, to } },
+  });
+  return c.json({ jobId: job.id }, 202);
+});
+
+/** GET /chats/:id/backfill/:jobId - Read chat backfill progress and coverage */
+chatsRoutes.get('/:id/backfill/:jobId', zValidator('param', chatBackfillParams), async (c) => {
+  const { id: raw, jobId } = c.req.valid('param');
+  const chatId = await resolveChatIdInKeyInstances(c, raw);
+  if (chatId === null) return chatNotFoundResponse(c, raw);
+  const services = c.get('services');
+  const chat = await chatForRoute(c, raw, chatId);
+  if (!chat.instanceId) return c.json({ error: 'Chat has no channel instance' }, 400);
+  checkInstanceAccess(c.get('apiKey'), chat.instanceId);
+  const job = await services.syncJobs.getById(jobId);
+  if (job.instanceId !== chat.instanceId || job.config.backfill?.chatId !== chatId) {
+    return c.json({ error: { code: ERROR_CODES.NOT_FOUND, message: 'Backfill job not found for this chat' } }, 404);
+  }
+  const config = job.config.backfill;
+  const coverage = await readBackfillCoverage(services, chatId, config.from, config.to);
+  return c.json({ data: { ...job, ...job.progress, chatId, state: job.progress.state, coverage } });
+});
+
+/** POST /chats/:id/backfill/:jobId/cancel - Cancel a queued or fetching chat backfill */
+chatsRoutes.post('/:id/backfill/:jobId/cancel', zValidator('param', chatBackfillParams), async (c) => {
+  const { id: raw, jobId } = c.req.valid('param');
+  const chatId = await resolveChatIdInKeyInstances(c, raw);
+  if (chatId === null) return chatNotFoundResponse(c, raw);
+  const services = c.get('services');
+  const chat = await chatForRoute(c, raw, chatId);
+  if (!chat.instanceId) return c.json({ error: 'Chat has no channel instance' }, 400);
+  checkInstanceAccess(c.get('apiKey'), chat.instanceId);
+  const job = await services.syncJobs.getById(jobId);
+  if (job.instanceId !== chat.instanceId || job.config.backfill?.chatId !== chatId) {
+    return c.json({ error: { code: ERROR_CODES.NOT_FOUND, message: 'Backfill job not found for this chat' } }, 404);
+  }
+  const config = job.config.backfill;
+  const coverage = await readBackfillCoverage(services, chatId, config.from, config.to);
+  await services.syncJobs.updateProgress(jobId, { coverage }, undefined);
+  const cancelled = await services.syncJobs.cancel(jobId);
+  return c.json({ data: { ...cancelled, ...cancelled.progress, chatId } });
 });
 
 // Mark chat as read schema
@@ -701,7 +817,7 @@ const markChatReadSchema = z.object({
 chatsRoutes.post('/:id/read', zValidator('json', markChatReadSchema), async (c) => {
   const raw = c.req.param('id');
   const { instanceId } = c.req.valid('json');
-  const chatId = await resolveChatIdParam(c, raw, instanceId);
+  const chatId = await resolveChatIdInKeyInstances(c, raw, instanceId);
   if (chatId === null) return chatNotFoundResponse(c, raw);
   const services = c.get('services');
   const channelRegistry = c.get('channelRegistry');
@@ -798,7 +914,7 @@ const DISAPPEARING_DURATIONS: Record<string, number | false> = {
 chatsRoutes.post('/:id/disappearing', zValidator('json', disappearingSchema), async (c) => {
   const raw = c.req.param('id');
   const { instanceId, duration } = c.req.valid('json');
-  const chatId = await resolveChatIdParam(c, raw, instanceId);
+  const chatId = await resolveChatIdInKeyInstances(c, raw, instanceId);
   if (chatId === null) return chatNotFoundResponse(c, raw);
   const services = c.get('services');
   const channelRegistry = c.get('channelRegistry');
@@ -1043,13 +1159,12 @@ chatsRoutes.post('/clear-session', async (c) => {
  */
 chatsRoutes.post('/:id/reopen-contact', async (c) => {
   const raw = c.req.param('id');
-  const id = await resolveChatIdParam(c, raw);
+  const id = await resolveChatIdInKeyInstances(c, raw);
   if (id === null) return chatNotFoundResponse(c, raw);
   const services = c.get('services');
 
-  const chat = await services.chats.getById(id);
-  if (!chat) return c.json({ error: 'Chat not found' }, 404);
-  if (chat.instanceId) checkInstanceAccess(c.get('apiKey'), chat.instanceId);
+  const chat = await chatForRoute(c, raw, id);
+  if (!chat) return chatNotFoundResponse(c, raw);
 
   const priorSettings = (chat.settings ?? {}) as Record<string, unknown>;
   const wasClosed = priorSettings.closed === true || priorSettings.closeUntil != null;

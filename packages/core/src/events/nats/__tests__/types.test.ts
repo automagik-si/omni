@@ -23,6 +23,20 @@ describe('event types', () => {
       expect(CORE_EVENT_TYPES).toContain('instance.qr_code');
       expect(CORE_EVENT_TYPES).toContain('access.allowed');
       expect(CORE_EVENT_TYPES).toContain('access.denied');
+      for (const type of [
+        'person.created',
+        'person.updated',
+        'person.merged',
+        'chat.created',
+        'chat.updated',
+        'chat.deleted',
+        'access.rule_created',
+        'access.rule_updated',
+        'access.rule_deleted',
+      ] as const) {
+        expect(CORE_EVENT_TYPES).toContain(type);
+        expect(isCoreEvent(type)).toBe(true);
+      }
     });
   });
 

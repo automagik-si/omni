@@ -2475,7 +2475,7 @@ instancesRoutes.post('/:id/sync/profile', instanceAccess, async (c) => {
     // Update instance with profile info
     const updated = await services.instances.update(id, {
       profileName: profile.name,
-      profilePicUrl: profile.avatarUrl,
+      profilePicUrl: instance.channel === 'telegram' ? null : profile.avatarUrl,
       profileBio: profile.bio,
       profileMetadata: profile.platformMetadata,
       profileSyncedAt: new Date(),
@@ -2610,7 +2610,7 @@ instancesRoutes.post('/:id/sync', instanceAccess, zValidator('json', syncRequest
     const profile = await (plugin as { getProfile: (id: string) => Promise<ProfileResult> }).getProfile(id);
     const updated = await services.instances.update(id, {
       profileName: profile.name,
-      profilePicUrl: profile.avatarUrl,
+      profilePicUrl: instance.channel === 'telegram' ? null : profile.avatarUrl,
       profileBio: profile.bio,
       profileMetadata: profile.platformMetadata,
       profileSyncedAt: new Date(),

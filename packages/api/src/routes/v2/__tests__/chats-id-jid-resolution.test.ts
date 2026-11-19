@@ -58,7 +58,7 @@ interface HarnessOptions {
 }
 
 interface HarnessCalls {
-  getChatMessages: Array<{ chatId: string; options: Record<string, unknown> }>;
+  pageChatMessages: Array<{ chatId: string; options: Record<string, unknown> }>;
   getById: Array<string>;
   getParticipants: Array<string>;
   findByExternalIdSmart: Array<{ instanceId: string; externalId: string }>;
@@ -69,7 +69,7 @@ function mountHarness(options: HarnessOptions = {}): {
   calls: HarnessCalls;
 } {
   const calls: HarnessCalls = {
-    getChatMessages: [],
+    pageChatMessages: [],
     getById: [],
     getParticipants: [],
     findByExternalIdSmart: [],
@@ -91,9 +91,9 @@ function mountHarness(options: HarnessOptions = {}): {
     } as never);
     c.set('services', {
       messages: {
-        getChatMessages: mock(async (chatId: string, opts: Record<string, unknown>) => {
-          calls.getChatMessages.push({ chatId, options: opts });
-          return [];
+        pageChatMessages: mock(async (chatId: string, opts: Record<string, unknown>) => {
+          calls.pageChatMessages.push({ chatId, options: opts });
+          return { items: [], hasMore: false, cursor: null };
         }),
       },
       chats: {
@@ -132,8 +132,8 @@ describe('GET /chats/:id/messages — JID/external-id resolution', () => {
     const res = await app.request(`/chats/${VALID_UUID}/messages`);
 
     expect(res.status).toBe(200);
-    expect(calls.getChatMessages).toHaveLength(1);
-    expect(calls.getChatMessages[0]?.chatId).toBe(VALID_UUID);
+    expect(calls.pageChatMessages).toHaveLength(1);
+    expect(calls.pageChatMessages[0]?.chatId).toBe(VALID_UUID);
     // findByExternalIdSmart MUST NOT be called for UUID input — that's a
     // wasted DB roundtrip on the hot path.
     expect(calls.findByExternalIdSmart).toHaveLength(0);
@@ -149,8 +149,8 @@ describe('GET /chats/:id/messages — JID/external-id resolution', () => {
 
     expect(res.status).toBe(200);
     expect(calls.findByExternalIdSmart).toEqual([{ instanceId: ACTIVE_INSTANCE_ID, externalId: WHATSAPP_GROUP_JID }]);
-    expect(calls.getChatMessages).toHaveLength(1);
-    expect(calls.getChatMessages[0]?.chatId).toBe(RESOLVED_UUID);
+    expect(calls.pageChatMessages).toHaveLength(1);
+    expect(calls.pageChatMessages[0]?.chatId).toBe(RESOLVED_UUID);
   });
 
   test('Telegram numeric id resolves the same way', async () => {
@@ -163,7 +163,7 @@ describe('GET /chats/:id/messages — JID/external-id resolution', () => {
 
     expect(res.status).toBe(200);
     expect(calls.findByExternalIdSmart[0]?.externalId).toBe(TELEGRAM_NUMERIC_ID);
-    expect(calls.getChatMessages[0]?.chatId).toBe(RESOLVED_UUID);
+    expect(calls.pageChatMessages[0]?.chatId).toBe(RESOLVED_UUID);
   });
 
   test('contextInstanceId takes precedence over activeInstanceId', async () => {
@@ -195,7 +195,7 @@ describe('GET /chats/:id/messages — JID/external-id resolution', () => {
     expect(body.error.message).toContain(WHATSAPP_GROUP_JID);
     // Service must NOT have been called — postgres is never touched on the
     // unresolvable-id path.
-    expect(calls.getChatMessages).toHaveLength(0);
+    expect(calls.pageChatMessages).toHaveLength(0);
     expect(calls.findByExternalIdSmart).toHaveLength(0);
   });
 
@@ -209,7 +209,7 @@ describe('GET /chats/:id/messages — JID/external-id resolution', () => {
 
     expect(res.status).toBe(404);
     expect(calls.findByExternalIdSmart).toHaveLength(1);
-    expect(calls.getChatMessages).toHaveLength(0);
+    expect(calls.pageChatMessages).toHaveLength(0);
   });
 });
 
@@ -427,13 +427,7 @@ describe('cross-instance existence oracle — checkInstanceAccess runs BEFORE fi
     expect(calls.findByExternalIdSmart).toHaveLength(0);
   });
 
-  test('UUID input outside the API key scope is NOT pre-checked here (handler-level checks remain)', async () => {
-    // UUID input bypasses the resolver entirely (no DB lookup needed). For
-    // UUID-shaped IDs the existing handler-level `checkInstanceAccess` and
-    // service-layer guards remain authoritative. The resolver's job is
-    // narrowly: prevent the JID-shaped existence oracle. Document that
-    // here so future refactors don't accidentally start enforcing access
-    // on UUIDs in a way that breaks legitimate operator workflows.
+  test("chat routes treat a chat outside a restricted key's instances as not found", async () => {
     const { app, calls } = mountHarness({
       apiKeyInstanceIds: [ALLOWED_INSTANCE_ID],
     });
@@ -444,10 +438,8 @@ describe('cross-instance existence oracle — checkInstanceAccess runs BEFORE fi
       body: JSON.stringify({ instanceId: FORBIDDEN_INSTANCE_ID }),
     });
 
-    // Either way, no findByExternalIdSmart was called (UUID path bypasses
-    // the resolver). The handler-level checkInstanceAccess kicks in and
-    // returns the standard VALIDATION error.
-    expect(res.status).not.toBe(200);
+    expect(res.status).toBe(404);
+    expect(calls.getById).toEqual([VALID_UUID]);
     expect(calls.findByExternalIdSmart).toHaveLength(0);
   });
 
@@ -464,7 +456,7 @@ describe('cross-instance existence oracle — checkInstanceAccess runs BEFORE fi
 
     expect(res.status).toBe(200);
     expect(calls.findByExternalIdSmart).toHaveLength(1);
-    expect(calls.getChatMessages[0]?.chatId).toBe(RESOLVED_UUID);
+    expect(calls.pageChatMessages[0]?.chatId).toBe(RESOLVED_UUID);
   });
 
   test('scoped API key resolving WITHIN its allowed instance still works', async () => {
@@ -551,7 +543,8 @@ const LOCKED_CHAT_ID = '55555555-5555-4555-8555-555555555555';
 const MISSING_CHAT_ID = '66666666-6666-4666-8666-666666666666';
 
 interface LockedCalls {
-  getChatMessages: string[];
+  pageChatMessages: string[];
+  getChatCoverage: string[];
   getById: string[];
   findByExternalIdSmart: Array<{ instanceId: string; externalId: string }>;
 }
@@ -576,7 +569,7 @@ function mountLocked(
   contextInstanceId: string | null,
   handOver?: { raw: string; chatId: string },
 ): { app: Hono<{ Variables: AppVariables }>; calls: LockedCalls } {
-  const calls: LockedCalls = { getChatMessages: [], getById: [], findByExternalIdSmart: [] };
+  const calls: LockedCalls = { pageChatMessages: [], getChatCoverage: [], getById: [], findByExternalIdSmart: [] };
   const row = { id: LOCKED_CHAT_ID, instanceId: LOCKED_INSTANCE_ID, externalId: WHATSAPP_DM_JID };
   const app = new Hono<{ Variables: AppVariables }>();
   app.onError(errorHandler);
@@ -591,9 +584,13 @@ function mountLocked(
     } as never);
     c.set('services', {
       messages: {
-        getChatMessages: mock(async (chatId: string) => {
-          calls.getChatMessages.push(chatId);
-          return [];
+        pageChatMessages: mock(async (chatId: string) => {
+          calls.pageChatMessages.push(chatId);
+          return { items: [], hasMore: false, cursor: null };
+        }),
+        getChatCoverage: mock(async (chatId: string) => {
+          calls.getChatCoverage.push(chatId);
+          return { count: 0 };
         }),
       },
       chats: {
@@ -630,7 +627,7 @@ describe('chat key — /chats/:id/messages resolves once, in the lock', () => {
     expect(res.status).toBe(200);
     // One lookup (the lock's); the route read the row it was handed.
     expect(calls.findByExternalIdSmart).toEqual([{ instanceId: LOCKED_INSTANCE_ID, externalId: WHATSAPP_DM_JID }]);
-    expect(calls.getChatMessages).toEqual([LOCKED_CHAT_ID]);
+    expect(calls.pageChatMessages).toEqual([LOCKED_CHAT_ID]);
   });
 
   test('a context instance outside the lock gets 403 before any lookup', async () => {
@@ -640,7 +637,7 @@ describe('chat key — /chats/:id/messages resolves once, in the lock', () => {
 
     expect(res.status).toBe(403);
     expect(calls.findByExternalIdSmart).toHaveLength(0);
-    expect(calls.getChatMessages).toHaveLength(0);
+    expect(calls.pageChatMessages).toHaveLength(0);
   });
 
   test('history by UUID works without x-omni-instance', async () => {
@@ -649,7 +646,7 @@ describe('chat key — /chats/:id/messages resolves once, in the lock', () => {
     const res = await app.request(`/chats/${LOCKED_CHAT_ID}/messages`);
 
     expect(res.status).toBe(200);
-    expect(calls.getChatMessages).toEqual([LOCKED_CHAT_ID]);
+    expect(calls.pageChatMessages).toEqual([LOCKED_CHAT_ID]);
   });
 
   test('history fails closed when the row is missing', async () => {
@@ -658,7 +655,7 @@ describe('chat key — /chats/:id/messages resolves once, in the lock', () => {
     const res = await app.request(`/chats/${MISSING_CHAT_ID}/messages`);
 
     expect(res.status).toBe(403);
-    expect(calls.getChatMessages).toHaveLength(0);
+    expect(calls.pageChatMessages).toHaveLength(0);
   });
 
   test("another chat's history is refused", async () => {
@@ -667,7 +664,44 @@ describe('chat key — /chats/:id/messages resolves once, in the lock', () => {
     const res = await app.request(`/chats/${encodeURIComponent(WHATSAPP_GROUP_JID)}/messages`);
 
     expect(res.status).toBe(403);
-    expect(calls.getChatMessages).toHaveLength(0);
+    expect(calls.pageChatMessages).toHaveLength(0);
+  });
+});
+
+describe('chat key — /chats/:id/coverage has the access of /chats/:id/messages', () => {
+  test("its own chat's coverage, by UUID or by JID inside the lock", async () => {
+    const { app, calls } = mountLocked(chatKey(), LOCKED_INSTANCE_ID);
+
+    expect((await app.request(`/chats/${LOCKED_CHAT_ID}/coverage`)).status).toBe(200);
+    expect((await app.request(`/chats/${encodeURIComponent(WHATSAPP_DM_JID)}/coverage`)).status).toBe(200);
+    expect(calls.getChatCoverage).toEqual([LOCKED_CHAT_ID, LOCKED_CHAT_ID]);
+  });
+
+  test("another chat's coverage is refused", async () => {
+    const { app, calls } = mountLocked(chatKey(), LOCKED_INSTANCE_ID);
+
+    const res = await app.request(`/chats/${encodeURIComponent(WHATSAPP_GROUP_JID)}/coverage`);
+
+    expect(res.status).toBe(403);
+    expect(calls.getChatCoverage).toHaveLength(0);
+  });
+
+  test('coverage fails closed when the row is missing', async () => {
+    const { app, calls } = mountLocked(chatKey({ chatAllowlist: [MISSING_CHAT_ID, WHATSAPP_DM_JID] }), null);
+
+    const res = await app.request(`/chats/${MISSING_CHAT_ID}/coverage`);
+
+    expect(res.status).toBe(403);
+    expect(calls.getChatCoverage).toHaveLength(0);
+  });
+
+  test('a key without chats:read is refused', async () => {
+    const { app, calls } = mountLocked(chatKey({ scopes: ['messages:send'] }), LOCKED_INSTANCE_ID);
+
+    const res = await app.request(`/chats/${LOCKED_CHAT_ID}/coverage`);
+
+    expect(res.status).toBe(403);
+    expect(calls.getChatCoverage).toHaveLength(0);
   });
 });
 
@@ -710,7 +744,7 @@ describe('the route reads the row the lock handed over', () => {
 
     expect(res.status).toBe(200);
     expect(calls.findByExternalIdSmart).toHaveLength(0);
-    expect(calls.getChatMessages).toEqual([handedId]);
+    expect(calls.pageChatMessages).toEqual([handedId]);
   });
 
   test('a locked key reads the chat row once: the lock reads it, the route reuses it', async () => {
@@ -747,7 +781,7 @@ describe('the route reads the row the lock handed over', () => {
 
     expect(res.status).toBe(200);
     expect(calls.findByExternalIdSmart).toEqual([{ instanceId: LOCKED_INSTANCE_ID, externalId: WHATSAPP_DM_JID }]);
-    expect(calls.getChatMessages).toEqual([LOCKED_CHAT_ID]);
+    expect(calls.pageChatMessages).toEqual([LOCKED_CHAT_ID]);
   });
 });
 

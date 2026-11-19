@@ -2,7 +2,7 @@
  * Inbound parsing, the outbound turn sequence, and handoff.
  */
 
-import { afterEach, describe, expect, it, spyOn } from 'bun:test';
+import { afterEach, describe, expect, it } from 'bun:test';
 
 import { parseInboundTurn } from '../handlers/webhook';
 import { AscFlowPlugin, normalizeBaseUrl } from '../plugin';
@@ -11,7 +11,6 @@ import {
   BASE_URL,
   HANDOFF_SERVICO,
   MockEventBus,
-  MockLogger,
   OK_BODY,
   type RecordedCall,
   TURN_TEXT,
@@ -194,18 +193,12 @@ describe('outbound turn', () => {
   // O nó `api_rest` não espera a resposta HTTP (medido no flow #225, síncrono
   // e assíncrono), então NADA viaja no `resposta`: o turno inteiro é empurrado
   // por `/callbackFlowMsg`, que chega em ~1s e é registrado como entregue.
-  it('pushes EVERY bubble, with typing between them, and answers with an empty resposta', async () => {
+  it('pushes EVERY bubble, with no typing between them, and answers with an empty resposta', async () => {
     await boot();
     const result = await send({ type: 'text', text: 'um\n\ndois\n\ntres' });
 
     expect(result.success).toBe(true);
-    expect(sequence()).toEqual([
-      '/callbackFlowMsg',
-      '/sendIndicador',
-      '/callbackFlowMsg',
-      '/sendIndicador',
-      '/callbackFlowMsg',
-    ]);
+    expect(sequence()).toEqual(['/callbackFlowMsg', '/callbackFlowMsg', '/callbackFlowMsg']);
     expect(of('/callbackFlowMsg').map((c) => c.body.msg_usuario)).toEqual(['um', 'dois', 'tres']);
     expect(ready('42')).toMatchObject({ pronto: 1, resposta: '', hand_off: 'nao', bolhas: ['um', 'dois', 'tres'] });
   });
@@ -356,6 +349,75 @@ describe('outbound turn', () => {
       { isHandoff: true, handoffFields: { fila_vq: 'VQ_AGENDAMENTO', codigo_operadora_vq: 'AB' } },
     );
     expect(ready('42')).toMatchObject({ hand_off: 'sim', codigo_operadora_vq: '' });
+  });
+
+  it('forwards protocolo_vq into the Genesys userdata, as the agent wrote it', async () => {
+    // `u_protocolo` is what the attendant reads at the WDE instead of asking the
+    // beneficiary for the number they were just given. The agent owns the format
+    // (a list, newest first); the channel only carries it.
+    await boot();
+    await send(
+      { type: 'text', text: 'Vou te transferir.' },
+      {
+        isHandoff: true,
+        handoffFields: { fila_vq: 'VQ_AGENDAMENTO', protocolo_vq: '00000000000000000002, 00000000000000000001' },
+      },
+    );
+
+    expect(ready('42')).toMatchObject({
+      hand_off: 'sim',
+      fila_vq: 'VQ_AGENDAMENTO',
+      protocolo_vq: '00000000000000000002, 00000000000000000001',
+    });
+  });
+
+  it('forwards an empty protocolo_vq rather than omitting it', async () => {
+    // Same all-or-nothing `store` as the identity fields: with no protocol —
+    // absent, blank or not text — the key still arrives as "", so the flow's
+    // mapping is never skipped and the handoff is not refused.
+    await boot();
+    const cases: Array<Record<string, unknown>> = [
+      { fila_vq: 'VQ_AGENDAMENTO' },
+      { fila_vq: 'VQ_AGENDAMENTO', protocolo_vq: '' },
+      { fila_vq: 'VQ_AGENDAMENTO', protocolo_vq: '  \n ' },
+      { fila_vq: 'VQ_AGENDAMENTO', protocolo_vq: 123 },
+      { fila_vq: 'VQ_AGENDAMENTO', protocolo_vq: ['00000000000000000001'] },
+      { fila_vq: 'VQ_AGENDAMENTO', protocolo_vq: null },
+    ];
+    for (const [i, handoffFields] of cases.entries()) {
+      if (i > 0) await openTurn(plugin);
+      await send({ type: 'text', text: 'Vou te transferir.' }, { isHandoff: true, handoffFields });
+      expect(ready('42')).toMatchObject({ hand_off: 'sim', fila_vq: 'VQ_AGENDAMENTO', protocolo_vq: '' });
+    }
+  });
+
+  it('collapses whitespace and caps protocolo_vq at 200 characters', async () => {
+    await boot();
+    await send(
+      { type: 'text', text: 'Vou te transferir.' },
+      {
+        isHandoff: true,
+        handoffFields: { fila_vq: 'VQ_AGENDAMENTO', protocolo_vq: '  00000000000000000002, \n 00000000000000000001 ' },
+      },
+    );
+    expect(ready('42')?.protocolo_vq).toBe('00000000000000000002, 00000000000000000001');
+
+    await openTurn(plugin);
+    await send(
+      { type: 'text', text: 'Vou te transferir.' },
+      { isHandoff: true, handoffFields: { fila_vq: 'VQ_AGENDAMENTO', protocolo_vq: '9'.repeat(300) } },
+    );
+    expect(ready('42')?.protocolo_vq).toBe('9'.repeat(200));
+  });
+
+  it('does not carry protocolo_vq on a turn that does not hand off', async () => {
+    await boot();
+    await send(
+      { type: 'text', text: 'ok' },
+      { handoffQueue: 'VQ_X', handoffFields: { protocolo_vq: '00000000000000000001' } },
+    );
+
+    expect(ready('42')).not.toHaveProperty('protocolo_vq');
   });
 
   // `POST /messages/send/handoff` sets `agentPaused: true` unless the send says
@@ -611,6 +673,7 @@ describe('outbound turn', () => {
         fila_vq: 'VQ_AGENDAMENTO',
         motivo_transf_vq: 'fora do escopo',
         codigo_operadora_vq: '',
+        protocolo_vq: '',
       });
     });
 
@@ -822,40 +885,95 @@ describe('emoji codec', () => {
   });
 });
 
-// Em produção a plataforma passou a responder HTTP 429 no `/sendIndicador` nos
-// picos. O indicador estava no MESMO try da bolha: a falha dele (cosmética)
-// parava o laço depois de a bolha já ter saído, e as seguintes se perdiam.
-describe('typing between bubbles', () => {
+// Um "digitando…" por mensagem do beneficiário. Em produção (13/11/2026) saíam
+// ~3 por mensagem: o do plugin quando o turno chega, o "composing" do
+// dispatcher no mesmo instante, o "paused" do fim (que o `/sendIndicador`, sem
+// "parar", transformava em mais um "digitando") e um entre cada bolha. Cada um
+// é uma requisição que a plataforma repassa à Meta.
+describe('one typing per beneficiary message', () => {
   const send = (text: string) => plugin.sendMessage(instanceId, { to: '42', content: { type: 'text', text } as never });
-  const tooMany = () => jsonResponse({ cod_error: 1, msg: 'Too Many Requests' }, 429);
+  const inbound = (text: string) =>
+    plugin.handleInboundTurn(instanceId, {
+      codAtendimento: '42',
+      text,
+      phone: '5551999',
+      fromFallback: false,
+      entradaDefasada: false,
+    });
 
-  it('keeps pushing the bubbles when /sendIndicador answers 429', async () => {
-    const warn = spyOn(MockLogger.prototype, 'warn');
+  it('a whole turn — inbound, dispatcher composing, three bubbles, dispatcher paused — raises exactly one', async () => {
+    await boot();
+    await inbound('oi');
+    await plugin.sendTyping(instanceId, '42', 30000);
+    await send('um\n\ndois\n\ntres');
+    await plugin.sendTyping(instanceId, '42', 0);
+
+    expect(of('/sendIndicador').map((c) => c.body)).toEqual([{ cod: 42, tipo: 1 }]);
+    expect(of('/callbackFlowMsg').map((c) => c.body.msg_usuario)).toEqual(['um', 'dois', 'tres']);
+  });
+
+  it('each new beneficiary message raises its own', async () => {
+    await boot();
+    await inbound('oi');
+    await send('primeira resposta');
+    await inbound('quero marcar');
+    await send('segunda resposta');
+
+    expect(of('/sendIndicador')).toHaveLength(2);
+  });
+
+  it('typing asked by anyone but the inbound path sends nothing', async () => {
+    await boot();
+    await plugin.sendTyping(instanceId, '42', 30000);
+    await plugin.sendTyping(instanceId, '42', 5000);
+    await plugin.sendTyping(instanceId, '42', 0);
+
+    expect(of('/sendIndicador')).toHaveLength(0);
+  });
+
+  it('a refused indicator still costs the turn nothing', async () => {
+    await boot({ '/sendIndicador': () => jsonResponse({ cod_error: 1, msg: 'Too Many Requests' }, 429) });
+    await inbound('oi');
+    const result = await send('um\n\ndois');
+
+    expect(eventBus.published.some((e) => e.type.includes('received'))).toBe(true);
+    expect(result.success).toBe(true);
+    expect(of('/callbackFlowMsg').map((c) => c.body.msg_usuario)).toEqual(['um', 'dois']);
+  });
+
+  // Em produção o `/sendIndicador` era aguardado antes de a mensagem seguir para
+  // o agente: plataforma lenta = até 20s (o timeout do cliente) de atraso na
+  // chegada de cada mensagem, por um indicador que não carrega conteúdo.
+  it('a hung indicator does not hold the message, and gives up on its own short deadline', async () => {
+    await boot();
+    // Um indicador que só termina quando a requisição é abortada.
+    const stubbed = globalThis.fetch;
+    let abortedAt = 0;
+    globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      if (!String(input).includes('/sendIndicador')) return stubbed(input, init);
+      return new Promise<Response>((_, reject) => {
+        init?.signal?.addEventListener('abort', () => {
+          abortedAt = Date.now();
+          reject(init.signal?.reason);
+        });
+      });
+    }) as typeof fetch;
+
     try {
-      await boot({ '/sendIndicador': tooMany });
-      const result = await send('um\n\ndois\n\ntres');
+      const started = Date.now();
+      await inbound('oi');
 
-      expect(result.success).toBe(true);
-      // Todas as bolhas saem, na ordem, com a tentativa de indicador entre elas.
-      expect(of('/callbackFlowMsg').map((c) => c.body.msg_usuario)).toEqual(['um', 'dois', 'tres']);
-      expect(sequence()).toEqual([
-        '/callbackFlowMsg',
-        '/sendIndicador',
-        '/callbackFlowMsg',
-        '/sendIndicador',
-        '/callbackFlowMsg',
-      ]);
-      expect(ready('42')).toMatchObject({ pronto: 1, resposta: '', bolhas: ['um', 'dois', 'tres'] });
+      // A mensagem já seguiu para o agente, com o indicador ainda pendurado.
+      expect(Date.now() - started).toBeLessThan(500);
+      expect(eventBus.published.some((e) => e.type.includes('received'))).toBe(true);
+      expect(abortedAt).toBe(0);
 
-      // `MockLogger.warn` declara zero parâmetros; o plugin chama com (mensagem, contexto).
-      const warns = warn.mock.calls as unknown as Array<[string, Record<string, unknown>]>;
-      const indicatorWarns = warns.filter(([msg]) => msg.includes('typing between bubbles failed'));
-      expect(indicatorWarns).toHaveLength(2);
-      expect(indicatorWarns[0]?.[1]).toMatchObject({ cod: 42 });
-      expect(String(indicatorWarns[0]?.[1].err)).toContain('HTTP 429');
-      expect(warns.some(([msg]) => msg.includes('bubble push failed'))).toBe(false);
+      // E o indicador desiste sozinho em ~2s, não nos 20s do cliente.
+      while (abortedAt === 0 && Date.now() - started < 4_000) await new Promise((r) => setTimeout(r, 25));
+      expect(abortedAt - started).toBeGreaterThanOrEqual(1_900);
+      expect(abortedAt - started).toBeLessThan(3_500);
     } finally {
-      warn.mockRestore();
+      globalThis.fetch = stubbed;
     }
   });
 
@@ -872,6 +990,6 @@ describe('typing between bubbles', () => {
     expect(result.success).toBe(true);
     // A primeira saiu, a segunda foi recusada e a terceira nem foi tentada.
     expect(of('/callbackFlowMsg').map((c) => c.body.msg_usuario)).toEqual(['um', 'dois']);
-    expect(sequence()).toEqual(['/callbackFlowMsg', '/sendIndicador', '/callbackFlowMsg']);
+    expect(sequence()).toEqual(['/callbackFlowMsg', '/callbackFlowMsg']);
   });
 });

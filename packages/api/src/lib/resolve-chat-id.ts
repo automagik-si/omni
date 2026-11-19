@@ -157,14 +157,41 @@ export async function resolveChatRow(c: ChatContext, raw: string, explicitInstan
  * raw param to a UUID column and a JID (`120363...@g.us`) made postgres-js
  * throw "invalid input syntax for type uuid" (500).
  */
-export async function resolveChatIdParam(
-  c: ChatContext,
-  raw: string,
-  explicitInstanceId?: string,
-): Promise<string | null> {
+async function resolveChatIdParam(c: ChatContext, raw: string, explicitInstanceId?: string): Promise<string | null> {
   const handed = handedChat(c, raw);
   if (handed) return handed.id;
   if (isChatUuid(raw)) return raw;
   const chat = await resolveChatRow(c, raw, explicitInstanceId);
   return chat?.id ?? null;
+}
+
+/**
+ * Resolve a `:id` URL param to a chat's internal UUID.
+ *
+ * Chat routes treat a chat outside a restricted key's instances as not found.
+ * A UUID's row must also match an explicit body instance, when given. Native
+ * ids keep their instance-scoped resolution. Without either restriction a
+ * UUID needs no read. Reuse a checked row for subsequent pre-effect reads;
+ * reads after a mutation must still go to the service.
+ */
+export async function resolveChatIdInKeyInstances(
+  c: ChatContext,
+  raw: string,
+  explicitInstanceId?: string,
+): Promise<string | null> {
+  const instanceIds = c.get('apiKey')?.instanceIds;
+  if (!isChatUuid(raw) || (!Array.isArray(instanceIds) && !explicitInstanceId)) {
+    return resolveChatIdParam(c, raw, explicitInstanceId);
+  }
+  const chat = await resolveChatRow(c, raw, explicitInstanceId);
+  if (!chat) return null;
+  if (
+    Array.isArray(instanceIds) &&
+    (!chat.instanceId || !ApiKeyService.instanceAllowed(instanceIds, chat.instanceId))
+  ) {
+    return null;
+  }
+  if (explicitInstanceId && chat.instanceId !== explicitInstanceId) return null;
+  c.set('resolvedChat', { raw, chat });
+  return chat.id;
 }

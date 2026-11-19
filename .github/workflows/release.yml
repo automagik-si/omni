@@ -47,12 +47,8 @@ on:
         description: 'Exact verified release source SHA'
         required: true
         type: string
-      expected_digest:
-        description: 'Stable only: exact verified omni-api OCI digest'
-        required: false
-        type: string
       orchestrator_run_id:
-        description: 'Stable only: exact in-progress image-build workflow run'
+        description: 'Stable only: exact in-progress release-stable workflow run'
         required: false
         type: string
 
@@ -71,8 +67,6 @@ jobs:
     permissions:
       contents: read
       actions: read
-      packages: read
-      attestations: read
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
@@ -83,11 +77,9 @@ jobs:
           CHANNEL: ${{ inputs.channel || 'stable' }}
           ACTOR: ${{ github.actor }}
           EXPECTED_SHA: ${{ inputs.expected_sha }}
-          EXPECTED_DIGEST: ${{ inputs.expected_digest }}
           ORCHESTRATOR_RUN_ID: ${{ inputs.orchestrator_run_id }}
           INPUT_VERSION: ${{ inputs.version }}
           GH_TOKEN: ${{ github.token }}
-          IMAGE: ghcr.io/${{ github.repository_owner }}/omni-api
         run: |
           set -euo pipefail
           [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]
@@ -98,19 +90,14 @@ jobs:
           [[ "${GITHUB_SHA}" == "${EXPECTED_SHA}" ]]
           if [[ "${CHANNEL}" == "stable" ]]; then
             [[ "${ACTOR}" == "github-actions[bot]" ]]
-            [[ "${EXPECTED_DIGEST}" =~ ^sha256:[0-9a-f]{64}$ ]]
             [[ "${ORCHESTRATOR_RUN_ID}" =~ ^[0-9]+$ ]]
             gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${ORCHESTRATOR_RUN_ID}" > "${RUNNER_TEMP}/orchestrator.json"
             scripts/release/verify-orchestrator-run.py \
               --run-json "${RUNNER_TEMP}/orchestrator.json" \
               --repository "${GITHUB_REPOSITORY}" \
               --source-sha "${EXPECTED_SHA}" \
-              --expected-workflow .github/workflows/image-build.yml \
+              --expected-workflow .github/workflows/release-stable.yml \
               --allowed-event workflow_dispatch
-            gh attestation verify "oci://${IMAGE}@${EXPECTED_DIGEST}" \
-              --repo "${GITHUB_REPOSITORY}" \
-              --source-digest "${EXPECTED_SHA}" \
-              --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/image-build.yml"
           fi
 
   # ---------------------------------------------------------------------------
@@ -143,7 +130,6 @@ jobs:
     permissions:
       contents: write       # gh release create/upload (no metadata push; .well-known/ is PR-owned)
       actions: read
-      packages: read
       attestations: read
     with:
       version: ${{ needs.sign-attest.outputs.version }}
@@ -152,7 +138,6 @@ jobs:
       channel: ${{ inputs.channel || 'stable' }}
       draft: false
       expected_sha: ${{ inputs.expected_sha }}
-      expected_digest: ${{ inputs.expected_digest }}
       orchestrator_run_id: ${{ inputs.orchestrator_run_id }}
       orchestrated: true
     # Only the omni-release dispatch PAT, never secrets: inherit.

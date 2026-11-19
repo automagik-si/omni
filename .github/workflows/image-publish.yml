@@ -1,15 +1,5 @@
-# Verify the already-published public-launch candidate without mutating Git,
-# GHCR, npm, GitHub Releases, aliases, or deployment state. Production
-# deployment authority lives outside this public repository; this workflow
-# emits only a verification receipt for the protected dev-to-main promotion.
-#
-# The candidate is derived from the main tree, never hand-pinned (#1057):
-# version from packages/cli/package.json, source SHA from the immutable
-# refs/tags/v<version> (ruleset-protected, update/delete blocked), and the OCI
-# digest from the registry alias for that tag. The digest is then bound by
-# GitHub provenance to that exact source SHA and to image-build.yml as the
-# signer, so a moved alias or a foreign image fails exactly as a wrong pasted
-# digest used to; every other immutability check is unchanged.
+# Read-only main promotion: verify the immutable software tag, signed release
+# assets and npm publication. An image is optional and never required here.
 name: Verify Production Promotion
 
 on:
@@ -23,7 +13,6 @@ concurrency:
 
 permissions:
   contents: read
-  packages: read
   attestations: read
 
 jobs:
@@ -31,8 +20,6 @@ jobs:
     name: Verify immutable candidate
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    env:
-      IMAGE: ghcr.io/${{ github.repository_owner }}/omni-api
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
@@ -54,7 +41,7 @@ jobs:
             exit 1
           }
           candidate_sha=$(git rev-parse "refs/tags/v${candidate_version}^{commit}" 2>/dev/null) || {
-            echo "::error::no immutable tag v${candidate_version}: main carries a version that was never cut as a candidate (cut it with version.yml candidate=true, then mint it with image-build.yml at refs/tags/v<version>)"
+            echo "::error::no immutable tag v${candidate_version}: main carries a version that was never cut as a candidate (cut it with version.yml candidate=true, then publish it with release-stable.yml at refs/tags/v<version>)"
             exit 1
           }
           [[ "${candidate_sha}" =~ ^[0-9a-f]{40}$ ]]
@@ -92,58 +79,6 @@ jobs:
             --candidate-sha "${CANDIDATE_SHA}" \
             --final-sha "${FINAL_SHA}" \
             --version "${CANDIDATE_VERSION}"
-
-      - name: Set up Buildx for read-only OCI inspection
-        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
-
-      # The alias is what image-build.yml pushed exactly once; the provenance
-      # check below is what makes reading it back safe (digest ↔ source SHA ↔
-      # signer workflow), so a retagged alias cannot pass.
-      - name: Resolve the candidate digest from the immutable alias
-        run: |
-          set -euo pipefail
-          candidate_digest=$(docker buildx imagetools inspect "${IMAGE}:v${CANDIDATE_VERSION}" --format '{{.Manifest.Digest}}')
-          [[ "${candidate_digest}" =~ ^sha256:[0-9a-f]{64}$ ]] || {
-            echo "::error::${IMAGE}:v${CANDIDATE_VERSION} has no valid OCI index digest; the candidate was never minted"
-            exit 1
-          }
-          echo "CANDIDATE_DIGEST=${candidate_digest}" >> "${GITHUB_ENV}"
-
-      - name: Verify exact OCI alias, index, and GitHub provenance
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          preflight="${RUNNER_TEMP}/release-preflight.out"
-          GITHUB_OUTPUT="${preflight}" scripts/release/verify-oci-release.sh \
-            --source-dir "${GITHUB_WORKSPACE}/release-candidate" \
-            --ref "refs/tags/v${CANDIDATE_VERSION}" \
-            --expected-version "${CANDIDATE_VERSION}" \
-            --expected-sha "${CANDIDATE_SHA}" \
-            --image "${IMAGE}" \
-            --expected-existing-digest "${CANDIDATE_DIGEST}"
-          grep -qx 'publish_required=false' "${preflight}"
-          grep -qx "existing_digest=${CANDIDATE_DIGEST}" "${preflight}"
-
-          docker buildx imagetools inspect "${IMAGE}@${CANDIDATE_DIGEST}" \
-            > "${RUNNER_TEMP}/image-index.txt"
-          python3 - "${RUNNER_TEMP}/image-index.txt" <<'PY'
-          import sys
-
-          text = open(sys.argv[1], encoding="utf-8").read()
-          required = (
-              "MediaType: application/vnd.oci.image.index.v1+json",
-              "Platform:    linux/amd64",
-              "Platform:    linux/arm64",
-          )
-          missing = [value for value in required if value not in text]
-          if missing:
-              raise SystemExit(f"verified OCI index is missing: {missing}")
-          PY
-          gh attestation verify "oci://${IMAGE}@${CANDIDATE_DIGEST}" \
-            --repo "${GITHUB_REPOSITORY}" \
-            --source-digest "${CANDIDATE_SHA}" \
-            --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/image-build.yml"
 
       - name: Install cosign for read-only release verification
         id: cosign-install
@@ -235,8 +170,7 @@ jobs:
             echo "### Verified Omni public-launch candidate"
             echo "- source: \`${CANDIDATE_SHA}\`"
             echo "- version: \`${CANDIDATE_VERSION}\`"
-            echo "- OCI digest: \`${CANDIDATE_DIGEST}\`"
             echo "- final main tree: \`${GITHUB_SHA}\`"
-            echo "- result: immutable artifacts and final image build inputs verified"
+            echo "- result: immutable software artifacts and source inputs verified"
             echo "- mutation boundary: no build, tag, release, alias, repository, or cluster write"
           } >> "${GITHUB_STEP_SUMMARY}"

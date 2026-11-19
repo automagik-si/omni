@@ -3,7 +3,7 @@
 `@automagik/omni-channels-dsh` brings your Omni into the Bot team for DeepSeek Harness
 (DSH): link this DSH to an Omni, see its channels and chats, and let Omni, the Main Bot,
 operate the platform and run your automations. It sits on the team plugin
-(`@automagik/bots-dsh`, [apps/bots-dsh in automagik-dev/automagik](https://github.com/automagik-dev/automagik/tree/dev/apps/bots-dsh#three-plugins))
+(`@automagik/bots-dsh`, [apps/bots-dsh in automagik-si/automagik](https://github.com/automagik-si/automagik/tree/dev/apps/bots-dsh#three-plugins))
 and needs it; the canvas plugin (`@automagik/omni-canvas-dsh`) sits on this one.
 
 > Labs release. Features, tools and the saved data format can still change.
@@ -19,6 +19,9 @@ and needs it; the canvas plugin (`@automagik/omni-canvas-dsh`) sits on this one.
   API. Each call is drawn in the chat as a card. With an Omni named, a Main Bot's Sessions
   lose DSH's shell and file tools and the team's `start_task`: Omni has no computer, and
   says what such work needs so the user can give it to a Bot that has one.
+- **Reading a chat's history**: `read_history` and `save_reading_note`, for a Bot that operates
+  Omni: it reads one chat's whole history a page at a time and keeps a reading note of that chat
+  as it reads (see below).
 - **Automations**: `find_chats`, `list_automations`, `save_automation`, `pause_automation`
   and `delete_automation`; Omni's event streams start a run for each match. The board is a
   tab of DSH's right sidebar beside Omni's chat, and the account menu opens the Automations
@@ -30,6 +33,40 @@ and needs it; the canvas plugin (`@automagik/omni-canvas-dsh`) sits on this one.
 - **Connect Omni**, the onboarding step `omni-connect` (order −250), between the Omni AI
   plugin's welcome (−300) and Connect AI (−200). A skip is kept by `@automagik/welcome-dsh`
   when it is installed, else in this browser.
+
+## Attach a Telegram bot from a wizard host
+
+The host-only `omniChannels.omniTelegramAttach({ token, name, source?, answerBot? })`
+accepts the wizard's hand-off. Call it **only after the person confirms and the old
+Telegram listener's off receipt has arrived**, in that order. It does not check or stop
+the old tool. Creating the Omni instance starts its connection immediately.
+
+Pass the token directly from that hand-off; there is no attach page, HTTP route, model
+tool, file, environment variable or setting that supplies it. The existing manual add
+and clipboard flows are separate and are never fallbacks for this function. The host
+uses its existing linked Omni key, sends the token through `POST /instances`'s write-only
+`token` field, and reads `/instances/:id/status`. It creates no Omni agent or route.
+The token must have Telegram's bot-token shape. Returned text, errors and the optional
+`source` host log label redact the submitted token as `[REDACTED]`; the label is not saved
+or returned.
+
+The receipt is `{ channelId, channelName, connected, detail, botId? }`. `connected` uses
+the same connection-state check as channel pairing; `detail` is `profileName` or `null`.
+`botId` is the Telegram bot ID, included only when Omni's status reports it. There is no
+`chatId`. A false `connected` value is a status snapshot, not proof that connection
+will eventually succeed. Instance names are unique: retrying the same `name` receives
+Omni's conflict instead of creating or reconnecting a second instance. If a later step
+fails after creation, inspect the existing channel before retrying.
+
+Optionally pass `answerBot`, the ID of the existing DSH channel bot the person picked.
+The host reuses the owner-confirmation actions to give that bot the new channel. If
+the bot already answers, or explicitly owns no other channel, answering is enabled with
+its existing settings and defaults unchanged, including the new child's sending mode.
+The receipt also includes `{ answerBot, answering: true }`. If answering is currently
+off and the bot explicitly owns other channels, it stays off: the receipt includes
+`{ answerBot, answering: false, reason: 'other-channels' }`, and the wizard should direct
+the person to answer settings. This avoids silently enabling answers on other channels.
+Without `answerBot`, the attach changes no DSH ownership or answer settings.
 
 ## Bind each answer child to its person
 
@@ -80,6 +117,31 @@ If the sender is still not matched after 30 seconds and the channel has an allow
 the host warns once and the bot's sidebar shows "1 message waiting: sender not matched yet". A
 sender whose phone is known and matches no rule is refused as before, without a marker.
 
+## A reply for people who are not let in
+
+By default a sender that no allow rule matches gets no answer. Staff can set one reply under
+**Reply to people who are not let in** (`strangerReply`, at most 1000 characters, settings panel
+only; empty turns it off). With a reply set, such a sender gets it once a day per chat, in the
+chat they wrote from, through Omni's send for that chat, and only after their own message. No
+answer child is made or woken for them. A sender known only by their lid gets it once the
+30-second check still finds no rule, or as soon as a check finds a phone no rule allows. Their
+message then leaves the kept messages, with no warning and no marker. A rule that matches at an
+earlier check admits them as before. Only the allowlist's default refusal gets the reply: a
+sender that a rule of its own refuses (block or silent_block, on any of their ids) gets nothing
+and is not listed. A check that failed, a message that is too old, a group, history and the
+number's own messages get nothing. A failed send takes the day's mark back, so the person's next
+message tries again; nothing tries on a timer, and the failure is warned once per chat until a
+send there works.
+
+Each such sender is listed under **Requests** in the answer settings, whether or not a reply is
+set: one row per chat, with the ids they wrote from, their first text (500 characters), when they
+last wrote and how many messages they sent. With no reply set, nothing is sent and a sender known
+only by their lid stays kept as before; their message is listed once, at the 30-second check. A
+row whose chat a code from a list later lets in is marked `admitted`. A save that fails takes the
+row's change back. The list keeps the newest 500 rows per bot, and the day's marks keep the
+newest 5000 chats. Both are saved, so they outlive a restart. Only staff read the list, on the
+`omni-answer-requests` route; no tool reads it.
+
 ## When a person needs someone from the team
 
 An answer child that cannot help its person calls `thread_needs_staff` with a one-line reason
@@ -96,6 +158,140 @@ The staff chat can never be a chat an answer child answers. The mark is saved, s
 restart; calls while it is set tell no one again. It clears when staff answer in that chat from
 their own phone, or when they press **Dismiss**. DeepSeek Harness has no app notification a plugin
 can raise, so the sidebar row is the app's own sign.
+
+## Let a person in by a code from a list
+
+Staff can let people in with single-use codes they hand out, for example in a link that opens the
+chat with a message typed. Under **Code lists** in the answer settings, staff fill a list:
+
+- a **name**;
+- its **code pattern**: an optional prefix, the letters and digits a code may have after it, and
+  how many (4 to 64). Case never matters. With **Read look-alike characters as one** on, a
+  character the set lacks is read as its twin in the set (O and 0; I, L and 1), after the prefix
+  only. A code stands alone in the text: the character before it and the one after are not
+  letters, digits or `_`. The plugin scans for codes itself and never turns staff text into a
+  regular expression;
+- its **rule details**: a key/value map (`key = value` lines, or a JSON object) copied into the
+  allow rule of each person a code from the list lets in;
+- its codes, one a line, `code, expires YYYY-MM-DD`, or a JSON array of
+  `{ code, expiresAt, inviteId? }`.
+
+A list's pattern is set when it is first filled; codes added later must fit it. The rule details
+of a later upload replace the list's, and an upload that leaves them out keeps them. The lists
+are the install's and saved: at most 50 lists and the newest 5000 codes over all of them; a list
+whose codes all go is removed. Each code is used once, before its expiry: the same code again from
+the same sender (any id they share) admits them again, and from anyone else it is used. The used
+mark is saved before the person is let in. With no list there is no pattern, and nothing in a
+message is read as a code. Only staff read or add codes, on the `omni-code-lists` and
+`omni-code-lists-add` routes; no tool reaches them, and no code appears in a warning.
+
+When a sender that the allowlist refuses by default, or one Omni knows only by their lid, sends a
+message with an open code, the plugin writes one allow rule for the sender's primary id (their lid
+when Omni knows only that) and admits the message in the same pass, as if that rule had matched.
+The rule has `reason: invite` and `metadata: { ...rule details, source: 'invite', inviteId }`; the
+rule details cannot set `source` or `inviteId`. Person binding reads `context` and `capability`
+from the rule details like any other rule. A sender that a rule of its own refuses, and an admitted
+sender, are never checked. At most 2 codes are read from a message, over all lists (a code a list
+holds first), and a chat gets at most 5 code checks an hour. With no prefix, any word of the
+pattern's length is read as a code, so each such word counts as a check.
+
+With **Message when a code admits someone** set (`codeWelcome`, at most 1000 characters), the
+person gets it in their chat once the code lets them in, and the child answers from their next
+message. Unset, the child answers the code message. A code that is unknown, used or expired, or a
+check that fails, sends nothing: the message goes on as refused. Omni publishes no event when a
+rule is written, so the rules themselves are the count: allow rules whose `metadata.source` is
+`invite` (`GET /access/rules?type=allow`).
+
+## Check a code with an outside service
+
+Under **Outside code check** in the answer settings, staff name an HTTPS service of their own
+that checks codes for one bot, on the `omni-outside-check` route (`{ botId, url?, secret?,
+pattern?, label?, tier? }`; null or empty clears a field, a field left out is kept):
+
+- the service's **URL** (https only) and a **secret**, written only: the route and the settings
+  answer everything but the secret (`secretSet` says whether one is set), and the secret is never
+  shown, logged or warned;
+- a **code pattern**, the same shape as a code list's, except that the prefix is required here,
+  so ordinary words never go out to the service. There is no default: until the URL, the secret
+  and the pattern are all set, nothing changes;
+- optional steps, each skipped when empty: the **label** staff see on a request row the service
+  confirmed, and a **tier** name written on that row.
+
+When a sender that the allowlist refuses by default, or one Omni knows only by their lid, sends a
+message with a code of the pattern, and no code list let them in first, the plugin posts Omni's
+own event for that message to the service: `{ id, type: 'message.received', timestamp, metadata,
+payload: { externalId, chatId, from, senderName?, content: { text } } }`, with the raw text, a
+10-second timeout, no redirects, `Authorization: Bearer <secret>`, `X-Omni-Event-Id` (the same on
+every try) and a new `X-Omni-Delivery-Id` each try. The service matches the code itself; the
+pattern only decides whether to call, and one message is one call. Only an HTTP 200 with a `reply`
+(at most 1000 characters) is an answer: the reply goes word for word to the person's chat, once
+per message id (the newest 5000 ids are saved), and the chat's row under **Requests** is marked
+`confirmed` (with the tier, when one is set). The person stays not let in; no rule is written.
+Any other answer sends the person nothing.
+
+The event waits only for the first try. A timeout, a network error or a 503 is tried again twice
+in the background, after about 2 and 10 seconds; after 3 such failures in a row the service is not
+called for 5 minutes. Whatever the answer, a message with such a code never gets the stranger
+reply; it is listed under **Requests**, and a sender known only by their lid is kept as before.
+The plugin makes at most 30 calls a minute, and a chat's calls share the code lists' 5 an hour. A
+blocked or admitted sender is never checked. A failure is warned once per bot, with its status
+only.
+
+## Reading a chat's history
+
+A Bot that operates Omni (a Main Bot or an Omni Bot) reads one chat's history, page by page,
+within an optional date window, and keeps what it learns in a reading note of that chat. Answer
+children never use these tools; they keep `thread_history`. A Bot reads, and keeps a note of,
+only a chat on a channel it may read (`rt.canChannel(bot, channel, 'read')`), so a dedicated
+channel bot stays on its own lines. Reading only reads: nothing is sent, no child wakes, and old
+messages never start an answer.
+
+- `read_history { chat, from?, to?, cursor?, size? }` (size 1-200, default 50) calls
+  `GET /chats/:id/messages` with Omni's page cursor and `includeDeleted=true`, and
+  `GET /chats/:id/coverage`. Pages go back from the newest; each page reads oldest first, one
+  line per message: platform time, sender, text, the media kind with its transcript or
+  description, reactions, and `edited`, `deleted` and `history` (rows Omni took from the
+  channel's history) marks. The header gives the coverage (oldest, newest, count, count in the
+  window, deleted, media without a file), the last contact each way, "page N of about M", the
+  next cursor (which keeps its window, and its size unless another is given) and the chat's
+  reading note. When Omni holds nothing for the window, it says to ask the user for a backfill
+  first. A page stays under the size DSH keeps whole in a tool result (about 46,000
+  characters): a page that fits keeps every text whole; one that does not cuts its texts
+  shorter, never its lines, and its header says to read it again (same cursor, none on a first
+  page) with a smaller size to have them whole. A page that does not fit even at the shortest
+  cut is never returned: the same cursor and window are read again with half as many messages
+  (at most 8 times), the header says "fewer messages than asked, to fit", and the next cursor
+  is Omni's own after the last message shown. A chat Omni does not have, or that this link may
+  not read, is said plainly.
+- `save_reading_note { chat, note, readThrough }` keeps the note (at most 8,000 characters: who
+  the person is to the user, what is open, the last contact, how the user talks to them), the
+  newest message time it covers (`readThrough`, where a later reading of what is new starts),
+  and when it was updated. Pages go back from the newest, so until a reading reaches its last
+  page the note itself says how far back it has read.
+
+The notes live in `omni-reading-notes.json` beside `omni.json` (0600), keyed by Omni chat id:
+never in `state.json`, a log or the roster view. Each save rewrites the file through a
+temporary file and a rename, one at a time in this host; there is no lock across hosts, and a
+host that only reads the team does not save. The tools need an Omni with the page cursor and
+the coverage read, so `engines.omni` names the release this change is cut in.
+
+The shared kit's person card reads one chat's note and coverage through the endpoint
+`omni-reading-note` (a read, so a host that only reads the team serves it too):
+
+```text
+request:  { chat: "<Omni chat id>" }
+response: {
+  chat: { id, name?, channelId? },
+  note: { text, readThrough, updatedAt } | null,
+  coverage: { oldest, newest, count, mediaMissing, deletedCount, lastInbound, lastOutbound } | null
+}
+```
+
+The note and the coverage come back only when the Omni finds the chat and some Bot that
+operates Omni may read its channel (`rt.canChannel(bot, channel, 'read')`, as the tools decide).
+Otherwise the answer is `{ chat: { id }, note: null, coverage: null }`, never a saved note.
+`note` is null until a Bot saves one; `coverage` is null when the Omni cannot give it. Times are
+ISO strings.
 
 ## Existing channel settings
 
@@ -172,7 +368,7 @@ the bundle patch (`cordis.patch.yml`), which adds one row, `id: omni-channels`, 
 nothing else. Restart DSH.
 
 From a checkout, link it into a profile next to the team plugin; the team's
-[README](https://github.com/automagik-dev/automagik/tree/dev/apps/bots-dsh#install) has the profile.
+[README](https://github.com/automagik-si/automagik/tree/dev/apps/bots-dsh#install) has the profile.
 
 ## Connect to an Omni
 
@@ -374,7 +570,7 @@ The folder's own lockfile is npm's: Bun resolves every peer from the registry, a
 peers on the Omni plugins, which ship through the Automagik market rather than npm.
 
 `client.js` is generated from `src/client` and committed, so git and `link:` installs need
-no build step. The tests load the team plugin from automagik-dev/automagik at the release
+no build step. The tests load the team plugin from automagik-si/automagik at the release
 `apps/automagik.json` pins (`node ../automagik.mjs source` fetches its `apps/bots-dsh` into
 `apps/.automagik`; or `OMNI_DSH_CORE`): its `index.js`, its test context, and its committed
 `client.js`.

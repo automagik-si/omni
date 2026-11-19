@@ -97,6 +97,8 @@ export interface HandoffPlan {
     filial_vq?: string;
     /** Operator code → `u_codigoOperadora`. Always present on a handoff turn, `""` when unknown. */
     codigo_operadora_vq?: string;
+    /** The protocol numbers the agent issued → `u_protocolo`. Always present on a handoff turn, `""` when none. */
+    protocolo_vq?: string;
   };
 }
 
@@ -262,6 +264,18 @@ function buildGenesysFields(
   }
 
   fields.codigo_operadora_vq = readCodigoOperadora(read('codigo_operadora_vq'), logger);
+
+  // `u_protocolo`: the protocol numbers the agent issued during the conversation,
+  // for the attendant to read. Always present, empty included, for the same
+  // all-or-nothing `store` reason as the fields above: the flow can list it in
+  // `returned` without waiting for any agent to send it. Free text owned by the
+  // agent, so it is cleaned and capped, never validated — and it never refuses
+  // the handoff, since a missing protocol costs the attendant a question, not a
+  // transfer. The agent keeps the list inside the cap with whole numbers only,
+  // so the cut never lands inside one.
+  const protocolo = read('protocolo_vq');
+  fields.protocolo_vq =
+    typeof protocolo === 'string' ? protocolo.replace(/\s+/g, ' ').trim().slice(0, IDENTITY_MAX_LENGTH) : '';
 
   return fields;
 }

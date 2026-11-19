@@ -24,6 +24,7 @@
  *  14. nats-bind-address       — loopback NATS listener
  *  15. connector-unmatched     — authenticated per-connector counters
  *  16. paired-agents           — authenticated feature status and rollback guidance
+ *  17. two-responders          — instances an Omni agent and an attached app may both answer
  *
  * Each check returns OK / WARN / FAIL with a one-line detail. `--fix`
  * attempts repair for checks with a known repair path. The fix flow
@@ -111,7 +112,8 @@ export type CheckId =
   | 'embedded-data-orphaned'
   | 'nats-bind-address'
   | 'connector-unmatched'
-  | 'paired-agents';
+  | 'paired-agents'
+  | 'two-responders';
 
 export interface CheckResult {
   id: CheckId;
@@ -206,6 +208,8 @@ export interface DoctorDeps {
   ) => Promise<{ enabled: boolean; reason: 'flag_unset' | 'multitenancy_enabled' | null } | { error: string }>;
   /** Authenticated connectors list; counters must never come from public health. */
   listConnectors: OmniClient['connectors']['list'];
+  /** Authenticated two-responder read (system:read); never inferred from local state. */
+  fetchTwoResponders: OmniClient['system']['twoResponders'];
   /** Clock for the recent-unmatched window; defaults to Date.now. */
   now?: () => number;
   /** Return all pm2 processes (or null on error). */
@@ -334,6 +338,13 @@ function productionDeps(): DoctorDeps {
         throw new OmniApiError('Authenticated connectors:read is required', 'UNAUTHORIZED', undefined, 401);
       const baseUrl = cliConfig.apiUrl ?? `http://localhost:${loadServerConfig().port}`;
       return createOmniClient({ baseUrl, apiKey: cliConfig.apiKey, cliVersion: VERSION }).connectors.list(params);
+    },
+    fetchTwoResponders: async () => {
+      const cliConfig = loadLocalRuntimeConfig();
+      if (!cliConfig.apiKey)
+        throw new OmniApiError('Authenticated system:read is required', 'UNAUTHORIZED', undefined, 401);
+      const baseUrl = cliConfig.apiUrl ?? `http://localhost:${loadServerConfig().port}`;
+      return createOmniClient({ baseUrl, apiKey: cliConfig.apiKey, cliVersion: VERSION }).system.twoResponders();
     },
     getPm2Processes,
     canConnect: async (port: number) => {
@@ -1389,6 +1400,81 @@ async function checkPairedAgents(deps: DoctorDeps): Promise<CheckResult> {
   }
 }
 
+const doctorText = z.string().transform(stripTerminalControls);
+
+const TwoRespondersSchema = z.object({
+  activeWindowDays: z.number(),
+  instances: z.array(
+    z.object({
+      instanceId: doctorText,
+      instanceName: doctorText,
+      agentId: doctorText,
+      agentName: doctorText,
+      consumers: z.array(
+        z.object({
+          name: doctorText,
+          reader: z.enum(['owner-key', 'owning-agent', 'unrecorded']),
+          ownerKeyId: doctorText.nullable(),
+          agentId: doctorText.nullable(),
+          sameAgent: z.boolean(),
+        }),
+      ),
+    }),
+  ),
+});
+
+type TwoResponderConsumer = z.infer<typeof TwoRespondersSchema>['instances'][number]['consumers'][number];
+
+function describeResponder(consumer: TwoResponderConsumer): string {
+  if (consumer.sameAgent) return `${consumer.name} (the same agent also reads it: one agent, two delivery paths)`;
+  if (consumer.reader === 'owner-key') return `${consumer.name} (owner key ${consumer.ownerKeyId} may send)`;
+  if (consumer.reader === 'owning-agent') return `${consumer.name} (owned by agent ${consumer.agentId})`;
+  return `${consumer.name} (owner key not recorded)`;
+}
+
+function twoRespondersError(error: unknown): string {
+  if (error instanceof OmniApiError && (error.status === 401 || error.status === 403)) {
+    // A server older than this check also answers 403: its scope map has no entry for the route.
+    return 'Two-responder check unavailable; it needs system:read and a server with GET /system/two-responders.';
+  }
+  if (error instanceof OmniApiError && error.status === 404) {
+    return 'Two-responder check unavailable: this server has no GET /system/two-responders yet.';
+  }
+  const reason =
+    error instanceof z.ZodError
+      ? `Invalid two-responder response: ${error.issues[0]?.path.join('.')}: ${error.issues[0]?.message}`
+      : error instanceof Error
+        ? error.message
+        : 'Unknown error';
+  return `Two-responder check unavailable: ${stripTerminalControls(reason).slice(0, 200).trim() || 'Unknown error'}`;
+}
+
+/**
+ * One WARN per instance that an Omni agent and an attached app may both answer, naming the instance, the
+ * agent and the consumer(s); one OK line when there is none. Read-only: the server decides, this only reports.
+ */
+export async function checkTwoResponders(deps: Pick<DoctorDeps, 'fetchTwoResponders'>): Promise<CheckResult[]> {
+  try {
+    const report = TwoRespondersSchema.parse(await deps.fetchTwoResponders());
+    if (report.instances.length === 0) {
+      return [
+        {
+          id: 'two-responders',
+          level: 'OK',
+          detail: `no instance has both an Omni agent and an attached app that may answer (consumers active in the last ${report.activeWindowDays} days)`,
+        },
+      ];
+    }
+    return report.instances.map((instance) => ({
+      id: 'two-responders' as const,
+      level: 'WARN' as const,
+      detail: `${instance.instanceName} (${instance.instanceId}): agent ${instance.agentName} (${instance.agentId}) answers here, and these consumers may answer too: ${instance.consumers.map(describeResponder).join('; ')}`,
+    }));
+  } catch (error) {
+    return [{ id: 'two-responders', level: 'WARN', detail: twoRespondersError(error) }];
+  }
+}
+
 /** Run the full check battery sequentially. */
 async function runAllChecks(deps: DoctorDeps): Promise<CheckResult[]> {
   return [
@@ -1408,6 +1494,7 @@ async function runAllChecks(deps: DoctorDeps): Promise<CheckResult[]> {
     await checkNatsBindAddress(deps),
     ...(await checkConnectorUnmatched(deps)),
     await checkPairedAgents(deps),
+    ...(await checkTwoResponders(deps)),
   ];
 }
 
@@ -1575,6 +1662,7 @@ Checks:
   port-canonical-owner     canonical ports (NATS, API) owned by pm2-managed PIDs
   connector-unmatched      per-connector unmatched counters (authenticated connectors:read)
   paired-agents            effective flag status and rollback guidance (authenticated system:read)
+  two-responders           instances an Omni agent and an attached app may both answer (authenticated system:read)
 
 Safety:
   --fix NEVER touches ~/.omni/data/pgserve — it only operates on the pm2

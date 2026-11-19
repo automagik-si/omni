@@ -10,12 +10,16 @@ import { z } from '../../lib/zod-openapi';
 import {
   ChatTypeSchema,
   addParticipantSchema,
+  chatBackfillParams,
+  chatBackfillSchema,
+  chatCoverageQuerySchema,
   createChatSchema,
   listMessagesQuerySchema,
   listQuerySchema,
   updateChatSchema,
 } from '../../routes/v2/chats';
 import { ErrorSchema, SuccessSchema } from './common';
+import { StoredMessageSchema } from './messages-core';
 
 export const ChatSchema = z.object({
   id: z.string().uuid().openapi({ description: 'Chat UUID' }),
@@ -62,6 +66,58 @@ const ChatListResponse = z.object({
   }),
 });
 
+const ReactionSchema = z.object({
+  emoji: z.string(),
+  platformUserId: z.string(),
+  personId: z.string().optional(),
+  displayName: z.string().optional(),
+  at: z.string().openapi({ description: 'ISO time of the reaction' }),
+});
+
+/** One item of GET /chats/{id}/messages: the stored message row, as the route returns it. */
+export const ChatMessageSchema = StoredMessageSchema.extend({
+  senderPlatformUserId: z.string().nullable().optional(),
+  senderAgentId: z.string().uuid().nullable().optional().openapi({ description: 'Set when an agent sent it' }),
+  mediaMimeType: z.string().nullable().optional(),
+  imageDescription: z.string().nullable().optional().openapi({ description: 'Description of an image' }),
+  videoDescription: z.string().nullable().optional().openapi({ description: 'Description of a video' }),
+  documentExtraction: z.string().nullable().optional().openapi({ description: 'Text read from a document' }),
+  reactions: z.array(ReactionSchema).nullable().optional(),
+  reactionCounts: z.record(z.number().int()).nullable().optional().openapi({ description: 'Reactions per emoji' }),
+  editCount: z.number().int().optional(),
+  editedAt: z.string().nullable().optional().openapi({ description: 'ISO time of the last edit' }),
+  deletedAt: z
+    .string()
+    .nullable()
+    .optional()
+    .openapi({ description: 'ISO time it was deleted; listed only with includeDeleted=true' }),
+}).passthrough();
+
+const ChatMessagesPageSchema = z.object({
+  items: z.array(ChatMessageSchema).openapi({ description: 'Newest first' }),
+  meta: z.object({
+    hasMore: z.boolean(),
+    cursor: z.string().nullable().openapi({ description: 'Pass as cursor for the next page; null on the last page' }),
+  }),
+});
+
+export const ChatCoverageSchema = z.object({
+  oldest: z.string().nullable().openapi({ description: 'ISO platform time of the oldest stored message' }),
+  newest: z.string().nullable().openapi({ description: 'ISO platform time of the newest stored message' }),
+  count: z.number().int().openapi({ description: 'Stored messages, as paging the whole chat returns them' }),
+  countInWindow: z.number().int().openapi({ description: 'Those between from and to, both inclusive' }),
+  mediaMissing: z.number().int().openapi({ description: 'Media messages with no stored file' }),
+  deletedCount: z.number().int().openapi({ description: 'Deleted messages, counted whatever includeDeleted says' }),
+  lastInbound: z
+    .string()
+    .nullable()
+    .openapi({ description: 'ISO platform time of the newest message not sent from the account' }),
+  lastOutbound: z
+    .string()
+    .nullable()
+    .openapi({ description: 'ISO platform time of the newest message sent from the account' }),
+});
+
 const idParam = z.object({
   id: z
     .string()
@@ -75,8 +131,74 @@ const chatData = (description: string) => ({
 });
 
 export function registerChatSchemas(registry: OpenAPIRegistry): void {
+  const backfillJob = z.object({
+    data: z.object({
+      id: z.string().uuid(),
+      chatId: z.string().uuid(),
+      state: z.enum(['queued', 'fetching', 'done', 'phone-did-not-answer', 'cancelled', 'failed']),
+      fetched: z.number(),
+      stored: z.number(),
+      duplicates: z.number(),
+      mediaDownloaded: z.number(),
+      mediaMissing: z.number(),
+      reactionsApplied: z.number(),
+      editsApplied: z.number(),
+      deletionsApplied: z.number(),
+      unmatched: z.number(),
+      oldestReached: z.string().nullable(),
+      outcome: z.string().optional(),
+      coverage: z.object({
+        oldest: z.string().nullable(),
+        newest: z.string().nullable(),
+        count: z.number(),
+        countInWindow: z.number(),
+        deletedCount: z.number(),
+        mediaMissing: z.number(),
+        lastInbound: z.string().nullable(),
+        lastOutbound: z.string().nullable(),
+      }),
+    }),
+  });
+  registry.registerPath({
+    method: 'post',
+    path: '/chats/{id}/backfill',
+    tags: ['Chats'],
+    summary: 'Queue a chat backfill',
+    request: { params: idParam, body: { content: { 'application/json': { schema: chatBackfillSchema } } } },
+    responses: {
+      202: {
+        description: 'Queued',
+        content: { 'application/json': { schema: z.object({ jobId: z.string().uuid() }) } },
+      },
+      404: notFound,
+    },
+  });
+  registry.registerPath({
+    method: 'get',
+    path: '/chats/{id}/backfill/{jobId}',
+    tags: ['Chats'],
+    summary: 'Read chat backfill progress',
+    request: { params: chatBackfillParams },
+    responses: {
+      200: { description: 'Job progress and coverage', content: { 'application/json': { schema: backfillJob } } },
+      404: notFound,
+    },
+  });
+  registry.registerPath({
+    method: 'post',
+    path: '/chats/{id}/backfill/{jobId}/cancel',
+    tags: ['Chats'],
+    summary: 'Cancel a chat backfill',
+    request: { params: chatBackfillParams },
+    responses: {
+      200: { description: 'Cancelled job', content: { 'application/json': { schema: backfillJob } } },
+      404: notFound,
+    },
+  });
   registry.register('Chat', ChatSchema);
   registry.register('ChatParticipant', ChatParticipantSchema);
+  registry.register('ChatMessage', ChatMessageSchema);
+  registry.register('ChatCoverage', ChatCoverageSchema);
 
   registry.registerPath({
     method: 'get',
@@ -139,13 +261,39 @@ export function registerChatSchemas(registry: OpenAPIRegistry): void {
     path: '/chats/{id}/messages',
     tags: ['Chats'],
     summary: 'List the messages of a chat',
-    description: 'Newest first, up to limit; before/after bound the time window and mediaOnly keeps media messages.',
+    description:
+      'Newest first, up to limit; before/after bound the time window (both inclusive) and mediaOnly keeps media messages. ' +
+      'Pass meta.cursor back as cursor for the next page: it continues after the last item, so messages sharing one time are never repeated or skipped. ' +
+      'Deleted messages are left out unless includeDeleted=true.',
     request: { params: idParam, query: listMessagesQuerySchema },
     responses: {
       200: {
-        description: 'Messages',
-        content: { 'application/json': { schema: z.object({ items: z.array(z.record(z.unknown())) }) } },
+        description: 'A page of messages',
+        content: { 'application/json': { schema: ChatMessagesPageSchema } },
       },
+      400: {
+        description: 'Invalid query, or a cursor this route did not issue',
+        content: { 'application/json': { schema: ErrorSchema } },
+      },
+      404: notFound,
+    },
+  });
+
+  registry.registerPath({
+    method: 'get',
+    path: '/chats/{id}/coverage',
+    tags: ['Chats'],
+    summary: 'What Omni holds for a chat',
+    description:
+      'Oldest and newest platform times, counts, media still missing a stored file, and the newest message each way. ' +
+      'Uses the same rows as GET /chats/{id}/messages, so count is what paging the whole chat returns. Read-only.',
+    request: { params: idParam, query: chatCoverageQuerySchema },
+    responses: {
+      200: {
+        description: 'The coverage',
+        content: { 'application/json': { schema: z.object({ data: ChatCoverageSchema }) } },
+      },
+      400: { description: 'Invalid query', content: { 'application/json': { schema: ErrorSchema } } },
       404: notFound,
     },
   });

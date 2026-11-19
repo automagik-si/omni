@@ -20,6 +20,9 @@ import * as omniTerminal from './src/host/omni-terminal.js'
 import * as omniUpdate from './src/host/omni-update.js'
 import * as omni from './src/host/omni.js'
 import * as omniEvents from './src/host/omni-events.js'
+import * as answerStrangers from './src/host/answer-strangers.js'
+import * as answerCodes from './src/host/answer-codes.js'
+import * as answerOutsideCheck from './src/host/answer-outside-check.js'
 import * as omniChannelActions from './src/host/omni-channel-actions.js'
 import * as threadKeys from './src/host/thread-keys.js'
 import * as threads from './src/host/threads.js'
@@ -27,6 +30,8 @@ import * as threadTools from './src/host/thread-tools.js'
 import * as needsStaff from './src/host/needs-staff.js'
 import * as standingRecovery from './src/host/standing-recovery.js'
 import * as standingRuns from './src/host/standing-runs.js'
+import * as reading from './src/host/reading.js'
+import * as botChannels from './src/host/bot-channels.js'
 
 export const name = 'omni-channels'
 // The chat threads take their instructions from a prompt section, archive their Sessions in
@@ -45,9 +50,15 @@ export const inject = ['omniTeam', 'tools', 'sessions', 'sessionTitle', 'setting
 // thread_needs_staff after those, whose guard it uses and whose staff take-over it hooks. The
 // standing-Session runs (automations that run each event in its chat's thread) after the
 // threads, whose removals they hear, and their restart recovery right after them, before the
-// events, which queue for them.
-// Changing channels from the Channels page comes last: it only calls omni through omni.js.
-const MODULES = [resumeHook, grants, subscriptions, asks, omniApi, omniLink, omniDiscover, omniLocal, omniTerminal, omniUpdate, omni, threadKeys, threads, threadTools, needsStaff, standingRuns, standingRecovery, omniEvents, omniChannelActions]
+// events, which queue for them. The reply to a person no rule lets in, letting in a person by a
+// code from a staff list (with the lists staff upload), then checking a code with the bot's
+// outside service (it shares the code path's per-chat limit), come right before the events,
+// which call them; both mark the reply's request row.
+// Changing channels from the Channels page comes next: it only calls omni through omni.js.
+// Reading a chat's history and keeping its reading note comes next: it only reads omni
+// through omni.js and checks the threads' answer children and the channels' owners.
+// The left bar reads each Bot’s channels and chats through omni.js.
+const MODULES = [resumeHook, grants, subscriptions, asks, omniApi, omniLink, omniDiscover, omniLocal, omniTerminal, omniUpdate, omni, threadKeys, threads, threadTools, needsStaff, standingRuns, standingRecovery, answerStrangers, answerCodes, answerOutsideCheck, omniEvents, omniChannelActions, reading, botChannels]
 
 export function apply(ctx, config = {}) {
   ctx.provide('omniChannels', createRuntime(ctx, ctx.omniTeam, config))

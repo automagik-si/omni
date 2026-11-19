@@ -488,21 +488,21 @@ function sl(s15, t2, e, i, r, n) {
   for (let l = 0; l < s15.length - 1; l++) {
     let a = l, u = s15.get(++a);
     if (!u.isWrapped) continue;
-    let h20 = [s15.get(l)];
-    for (; a < s15.length && u.isWrapped; ) h20.push(u), u = s15.get(++a);
+    let h22 = [s15.get(l)];
+    for (; a < s15.length && u.isWrapped; ) h22.push(u), u = s15.get(++a);
     if (!n && i >= l && i < a) {
-      l += h20.length - 1;
+      l += h22.length - 1;
       continue;
     }
-    let c = 0, d = ri(h20, c, t2), _ = 1, p = 0;
-    for (; _ < h20.length; ) {
-      let f = ri(h20, _, t2), A = f - p, R = e - d, O = Math.min(A, R);
-      h20[c].copyCellsFrom(h20[_], p, d, O, false), d += O, d === e && (c++, d = 0), p += O, p === f && (_++, p = 0), d === 0 && c !== 0 && h20[c - 1].getWidth(e - 1) === 2 && (h20[c].copyCellsFrom(h20[c - 1], e - 1, d++, 1, false), h20[c - 1].setCell(e - 1, r));
+    let c = 0, d = ri(h22, c, t2), _ = 1, p = 0;
+    for (; _ < h22.length; ) {
+      let f = ri(h22, _, t2), A = f - p, R = e - d, O = Math.min(A, R);
+      h22[c].copyCellsFrom(h22[_], p, d, O, false), d += O, d === e && (c++, d = 0), p += O, p === f && (_++, p = 0), d === 0 && c !== 0 && h22[c - 1].getWidth(e - 1) === 2 && (h22[c].copyCellsFrom(h22[c - 1], e - 1, d++, 1, false), h22[c - 1].setCell(e - 1, r));
     }
-    h20[c].replaceCells(d, e, r);
+    h22[c].replaceCells(d, e, r);
     let m = 0;
-    for (let f = h20.length - 1; f > 0 && (f > c || h20[f].getTrimmedLength() === 0); f--) m++;
-    m > 0 && (o.push(l + h20.length - m), o.push(m)), l += h20.length - 1;
+    for (let f = h22.length - 1; f > 0 && (f > c || h22[f].getTrimmedLength() === 0); f--) m++;
+    m > 0 && (o.push(l + h22.length - m), o.push(m)), l += h22.length - 1;
   }
   return o;
 }
@@ -532,8 +532,8 @@ function al(s15, t2, e) {
     n > a && (n -= a, o++);
     let u = s15[o].getWidth(n - 1) === 2;
     u && n--;
-    let h20 = u ? e - 1 : e;
-    i.push(h20), l += h20;
+    let h22 = u ? e - 1 : e;
+    i.push(h22), l += h22;
   }
   return i;
 }
@@ -822,23 +822,23 @@ var init_xterm = __esm({
       decode(t2, e) {
         let i = t2.length;
         if (!i) return 0;
-        let r = 0, n, o, l, a, u = 0, h20 = 0;
+        let r = 0, n, o, l, a, u = 0, h22 = 0;
         if (this.interim[0]) {
           let _ = false, p = this.interim[0];
           p &= (p & 224) === 192 ? 31 : (p & 240) === 224 ? 15 : 7;
           let m = 0, f;
           for (; (f = this.interim[++m] & 63) && m < 4; ) p <<= 6, p |= f;
           let A = (this.interim[0] & 224) === 192 ? 2 : (this.interim[0] & 240) === 224 ? 3 : 4, R = A - m;
-          for (; h20 < R; ) {
-            if (h20 >= i) return 0;
-            if (f = t2[h20++], (f & 192) !== 128) {
-              h20--, _ = true;
+          for (; h22 < R; ) {
+            if (h22 >= i) return 0;
+            if (f = t2[h22++], (f & 192) !== 128) {
+              h22--, _ = true;
               break;
             } else this.interim[m++] = f, p <<= 6, p |= f & 63;
           }
-          _ || (A === 2 ? p < 128 ? h20-- : e[r++] = p : A === 3 ? p < 2048 || p >= 55296 && p <= 57343 || p === 65279 || (e[r++] = p) : p < 65536 || p > 1114111 || (e[r++] = p)), this.interim.fill(0);
+          _ || (A === 2 ? p < 128 ? h22-- : e[r++] = p : A === 3 ? p < 2048 || p >= 55296 && p <= 57343 || p === 65279 || (e[r++] = p) : p < 65536 || p > 1114111 || (e[r++] = p)), this.interim.fill(0);
         }
-        let c = i - 4, d = h20;
+        let c = i - 4, d = h22;
         for (; d < i; ) {
           for (; d < c && !((n = t2[d]) & 128) && !((o = t2[d + 1]) & 128) && !((l = t2[d + 2]) & 128) && !((a = t2[d + 3]) & 128); ) e[r++] = n, e[r++] = o, e[r++] = l, e[r++] = a, d += 4;
           if (n = t2[d++], n < 128) e[r++] = n;
@@ -1123,17 +1123,17 @@ var init_xterm = __esm({
           e(void 0);
           return;
         }
-        let r = [], n = this._optionsService.rawOptions.linkHandler, o = new q(), l = i.getTrimmedLength(), a = -1, u = -1, h20 = false;
+        let r = [], n = this._optionsService.rawOptions.linkHandler, o = new q(), l = i.getTrimmedLength(), a = -1, u = -1, h22 = false;
         for (let c = 0; c < l; c++) if (!(u === -1 && !i.hasContent(c))) {
           if (i.loadCell(c, o), o.hasExtendedAttrs() && o.extended.urlId) if (u === -1) {
             u = c, a = o.extended.urlId;
             continue;
-          } else h20 = o.extended.urlId !== a;
-          else u !== -1 && (h20 = true);
-          if (h20 || u !== -1 && c === l - 1) {
+          } else h22 = o.extended.urlId !== a;
+          else u !== -1 && (h22 = true);
+          if (h22 || u !== -1 && c === l - 1) {
             let d = this._oscLinkService.getLinkData(a)?.uri;
             if (d) {
-              let _ = { start: { x: u + 1, y: t2 }, end: { x: c + (!h20 && c === l - 1 ? 1 : 0), y: t2 } }, p = false;
+              let _ = { start: { x: u + 1, y: t2 }, end: { x: c + (!h22 && c === l - 1 ? 1 : 0), y: t2 } }, p = false;
               if (!n?.allowNonHttpProtocols) try {
                 let m = new URL(d);
                 ["http:", "https:"].includes(m.protocol) || (p = true);
@@ -1142,7 +1142,7 @@ var init_xterm = __esm({
               }
               p || r.push({ text: d, range: _, activate: (m, f) => n ? n.activate(m, f, _) : Ol(m, f), hover: (m, f) => n?.hover?.(m, f, _), leave: (m, f) => n?.leave?.(m, f, _) });
             }
-            h20 = false, o.hasExtendedAttrs() && o.extended.urlId ? (u = c, a = o.extended.urlId) : (u = -1, a = -1);
+            h22 = false, o.hasExtendedAttrs() && o.extended.urlId ? (u = c, a = o.extended.urlId) : (u = -1, a = -1);
           }
         }
         e(r);
@@ -1385,10 +1385,10 @@ var init_xterm = __esm({
         return false;
       }
       O.some = u;
-      function h20(I, k) {
+      function h22(I, k) {
         for (let P of I) if (k(P)) return P;
       }
-      O.find = h20;
+      O.find = h22;
       function* c(I, k) {
         for (let P of I) k(P) && (yield P);
       }
@@ -1476,29 +1476,29 @@ var init_xterm = __esm({
         else {
           let a = /* @__PURE__ */ new Map(), u = [...this.livingDisposables.values()].filter((c) => c.source !== null && !this.getRootParent(c, a).isSingleton);
           if (u.length === 0) return;
-          let h20 = new Set(u.map((c) => c.value));
-          if (i = u.filter((c) => !(c.parent && h20.has(c.parent))), i.length === 0) throw new Error("There are cyclic diposable chains!");
+          let h22 = new Set(u.map((c) => c.value));
+          if (i = u.filter((c) => !(c.parent && h22.has(c.parent))), i.length === 0) throw new Error("There are cyclic diposable chains!");
         }
         if (!i) return;
         function r(a) {
           function u(c, d) {
             for (; c.length > 0 && d.some((_) => typeof _ == "string" ? _ === c[0] : c[0].match(_)); ) c.shift();
           }
-          let h20 = a.source.split(`
+          let h22 = a.source.split(`
 `).map((c) => c.trim().replace("at ", "")).filter((c) => c !== "");
-          return u(h20, ["Error", /^trackDisposable \(.*\)$/, /^DisposableTracker.trackDisposable \(.*\)$/]), h20.reverse();
+          return u(h22, ["Error", /^trackDisposable \(.*\)$/, /^DisposableTracker.trackDisposable \(.*\)$/]), h22.reverse();
         }
         let n = new ur();
         for (let a of i) {
           let u = r(a);
-          for (let h20 = 0; h20 <= u.length; h20++) n.add(u.slice(0, h20).join(`
+          for (let h22 = 0; h22 <= u.length; h22++) n.add(u.slice(0, h22).join(`
 `), a);
         }
         i.sort(no((a) => a.idx, so));
         let o = "", l = 0;
         for (let a of i.slice(0, t2)) {
           l++;
-          let u = r(a), h20 = [];
+          let u = r(a), h22 = [];
           for (let c = 0; c < u.length; c++) {
             let d = u[c];
             d = `(shared with ${n.get(u.slice(0, c + 1).join(`
@@ -1506,14 +1506,14 @@ var init_xterm = __esm({
             let p = n.get(u.slice(0, c).join(`
 `)), m = co([...p].map((f) => r(f)[c]), (f) => f);
             delete m[u[c]];
-            for (let [f, A] of Object.entries(m)) h20.unshift(`    - stacktraces of ${A.length} other leaks continue with ${f}`);
-            h20.unshift(d);
+            for (let [f, A] of Object.entries(m)) h22.unshift(`    - stacktraces of ${A.length} other leaks continue with ${f}`);
+            h22.unshift(d);
           }
           o += `
 
 
 ==================== Leaking disposable ${l}/${i.length}: ${a.value.constructor.name} ====================
-${h20.join(`
+${h22.join(`
 `)}
 ============================================================
 
@@ -1742,17 +1742,17 @@ ${h20.join(`
       }
       Qe.once = i;
       function r(y, T, g) {
-        return h20((w, E = null, x) => y((N) => w.call(E, T(N)), null, x), g);
+        return h22((w, E = null, x) => y((N) => w.call(E, T(N)), null, x), g);
       }
       Qe.map = r;
       function n(y, T, g) {
-        return h20((w, E = null, x) => y((N) => {
+        return h22((w, E = null, x) => y((N) => {
           T(N), w.call(E, N);
         }, null, x), g);
       }
       Qe.forEach = n;
       function o(y, T, g) {
-        return h20((w, E = null, x) => y((N) => T(N) && w.call(E, N), null, x), g);
+        return h22((w, E = null, x) => y((N) => T(N) && w.call(E, N), null, x), g);
       }
       Qe.filter = o;
       function l(y) {
@@ -1771,7 +1771,7 @@ ${h20.join(`
         return r(y, (x) => (E = T(E, x), E), w);
       }
       Qe.reduce = u;
-      function h20(y, T) {
+      function h22(y, T) {
         let g, w = { onWillAddFirstListener() {
           g = y(E.fire, E);
         }, onDidRemoveLastListener() {
@@ -2076,8 +2076,8 @@ ${h20.join(`
           if (this._leakageMon && this._size > this._leakageMon.threshold ** 2) {
             let a = `[${this._leakageMon.name}] REFUSES to accept new listeners because it exceeded its threshold by far (${this._size} vs ${this._leakageMon.threshold})`;
             console.warn(a);
-            let u = this._leakageMon.getMostFrequentStack() ?? ["UNKNOWN stack", -1], h20 = new Yn(`${a}. HINT: Stack shows most frequent listener (${u[1]}-times)`, u[0]);
-            return (this._options?.onListenerError || Lt)(h20), D.None;
+            let u = this._leakageMon.getMostFrequentStack() ?? ["UNKNOWN stack", -1], h22 = new Yn(`${a}. HINT: Stack shows most frequent listener (${u[1]}-times)`, u[0]);
+            return (this._options?.onListenerError || Lt)(h22), D.None;
           }
           if (this._disposed) return D.None;
           e && (t2 = t2.bind(e));
@@ -2697,8 +2697,8 @@ ${h20.join(`
         let t2 = Cr2._bigBlock32, e = this._buffDV;
         for (let c = 0; c < 64; c += 4) t2.setUint32(c, e.getUint32(c, false), false);
         for (let c = 64; c < 320; c += 4) t2.setUint32(c, rs(t2.getUint32(c - 12, false) ^ t2.getUint32(c - 32, false) ^ t2.getUint32(c - 56, false) ^ t2.getUint32(c - 64, false), 1), false);
-        let i = this._h0, r = this._h1, n = this._h2, o = this._h3, l = this._h4, a, u, h20;
-        for (let c = 0; c < 80; c++) c < 20 ? (a = r & n | ~r & o, u = 1518500249) : c < 40 ? (a = r ^ n ^ o, u = 1859775393) : c < 60 ? (a = r & n | r & o | n & o, u = 2400959708) : (a = r ^ n ^ o, u = 3395469782), h20 = rs(i, 5) + a + l + u + t2.getUint32(c * 4, false) & 4294967295, l = o, o = n, n = rs(r, 30), r = i, i = h20;
+        let i = this._h0, r = this._h1, n = this._h2, o = this._h3, l = this._h4, a, u, h22;
+        for (let c = 0; c < 80; c++) c < 20 ? (a = r & n | ~r & o, u = 1518500249) : c < 40 ? (a = r ^ n ^ o, u = 1859775393) : c < 60 ? (a = r & n | r & o | n & o, u = 2400959708) : (a = r ^ n ^ o, u = 3395469782), h22 = rs(i, 5) + a + l + u + t2.getUint32(c * 4, false) & 4294967295, l = o, o = n, n = rs(r, 30), r = i, i = h22;
         this._h0 = this._h0 + i & 4294967295, this._h1 = this._h1 + r & 4294967295, this._h2 = this._h2 + n & 4294967295, this._h3 = this._h3 + o & 4294967295, this._h4 = this._h4 + l & 4294967295;
       }
     };
@@ -2783,13 +2783,13 @@ ${h20.join(`
         i.set(n, false);
       };
       mt = (n, o, l = 0) => {
-        let a = Oo(n), u = new Di(o, l), h20 = s15.get(a);
-        return h20 || (h20 = [], s15.set(a, h20)), h20.push(u), e.get(a) || (e.set(a, true), n.requestAnimationFrame(() => r(a))), u;
+        let a = Oo(n), u = new Di(o, l), h22 = s15.get(a);
+        return h22 || (h22 = [], s15.set(a, h22)), h22.push(u), e.get(a) || (e.set(a, true), n.requestAnimationFrame(() => r(a))), u;
       }, wa = (n, o, l) => {
         let a = Oo(n);
         if (i.get(a)) {
-          let u = new Di(o, l), h20 = t2.get(a);
-          return h20 || (h20 = [], t2.set(a, h20)), h20.push(u), u;
+          let u = new Di(o, l), h22 = t2.get(a);
+          return h22 || (h22 = [], t2.set(a, h22)), h22.push(u), u;
         } else return mt(n, o, l);
       };
     })();
@@ -3076,11 +3076,11 @@ ${h20.join(`
             console.warn("move of an UNKNOWN touch", a);
             continue;
           }
-          let u = this.activeTouches[a.identifier], h20 = Date.now() - u.initialTimeStamp;
-          if (h20 < Q2.HOLD_DELAY && Math.abs(u.initialPageX - Se(u.rollingPageX)) < 30 && Math.abs(u.initialPageY - Se(u.rollingPageY)) < 30) {
+          let u = this.activeTouches[a.identifier], h22 = Date.now() - u.initialTimeStamp;
+          if (h22 < Q2.HOLD_DELAY && Math.abs(u.initialPageX - Se(u.rollingPageX)) < 30 && Math.abs(u.initialPageY - Se(u.rollingPageY)) < 30) {
             let c = this.newGestureEvent(He.Tap, u.initialTarget);
             c.pageX = Se(u.rollingPageX), c.pageY = Se(u.rollingPageY), this.dispatchEvent(c);
-          } else if (h20 >= Q2.HOLD_DELAY && Math.abs(u.initialPageX - Se(u.rollingPageX)) < 30 && Math.abs(u.initialPageY - Se(u.rollingPageY)) < 30) {
+          } else if (h22 >= Q2.HOLD_DELAY && Math.abs(u.initialPageX - Se(u.rollingPageX)) < 30 && Math.abs(u.initialPageY - Se(u.rollingPageY)) < 30) {
             let c = this.newGestureEvent(He.Contextmenu, u.initialTarget);
             c.pageX = Se(u.rollingPageX), c.pageY = Se(u.rollingPageY), this.dispatchEvent(c);
           } else if (n === 1) {
@@ -3112,12 +3112,12 @@ ${h20.join(`
           for (let [r, n] of i) n.dispatchEvent(e), this.dispatched = true;
         }
       }
-      inertia(e, i, r, n, o, l, a, u, h20) {
+      inertia(e, i, r, n, o, l, a, u, h22) {
         this.handle = mt(e, () => {
           let c = Date.now(), d = c - r, _ = 0, p = 0, m = true;
           n += Q2.SCROLL_FRICTION * d, a += Q2.SCROLL_FRICTION * d, n > 0 && (m = false, _ = o * n * d), a > 0 && (m = false, p = u * a * d);
           let f = this.newGestureEvent(He.Change);
-          f.translationX = _, f.translationY = p, i.forEach((A) => A.dispatchEvent(f)), m || this.inertia(e, i, c, n, o, l + _, a, u, h20 + p);
+          f.translationX = _, f.translationY = p, i.forEach((A) => A.dispatchEvent(f)), m || this.inertia(e, i, c, n, o, l + _, a, u, h22 + p);
         });
       }
       onTouchMove(e) {
@@ -3463,8 +3463,8 @@ ${h20.join(`
       static _computeValues(t2, e, i, r, n) {
         let o = Math.max(0, i - t2), l = Math.max(0, o - 2 * e), a = r > 0 && r > i;
         if (!a) return { computedAvailableSize: Math.round(o), computedIsNeeded: a, computedSliderSize: Math.round(l), computedSliderRatio: 0, computedSliderPosition: 0 };
-        let u = Math.round(Math.max(20, Math.floor(i * l / r))), h20 = (l - u) / (r - i), c = n * h20;
-        return { computedAvailableSize: Math.round(o), computedIsNeeded: a, computedSliderSize: Math.round(u), computedSliderRatio: h20, computedSliderPosition: Math.round(c) };
+        let u = Math.round(Math.max(20, Math.floor(i * l / r))), h22 = (l - u) / (r - i), c = n * h22;
+        return { computedAvailableSize: Math.round(o), computedIsNeeded: a, computedSliderSize: Math.round(u), computedSliderRatio: h22, computedSliderPosition: Math.round(c) };
       }
       _refreshComputedValues() {
         let t2 = s11._computeValues(this._oppositeScrollbarSize, this._arrowSize, this._visibleSize, this._scrollSize, this._scrollPosition);
@@ -3607,8 +3607,8 @@ ${h20.join(`
         if (Math.abs(t2.deltaX) > 0 && Math.abs(t2.deltaY) > 0) return 1;
         let i = 0.5;
         if ((!this._isAlmostInt(t2.deltaX) || !this._isAlmostInt(t2.deltaY)) && (i += 0.25), e) {
-          let r = Math.abs(t2.deltaX), n = Math.abs(t2.deltaY), o = Math.abs(e.deltaX), l = Math.abs(e.deltaY), a = Math.max(Math.min(r, o), 1), u = Math.max(Math.min(n, l), 1), h20 = Math.max(r, o), c = Math.max(n, l);
-          h20 % a === 0 && c % u === 0 && (i -= 0.5);
+          let r = Math.abs(t2.deltaX), n = Math.abs(t2.deltaY), o = Math.abs(e.deltaX), l = Math.abs(e.deltaY), a = Math.max(Math.min(r, o), 1), u = Math.max(Math.min(n, l), 1), h22 = Math.max(r, o), c = Math.max(n, l);
+          h22 % a === 0 && c % u === 0 && (i -= 0.5);
         }
         return Math.min(Math.max(i, 0), 1);
       }
@@ -3681,16 +3681,16 @@ ${h20.join(`
           this._options.scrollPredominantAxis && (this._options.scrollYToX && l + o === 0 ? l = o = 0 : Math.abs(o) >= Math.abs(l) ? l = 0 : o = 0), this._options.flipAxes && ([o, l] = [l, o]);
           let a = !Te && e.browserEvent && e.browserEvent.shiftKey;
           (this._options.scrollYToX || a) && !l && (l = o, o = 0), e.browserEvent && e.browserEvent.altKey && (l = l * this._options.fastScrollSensitivity, o = o * this._options.fastScrollSensitivity);
-          let u = this._scrollable.getFutureScrollPosition(), h20 = {};
+          let u = this._scrollable.getFutureScrollPosition(), h22 = {};
           if (o) {
             let c = Ko * o, d = u.scrollTop - (c < 0 ? Math.floor(c) : Math.ceil(c));
-            this._verticalScrollbar.writeScrollPosition(h20, d);
+            this._verticalScrollbar.writeScrollPosition(h22, d);
           }
           if (l) {
             let c = Ko * l, d = u.scrollLeft - (c < 0 ? Math.floor(c) : Math.ceil(c));
-            this._horizontalScrollbar.writeScrollPosition(h20, d);
+            this._horizontalScrollbar.writeScrollPosition(h22, d);
           }
-          h20 = this._scrollable.validateScrollPosition(h20), (u.scrollLeft !== h20.scrollLeft || u.scrollTop !== h20.scrollTop) && (zo && this._options.mouseWheelSmoothScroll && i.isPhysicalMouseWheel() ? this._scrollable.setScrollPositionSmooth(h20) : this._scrollable.setScrollPositionNow(h20), r = true);
+          h22 = this._scrollable.validateScrollPosition(h22), (u.scrollLeft !== h22.scrollLeft || u.scrollTop !== h22.scrollTop) && (zo && this._options.mouseWheelSmoothScroll && i.isPhysicalMouseWheel() ? this._scrollable.setScrollPositionSmooth(h22) : this._scrollable.setScrollPositionNow(h22), r = true);
         }
         let n = r;
         !n && this._options.alwaysConsumeMouseWheel && (n = true), !n && this._options.consumeMouseWheelIfScrollbarIsNeeded && (this._verticalScrollbar.isNeeded() || this._horizontalScrollbar.isNeeded()) && (n = true), n && (e.preventDefault(), e.stopPropagation());
@@ -3752,10 +3752,10 @@ ${h20.join(`
         this._isSyncing = false;
         this._isHandlingScroll = false;
         this._suppressOnScrollHandler = false;
-        let h20 = this._register(new Ri({ forceIntegerValues: false, smoothScrollDuration: this._optionsService.rawOptions.smoothScrollDuration, scheduleAtNextAnimationFrame: (c) => mt(n.window, c) }));
+        let h22 = this._register(new Ri({ forceIntegerValues: false, smoothScrollDuration: this._optionsService.rawOptions.smoothScrollDuration, scheduleAtNextAnimationFrame: (c) => mt(n.window, c) }));
         this._register(this._optionsService.onSpecificOptionChange("smoothScrollDuration", () => {
-          h20.setSmoothScrollDuration(this._optionsService.rawOptions.smoothScrollDuration);
-        })), this._scrollableElement = this._register(new Kr(i, { vertical: 1, horizontal: 2, useShadows: false, mouseWheelSmoothScroll: true, ...this._getChangeOptions() }, h20)), this._register(this._optionsService.onMultipleOptionChange(["scrollSensitivity", "fastScrollSensitivity", "overviewRuler"], () => this._scrollableElement.updateOptions(this._getChangeOptions()))), this._register(o.onProtocolChange((c) => {
+          h22.setSmoothScrollDuration(this._optionsService.rawOptions.smoothScrollDuration);
+        })), this._scrollableElement = this._register(new Kr(i, { vertical: 1, horizontal: 2, useShadows: false, mouseWheelSmoothScroll: true, ...this._getChangeOptions() }, h22)), this._register(this._optionsService.onMultipleOptionChange(["scrollSensitivity", "fastScrollSensitivity", "overviewRuler"], () => this._scrollableElement.updateOptions(this._getChangeOptions()))), this._register(o.onProtocolChange((c) => {
           this._scrollableElement.updateOptions({ handleMouseWheel: !(c & 16) });
         })), this._scrollableElement.setScrollDimensions({ height: 0, scrollHeight: 0 }), this._register($.runAndSubscribe(l.onChangeColors, () => {
           this._scrollableElement.getDomNode().style.backgroundColor = l.colors.background.css;
@@ -3907,8 +3907,8 @@ ${h20.join(`
         this._shouldUpdateAnchor = true;
         this._lastKnownBufferLength = 0;
         this._canvas = this._coreBrowserService.mainDocument.createElement("canvas"), this._canvas.classList.add("xterm-decoration-overview-ruler"), this._refreshCanvasDimensions(), this._viewportElement.parentElement?.insertBefore(this._canvas, this._viewportElement), this._register(C(() => this._canvas?.remove()));
-        let h20 = this._canvas.getContext("2d");
-        if (h20) this._ctx = h20;
+        let h22 = this._canvas.getContext("2d");
+        if (h22) this._ctx = h22;
         else throw new Error("Ctx cannot be null");
         this._register(this._decorationService.onDecorationRegistered(() => this._queueRefresh(void 0, true))), this._register(this._decorationService.onDecorationRemoved(() => this._queueRefresh(void 0, true))), this._register(this._renderService.onRenderedViewportChange(() => this._queueRefresh())), this._register(this._bufferService.buffers.onBufferActivate(() => {
           this._canvas.style.display = this._bufferService.buffer === this._bufferService.buffers.alt ? "none" : "block";
@@ -4049,8 +4049,8 @@ ${h20.join(`
     ((l) => {
       function s15(a, u) {
         if (J = (u.rgba & 255) / 255, J === 1) return { css: u.css, rgba: u.rgba };
-        let h20 = u.rgba >> 24 & 255, c = u.rgba >> 16 & 255, d = u.rgba >> 8 & 255, _ = a.rgba >> 24 & 255, p = a.rgba >> 16 & 255, m = a.rgba >> 8 & 255;
-        ue = _ + Math.round((h20 - _) * J), he = p + Math.round((c - p) * J), de = m + Math.round((d - m) * J);
+        let h22 = u.rgba >> 24 & 255, c = u.rgba >> 16 & 255, d = u.rgba >> 8 & 255, _ = a.rgba >> 24 & 255, p = a.rgba >> 16 & 255, m = a.rgba >> 8 & 255;
+        ue = _ + Math.round((h22 - _) * J), he = p + Math.round((c - p) * J), de = m + Math.round((d - m) * J);
         let f = j.toCss(ue, he, de), A = j.toRgba(ue, he, de);
         return { css: f, rgba: A };
       }
@@ -4059,8 +4059,8 @@ ${h20.join(`
         return (a.rgba & 255) === 255;
       }
       l.isOpaque = t2;
-      function e(a, u, h20) {
-        let c = $r.ensureContrastRatio(a.rgba, u.rgba, h20);
+      function e(a, u, h22) {
+        let c = $r.ensureContrastRatio(a.rgba, u.rgba, h22);
         if (c) return j.toColor(c >> 24 & 255, c >> 16 & 255, c >> 8 & 255);
       }
       l.ensureContrastRatio = e;
@@ -4117,22 +4117,22 @@ ${h20.join(`
       }
       e.relativeLuminance = s15;
       function t2(i, r, n) {
-        let o = i / 255, l = r / 255, a = n / 255, u = o <= 0.03928 ? o / 12.92 : Math.pow((o + 0.055) / 1.055, 2.4), h20 = l <= 0.03928 ? l / 12.92 : Math.pow((l + 0.055) / 1.055, 2.4), c = a <= 0.03928 ? a / 12.92 : Math.pow((a + 0.055) / 1.055, 2.4);
-        return u * 0.2126 + h20 * 0.7152 + c * 0.0722;
+        let o = i / 255, l = r / 255, a = n / 255, u = o <= 0.03928 ? o / 12.92 : Math.pow((o + 0.055) / 1.055, 2.4), h22 = l <= 0.03928 ? l / 12.92 : Math.pow((l + 0.055) / 1.055, 2.4), c = a <= 0.03928 ? a / 12.92 : Math.pow((a + 0.055) / 1.055, 2.4);
+        return u * 0.2126 + h22 * 0.7152 + c * 0.0722;
       }
       e.relativeLuminance2 = t2;
     })(ve ||= {});
     ((n) => {
       function s15(o, l) {
         if (J = (l & 255) / 255, J === 1) return l;
-        let a = l >> 24 & 255, u = l >> 16 & 255, h20 = l >> 8 & 255, c = o >> 24 & 255, d = o >> 16 & 255, _ = o >> 8 & 255;
-        return ue = c + Math.round((a - c) * J), he = d + Math.round((u - d) * J), de = _ + Math.round((h20 - _) * J), j.toRgba(ue, he, de);
+        let a = l >> 24 & 255, u = l >> 16 & 255, h22 = l >> 8 & 255, c = o >> 24 & 255, d = o >> 16 & 255, _ = o >> 8 & 255;
+        return ue = c + Math.round((a - c) * J), he = d + Math.round((u - d) * J), de = _ + Math.round((h22 - _) * J), j.toRgba(ue, he, de);
       }
       n.blend = s15;
       function t2(o, l, a) {
-        let u = ve.relativeLuminance(o >> 8), h20 = ve.relativeLuminance(l >> 8);
-        if (Xe(u, h20) < a) {
-          if (h20 < u) {
+        let u = ve.relativeLuminance(o >> 8), h22 = ve.relativeLuminance(l >> 8);
+        if (Xe(u, h22) < a) {
+          if (h22 < u) {
             let p = e(o, l, a), m = Xe(u, ve.relativeLuminance(p >> 8));
             if (m < a) {
               let f = i(o, l, a), A = Xe(u, ve.relativeLuminance(f >> 8));
@@ -4150,14 +4150,14 @@ ${h20.join(`
       }
       n.ensureContrastRatio = t2;
       function e(o, l, a) {
-        let u = o >> 24 & 255, h20 = o >> 16 & 255, c = o >> 8 & 255, d = l >> 24 & 255, _ = l >> 16 & 255, p = l >> 8 & 255, m = Xe(ve.relativeLuminance2(d, _, p), ve.relativeLuminance2(u, h20, c));
-        for (; m < a && (d > 0 || _ > 0 || p > 0); ) d -= Math.max(0, Math.ceil(d * 0.1)), _ -= Math.max(0, Math.ceil(_ * 0.1)), p -= Math.max(0, Math.ceil(p * 0.1)), m = Xe(ve.relativeLuminance2(d, _, p), ve.relativeLuminance2(u, h20, c));
+        let u = o >> 24 & 255, h22 = o >> 16 & 255, c = o >> 8 & 255, d = l >> 24 & 255, _ = l >> 16 & 255, p = l >> 8 & 255, m = Xe(ve.relativeLuminance2(d, _, p), ve.relativeLuminance2(u, h22, c));
+        for (; m < a && (d > 0 || _ > 0 || p > 0); ) d -= Math.max(0, Math.ceil(d * 0.1)), _ -= Math.max(0, Math.ceil(_ * 0.1)), p -= Math.max(0, Math.ceil(p * 0.1)), m = Xe(ve.relativeLuminance2(d, _, p), ve.relativeLuminance2(u, h22, c));
         return (d << 24 | _ << 16 | p << 8 | 255) >>> 0;
       }
       n.reduceLuminance = e;
       function i(o, l, a) {
-        let u = o >> 24 & 255, h20 = o >> 16 & 255, c = o >> 8 & 255, d = l >> 24 & 255, _ = l >> 16 & 255, p = l >> 8 & 255, m = Xe(ve.relativeLuminance2(d, _, p), ve.relativeLuminance2(u, h20, c));
-        for (; m < a && (d < 255 || _ < 255 || p < 255); ) d = Math.min(255, d + Math.ceil((255 - d) * 0.1)), _ = Math.min(255, _ + Math.ceil((255 - _) * 0.1)), p = Math.min(255, p + Math.ceil((255 - p) * 0.1)), m = Xe(ve.relativeLuminance2(d, _, p), ve.relativeLuminance2(u, h20, c));
+        let u = o >> 24 & 255, h22 = o >> 16 & 255, c = o >> 8 & 255, d = l >> 24 & 255, _ = l >> 16 & 255, p = l >> 8 & 255, m = Xe(ve.relativeLuminance2(d, _, p), ve.relativeLuminance2(u, h22, c));
+        for (; m < a && (d < 255 || _ < 255 || p < 255); ) d = Math.min(255, d + Math.ceil((255 - d) * 0.1)), _ = Math.min(255, _ + Math.ceil((255 - _) * 0.1)), p = Math.min(255, p + Math.ceil((255 - p) * 0.1)), m = Xe(ve.relativeLuminance2(d, _, p), ve.relativeLuminance2(u, h22, c));
         return (d << 24 | _ << 16 | p << 8 | 255) >>> 0;
       }
       n.increaseLuminance = i;
@@ -4211,19 +4211,19 @@ ${h20.join(`
         let e = this._bufferService.buffer.lines.get(t2);
         if (!e || e.length === 0) return [];
         let i = [], r = e.translateToString(true), n = 0, o = 0, l = 0, a = e.getFg(0), u = e.getBg(0);
-        for (let h20 = 0; h20 < e.getTrimmedLength(); h20++) if (e.loadCell(h20, this._workCell), this._workCell.getWidth() !== 0) {
+        for (let h22 = 0; h22 < e.getTrimmedLength(); h22++) if (e.loadCell(h22, this._workCell), this._workCell.getWidth() !== 0) {
           if (this._workCell.fg !== a || this._workCell.bg !== u) {
-            if (h20 - n > 1) {
+            if (h22 - n > 1) {
               let c = this._getJoinedRanges(r, l, o, e, n);
               for (let d = 0; d < c.length; d++) i.push(c[d]);
             }
-            n = h20, l = o, a = this._workCell.fg, u = this._workCell.bg;
+            n = h22, l = o, a = this._workCell.fg, u = this._workCell.bg;
           }
           o += this._workCell.getChars().length || we.length;
         }
         if (this._bufferService.cols - n > 1) {
-          let h20 = this._getJoinedRanges(r, l, o, e, n);
-          for (let c = 0; c < h20.length; c++) i.push(h20[c]);
+          let h22 = this._getJoinedRanges(r, l, o, e, n);
+          for (let c = 0; c < h22.length; c++) i.push(h22[c]);
         }
         return i;
       }
@@ -4236,7 +4236,7 @@ ${h20.join(`
         }
         for (let a = 1; a < this._characterJoiners.length; a++) try {
           let u = this._characterJoiners[a].handler(o);
-          for (let h20 = 0; h20 < u.length; h20++) ct._mergeRanges(l, u[h20]);
+          for (let h22 = 0; h22 < u.length; h22++) ct._mergeRanges(l, u[h22]);
         } catch (u) {
           console.error(u);
         }
@@ -4246,13 +4246,13 @@ ${h20.join(`
         let r = 0, n = false, o = 0, l = t2[r];
         if (l) {
           for (let a = i; a < this._bufferService.cols; a++) {
-            let u = e.getWidth(a), h20 = e.getString(a).length || we.length;
+            let u = e.getWidth(a), h22 = e.getString(a).length || we.length;
             if (u !== 0) {
               if (!n && l[0] <= o && (l[0] = a, n = true), l[1] <= o) {
                 if (l[1] = a, l = t2[++r], !l) break;
                 l[0] <= o ? (l[0] = a, n = true) : n = false;
               }
-              o += h20;
+              o += h22;
             }
           }
           l && (l[1] = this._bufferService.cols);
@@ -4293,10 +4293,10 @@ ${h20.join(`
       handleSelectionChanged(t2, e, i) {
         this._selectionStart = t2, this._selectionEnd = e, this._columnSelectMode = i;
       }
-      createRow(t2, e, i, r, n, o, l, a, u, h20, c) {
+      createRow(t2, e, i, r, n, o, l, a, u, h22, c) {
         let d = [], _ = this._characterJoinerService.getJoinedCharacters(e), p = this._themeService.colors, m = t2.getNoBgTrimmedLength();
         i && m < o + 1 && (m = o + 1);
-        let f, A = 0, R = "", O = 0, I = 0, k = 0, P = 0, oe = false, Me = 0, Pe = false, Ke = 0, di = 0, V = [], Qe = h20 !== -1 && c !== -1;
+        let f, A = 0, R = "", O = 0, I = 0, k = 0, P = 0, oe = false, Me = 0, Pe = false, Ke = 0, di = 0, V = [], Qe = h22 !== -1 && c !== -1;
         for (let y = 0; y < m; y++) {
           t2.loadCell(y, this._workCell);
           let T = this._workCell.getWidth();
@@ -4307,7 +4307,7 @@ ${h20.join(`
             for (O = W[0] + 1; O < W[1]; O++) w &&= An === this._isCellInSelection(O, e);
             w &&= !i || o < W[0] || o >= W[1], w ? (g = true, x = new Vr(this._workCell, t2.translateToString(true, W[0], W[1]), W[1] - W[0]), E = W[1] - 1, T = x.getWidth()) : di = W[1];
           }
-          let N = this._isCellInSelection(y, e), Z = i && y === o, te = Qe && y >= h20 && y <= c, Oe = false;
+          let N = this._isCellInSelection(y, e), Z = i && y === o, te = Qe && y >= h22 && y <= c, Oe = false;
           this._decorationService.forEachDecorationAtCell(y, e, void 0, (W) => {
             Oe = true;
           });
@@ -4476,7 +4476,7 @@ ${h20.join(`
       }
     };
     _s = "xterm-dom-renderer-owner-", Le = "xterm-rows", jr = "xterm-fg-", jo = "xterm-bg-", ki = "xterm-focus", Xr = "xterm-selection", Na = 1, Yt = class extends D {
-      constructor(e, i, r, n, o, l, a, u, h20, c, d, _, p, m) {
+      constructor(e, i, r, n, o, l, a, u, h22, c, d, _, p, m) {
         super();
         this._terminal = e;
         this._document = i;
@@ -4485,7 +4485,7 @@ ${h20.join(`
         this._viewportElement = o;
         this._helperContainer = l;
         this._linkifier2 = a;
-        this._charSizeService = h20;
+        this._charSizeService = h22;
         this._optionsService = c;
         this._bufferService = d;
         this._coreService = _;
@@ -4546,11 +4546,11 @@ ${h20.join(`
         if (this._selectionContainer.replaceChildren(), this._rowFactory.handleSelectionChanged(e, i, r), this.renderRows(0, this._bufferService.rows - 1), !e || !i || (this._selectionRenderModel.update(this._terminal, e, i, r), !this._selectionRenderModel.hasSelection)) return;
         let n = this._selectionRenderModel.viewportStartRow, o = this._selectionRenderModel.viewportEndRow, l = this._selectionRenderModel.viewportCappedStartRow, a = this._selectionRenderModel.viewportCappedEndRow, u = this._document.createDocumentFragment();
         if (r) {
-          let h20 = e[0] > i[0];
-          u.appendChild(this._createSelectionElement(l, h20 ? i[0] : e[0], h20 ? e[0] : i[0], a - l + 1));
+          let h22 = e[0] > i[0];
+          u.appendChild(this._createSelectionElement(l, h22 ? i[0] : e[0], h22 ? e[0] : i[0], a - l + 1));
         } else {
-          let h20 = n === l ? e[0] : 0, c = l === o ? i[0] : this._bufferService.cols;
-          u.appendChild(this._createSelectionElement(l, h20, c));
+          let h22 = n === l ? e[0] : 0, c = l === o ? i[0] : this._bufferService.cols;
+          u.appendChild(this._createSelectionElement(l, h22, c));
           let d = a - l - 1;
           if (u.appendChild(this._createSelectionElement(l + 1, 0, this._bufferService.cols, d)), l !== a) {
             let _ = o === a ? i[0] : this._bufferService.cols;
@@ -4573,8 +4573,8 @@ ${h20.join(`
       }
       renderRows(e, i) {
         let r = this._bufferService.buffer, n = r.ybase + r.y, o = Math.min(r.x, this._bufferService.cols - 1), l = this._coreService.decPrivateModes.cursorBlink ?? this._optionsService.rawOptions.cursorBlink, a = this._coreService.decPrivateModes.cursorStyle ?? this._optionsService.rawOptions.cursorStyle, u = this._optionsService.rawOptions.cursorInactiveStyle;
-        for (let h20 = e; h20 <= i; h20++) {
-          let c = h20 + r.ydisp, d = this._rowElements[h20], _ = r.lines.get(c);
+        for (let h22 = e; h22 <= i; h22++) {
+          let c = h22 + r.ydisp, d = this._rowElements[h22], _ = r.lines.get(c);
           if (!d || !_) break;
           d.replaceChildren(...this._rowFactory.createRow(_, c, c === n, a, u, o, l, this.dimensions.css.cell.width, this._widthCache, -1, -1));
         }
@@ -4592,11 +4592,11 @@ ${h20.join(`
         r < 0 && (e = 0), n < 0 && (i = 0);
         let a = this._bufferService.rows - 1;
         r = Math.max(Math.min(r, a), 0), n = Math.max(Math.min(n, a), 0), o = Math.min(o, this._bufferService.cols);
-        let u = this._bufferService.buffer, h20 = u.ybase + u.y, c = Math.min(u.x, o - 1), d = this._optionsService.rawOptions.cursorBlink, _ = this._optionsService.rawOptions.cursorStyle, p = this._optionsService.rawOptions.cursorInactiveStyle;
+        let u = this._bufferService.buffer, h22 = u.ybase + u.y, c = Math.min(u.x, o - 1), d = this._optionsService.rawOptions.cursorBlink, _ = this._optionsService.rawOptions.cursorStyle, p = this._optionsService.rawOptions.cursorInactiveStyle;
         for (let m = r; m <= n; ++m) {
           let f = m + u.ydisp, A = this._rowElements[m], R = u.lines.get(f);
           if (!A || !R) break;
-          A.replaceChildren(...this._rowFactory.createRow(R, f, f === h20, _, p, c, d, this.dimensions.css.cell.width, this._widthCache, l ? m === r ? e : 0 : -1, l ? (m === n ? i : o) - 1 : -1));
+          A.replaceChildren(...this._rowFactory.createRow(R, f, f === h22, _, p, c, d, this.dimensions.css.cell.width, this._widthCache, l ? m === r ? e : 0 : -1, l ? (m === n ? i : o) - 1 : -1));
         }
       }
     };
@@ -4829,7 +4829,7 @@ ${h20.join(`
       }
     };
     Qt = class extends D {
-      constructor(e, i, r, n, o, l, a, u, h20) {
+      constructor(e, i, r, n, o, l, a, u, h22) {
         super();
         this._rowCount = e;
         this._optionsService = r;
@@ -4856,7 +4856,7 @@ ${h20.join(`
         this.onRefreshRequest = this._onRefreshRequest.event;
         this._renderDebouncer = new en((c, d) => this._renderRows(c, d), this._coreBrowserService), this._register(this._renderDebouncer), this._syncOutputHandler = new xs(this._coreBrowserService, this._coreService, () => this._fullRefresh()), this._register(C(() => this._syncOutputHandler.dispose())), this._register(this._coreBrowserService.onDprChange(() => this.handleDevicePixelRatioChange())), this._register(a.onResize(() => this._fullRefresh())), this._register(a.buffers.onBufferActivate(() => this._renderer.value?.clear())), this._register(this._optionsService.onOptionChange(() => this._handleOptionsChanged())), this._register(this._charSizeService.onCharSizeChange(() => this.handleCharSizeChanged())), this._register(l.onDecorationRegistered(() => this._fullRefresh())), this._register(l.onDecorationRemoved(() => this._fullRefresh())), this._register(this._optionsService.onMultipleOptionChange(["customGlyphs", "drawBoldTextInBrightColors", "letterSpacing", "lineHeight", "fontFamily", "fontSize", "fontWeight", "fontWeightBold", "minimumContrastRatio", "rescaleOverlappingGlyphs"], () => {
           this.clear(), this.handleResize(a.cols, a.rows), this._fullRefresh();
-        })), this._register(this._optionsService.onMultipleOptionChange(["cursorBlink", "cursorStyle"], () => this.refreshRows(a.buffer.y, a.buffer.y, true))), this._register(h20.onChangeColors(() => this._fullRefresh())), this._registerIntersectionObserver(this._coreBrowserService.window, i), this._register(this._coreBrowserService.onWindowChange((c) => this._registerIntersectionObserver(c, i)));
+        })), this._register(this._optionsService.onMultipleOptionChange(["cursorBlink", "cursorStyle"], () => this.refreshRows(a.buffer.y, a.buffer.y, true))), this._register(h22.onChangeColors(() => this._fullRefresh())), this._registerIntersectionObserver(this._coreBrowserService.window, i), this._register(this._coreBrowserService.onWindowChange((c) => this._registerIntersectionObserver(c, i)));
       }
       get dimensions() {
         return this._renderer.value.dimensions;
@@ -5000,7 +5000,7 @@ ${h20.join(`
     };
     Ds = 50, Ya = 15, ja = 50, Xa = 500, Za = " ", Ja = new RegExp(Za, "g");
     ei = class extends D {
-      constructor(e, i, r, n, o, l, a, u, h20) {
+      constructor(e, i, r, n, o, l, a, u, h22) {
         super();
         this._element = e;
         this._screenElement = i;
@@ -5010,7 +5010,7 @@ ${h20.join(`
         this._mouseService = l;
         this._optionsService = a;
         this._renderService = u;
-        this._coreBrowserService = h20;
+        this._coreBrowserService = h22;
         this._dragScrollAmount = 0;
         this._enabled = true;
         this._workCell = new q();
@@ -5061,15 +5061,15 @@ ${h20.join(`
           if (e[0] === i[0]) return "";
           let l = e[0] < i[0] ? e[0] : i[0], a = e[0] < i[0] ? i[0] : e[0];
           for (let u = e[1]; u <= i[1]; u++) {
-            let h20 = r.translateBufferLineToString(u, true, l, a);
-            n.push(h20);
+            let h22 = r.translateBufferLineToString(u, true, l, a);
+            n.push(h22);
           }
         } else {
           let l = e[1] === i[1] ? i[0] : void 0;
           n.push(r.translateBufferLineToString(e[1], true, e[0], l));
           for (let a = e[1] + 1; a <= i[1] - 1; a++) {
-            let u = r.lines.get(a), h20 = r.translateBufferLineToString(a, true);
-            u?.isWrapped ? n[n.length - 1] += h20 : n.push(h20);
+            let u = r.lines.get(a), h22 = r.translateBufferLineToString(a, true);
+            u?.isWrapped ? n[n.length - 1] += h22 : n.push(h22);
           }
           if (e[1] !== i[1]) {
             let a = r.lines.get(i[1]), u = r.translateBufferLineToString(i[1], true, 0, i[0]);
@@ -5226,28 +5226,28 @@ ${h20.join(`
         if (e[0] >= this._bufferService.cols) return;
         let o = this._bufferService.buffer, l = o.lines.get(e[1]);
         if (!l) return;
-        let a = o.translateBufferLineToString(e[1], false), u = this._convertViewportColToCharacterIndex(l, e[0]), h20 = u, c = e[0] - u, d = 0, _ = 0, p = 0, m = 0;
+        let a = o.translateBufferLineToString(e[1], false), u = this._convertViewportColToCharacterIndex(l, e[0]), h22 = u, c = e[0] - u, d = 0, _ = 0, p = 0, m = 0;
         if (a.charAt(u) === " ") {
           for (; u > 0 && a.charAt(u - 1) === " "; ) u--;
-          for (; h20 < a.length && a.charAt(h20 + 1) === " "; ) h20++;
+          for (; h22 < a.length && a.charAt(h22 + 1) === " "; ) h22++;
         } else {
           let R = e[0], O = e[0];
           l.getWidth(R) === 0 && (d++, R--), l.getWidth(O) === 2 && (_++, O++);
           let I = l.getString(O).length;
-          for (I > 1 && (m += I - 1, h20 += I - 1); R > 0 && u > 0 && !this._isCharWordSeparator(l.loadCell(R - 1, this._workCell)); ) {
+          for (I > 1 && (m += I - 1, h22 += I - 1); R > 0 && u > 0 && !this._isCharWordSeparator(l.loadCell(R - 1, this._workCell)); ) {
             l.loadCell(R - 1, this._workCell);
             let k = this._workCell.getChars().length;
             this._workCell.getWidth() === 0 ? (d++, R--) : k > 1 && (p += k - 1, u -= k - 1), u--, R--;
           }
-          for (; O < l.length && h20 + 1 < a.length && !this._isCharWordSeparator(l.loadCell(O + 1, this._workCell)); ) {
+          for (; O < l.length && h22 + 1 < a.length && !this._isCharWordSeparator(l.loadCell(O + 1, this._workCell)); ) {
             l.loadCell(O + 1, this._workCell);
             let k = this._workCell.getChars().length;
-            this._workCell.getWidth() === 2 ? (_++, O++) : k > 1 && (m += k - 1, h20 += k - 1), h20++, O++;
+            this._workCell.getWidth() === 2 ? (_++, O++) : k > 1 && (m += k - 1, h22 += k - 1), h22++, O++;
           }
         }
-        h20++;
-        let f = u + c - d + p, A = Math.min(this._bufferService.cols, h20 - u + d + _ - p - m);
-        if (!(!i && a.slice(u, h20).trim() === "")) {
+        h22++;
+        let f = u + c - d + p, A = Math.min(this._bufferService.cols, h22 - u + d + _ - p - m);
+        if (!(!i && a.slice(u, h22).trim() === "")) {
           if (r && f === 0 && l.getCodePoint(0) !== 32) {
             let R = o.lines.get(e[1] - 1);
             if (R && l.isWrapped && R.getCodePoint(this._bufferService.cols - 1) !== 32) {
@@ -5858,7 +5858,7 @@ ${h20.join(`
             let I = this.ybase + this.y;
             if (I >= l && I < l + u.length) continue;
           }
-          let h20 = u[u.length - 1].getTrimmedLength(), c = al(u, this._cols, t2), d = c.length - u.length, _;
+          let h22 = u[u.length - 1].getTrimmedLength(), c = al(u, this._cols, t2), d = c.length - u.length, _;
           this.ybase === 0 && this.y !== this.lines.length - 1 ? _ = Math.max(0, this.y - this.lines.maxLength + d) : _ = Math.max(0, this.lines.length - this.lines.maxLength + d);
           let p = [];
           for (let I = 0; I < d; I++) {
@@ -5868,7 +5868,7 @@ ${h20.join(`
           p.length > 0 && (n.push({ start: l + u.length + o, newLines: p }), o += p.length), u.push(...p);
           let m = c.length - 1, f = c[m];
           f === 0 && (m--, f = c[m]);
-          let A = u.length - d - 1, R = h20;
+          let A = u.length - d - 1, R = h22;
           for (; A >= 0; ) {
             let I = Math.min(R, f);
             if (u[m] === void 0) break;
@@ -5886,13 +5886,13 @@ ${h20.join(`
         if (n.length > 0) {
           let l = [], a = [];
           for (let f = 0; f < this.lines.length; f++) a.push(this.lines.get(f));
-          let u = this.lines.length, h20 = u - 1, c = 0, d = n[c];
+          let u = this.lines.length, h22 = u - 1, c = 0, d = n[c];
           this.lines.length = Math.min(this.lines.maxLength, this.lines.length + o);
           let _ = 0;
-          for (let f = Math.min(this.lines.maxLength - 1, u + o - 1); f >= 0; f--) if (d && d.start > h20 + _) {
+          for (let f = Math.min(this.lines.maxLength - 1, u + o - 1); f >= 0; f--) if (d && d.start > h22 + _) {
             for (let A = d.newLines.length - 1; A >= 0; A--) this.lines.set(f--, d.newLines[A]);
-            f++, l.push({ index: h20 + 1, amount: d.newLines.length }), _ += d.newLines.length, d = n[++c];
-          } else this.lines.set(f, a[h20--]);
+            f++, l.push({ index: h22 + 1, amount: d.newLines.length }), _ += d.newLines.length, d = n[++c];
+          } else this.lines.set(f, a[h22--]);
           let p = 0;
           for (let f = l.length - 1; f >= 0; f--) l[f].index += p, this.lines.onInsertEmitter.fire(l[f]), p += l[f].amount;
           let m = Math.max(0, u + o - this.lines.maxLength);
@@ -6682,17 +6682,17 @@ ${h20.join(`
         if (this._parseStack.state) if (this._parseStack.state === 2) this._parseStack.state = 0, l = this._parseStack.chunkPos + 1;
         else {
           if (r === void 0 || this._parseStack.state === 1) throw this._parseStack.state = 1, new Error("improper continuation due to previous async handler, giving up parsing");
-          let u = this._parseStack.handlers, h20 = this._parseStack.handlerPos - 1;
+          let u = this._parseStack.handlers, h22 = this._parseStack.handlerPos - 1;
           switch (this._parseStack.state) {
             case 3:
-              if (r === false && h20 > -1) {
-                for (; h20 >= 0 && (a = u[h20](this._params), a !== true); h20--) if (a instanceof Promise) return this._parseStack.handlerPos = h20, a;
+              if (r === false && h22 > -1) {
+                for (; h22 >= 0 && (a = u[h22](this._params), a !== true); h22--) if (a instanceof Promise) return this._parseStack.handlerPos = h22, a;
               }
               this._parseStack.handlers = [];
               break;
             case 4:
-              if (r === false && h20 > -1) {
-                for (; h20 >= 0 && (a = u[h20](), a !== true); h20--) if (a instanceof Promise) return this._parseStack.handlerPos = h20, a;
+              if (r === false && h22 > -1) {
+                for (; h22 >= 0 && (a = u[h22](), a !== true); h22--) if (a instanceof Promise) return this._parseStack.handlerPos = h22, a;
               }
               this._parseStack.handlers = [];
               break;
@@ -6802,7 +6802,7 @@ ${h20.join(`
     dc = /^([\da-f])\/([\da-f])\/([\da-f])$|^([\da-f]{2})\/([\da-f]{2})\/([\da-f]{2})$|^([\da-f]{3})\/([\da-f]{3})\/([\da-f]{3})$|^([\da-f]{4})\/([\da-f]{4})\/([\da-f]{4})$/, fc = /^[\da-f]+$/;
     mc = { "(": 0, ")": 1, "*": 2, "+": 3, "-": 1, ".": 2 }, ut = 131072, _l = 10;
     vl = 5e3, gl = 0, vn = class extends D {
-      constructor(e, i, r, n, o, l, a, u, h20 = new bn()) {
+      constructor(e, i, r, n, o, l, a, u, h22 = new bn()) {
         super();
         this._bufferService = e;
         this._charsetService = i;
@@ -6812,7 +6812,7 @@ ${h20.join(`
         this._oscLinkService = l;
         this._coreMouseService = a;
         this._unicodeService = u;
-        this._parser = h20;
+        this._parser = h22;
         this._parseBuffer = new Uint32Array(4096);
         this._stringDecoder = new er();
         this._utf8Decoder = new tr();
@@ -6894,11 +6894,11 @@ ${h20.join(`
           if (r = this._parser.parse(this._parseBuffer, c)) return this._preserveStack(n, o, c, 0), this._logSlowResolvingAsync(r), r;
         }
         (this._activeBuffer.x !== n || this._activeBuffer.y !== o) && this._onCursorMove.fire();
-        let u = this._dirtyRowTracker.end + (this._bufferService.buffer.ybase - this._bufferService.buffer.ydisp), h20 = this._dirtyRowTracker.start + (this._bufferService.buffer.ybase - this._bufferService.buffer.ydisp);
-        h20 < this._bufferService.rows && this._onRequestRefreshRows.fire({ start: Math.min(h20, this._bufferService.rows - 1), end: Math.min(u, this._bufferService.rows - 1) });
+        let u = this._dirtyRowTracker.end + (this._bufferService.buffer.ybase - this._bufferService.buffer.ydisp), h22 = this._dirtyRowTracker.start + (this._bufferService.buffer.ybase - this._bufferService.buffer.ydisp);
+        h22 < this._bufferService.rows && this._onRequestRefreshRows.fire({ start: Math.min(h22, this._bufferService.rows - 1), end: Math.min(u, this._bufferService.rows - 1) });
       }
       print(e, i, r) {
-        let n, o, l = this._charsetService.charset, a = this._optionsService.rawOptions.screenReaderMode, u = this._bufferService.cols, h20 = this._coreService.decPrivateModes.wraparound, c = this._coreService.modes.insertMode, d = this._curAttrData, _ = this._activeBuffer.lines.get(this._activeBuffer.ybase + this._activeBuffer.y);
+        let n, o, l = this._charsetService.charset, a = this._optionsService.rawOptions.screenReaderMode, u = this._bufferService.cols, h22 = this._coreService.decPrivateModes.wraparound, c = this._coreService.modes.insertMode, d = this._curAttrData, _ = this._activeBuffer.lines.get(this._activeBuffer.ybase + this._activeBuffer.y);
         this._dirtyRowTracker.markDirty(this._activeBuffer.y), this._activeBuffer.x && r - i > 0 && _.getWidth(this._activeBuffer.x - 1) === 2 && _.setCellFromCodepoint(this._activeBuffer.x - 1, 0, 1, d);
         let p = this._parser.precedingJoinState;
         for (let m = i; m < r; ++m) {
@@ -6910,7 +6910,7 @@ ${h20.join(`
           o = Ae.extractWidth(f);
           let A = Ae.extractShouldJoin(f), R = A ? Ae.extractWidth(p) : 0;
           if (p = f, a && this._onA11yChar.fire(Ce(n)), this._getCurrentLinkId() && this._oscLinkService.addLineToLink(this._getCurrentLinkId(), this._activeBuffer.ybase + this._activeBuffer.y), this._activeBuffer.x + o - R > u) {
-            if (h20) {
+            if (h22) {
               let O = _, I = this._activeBuffer.x - R;
               for (this._activeBuffer.x = R, this._activeBuffer.y++, this._activeBuffer.y === this._activeBuffer.scrollBottom + 1 ? (this._activeBuffer.y--, this._bufferService.scroll(this._eraseAttrData(), true)) : (this._activeBuffer.y >= this._bufferService.rows && (this._activeBuffer.y = this._bufferService.rows - 1), this._activeBuffer.lines.get(this._activeBuffer.ybase + this._activeBuffer.y).isWrapped = true), _ = this._activeBuffer.lines.get(this._activeBuffer.ybase + this._activeBuffer.y), R > 0 && _ instanceof Ze && _.copyCellsFrom(O, I, 0, R, false); I < u; ) O.setCellFromCodepoint(I++, 0, 1, d);
             } else if (this._activeBuffer.x = u - 1, o === 2) continue;
@@ -7167,13 +7167,13 @@ ${h20.join(`
       repeatPrecedingCharacter(e) {
         let i = this._parser.precedingJoinState;
         if (!i) return true;
-        let r = e.params[0] || 1, n = Ae.extractWidth(i), o = this._activeBuffer.x - n, a = this._activeBuffer.lines.get(this._activeBuffer.ybase + this._activeBuffer.y).getString(o), u = new Uint32Array(a.length * r), h20 = 0;
+        let r = e.params[0] || 1, n = Ae.extractWidth(i), o = this._activeBuffer.x - n, a = this._activeBuffer.lines.get(this._activeBuffer.ybase + this._activeBuffer.y).getString(o), u = new Uint32Array(a.length * r), h22 = 0;
         for (let d = 0; d < a.length; ) {
           let _ = a.codePointAt(d) || 0;
-          u[h20++] = _, d += _ > 65535 ? 2 : 1;
+          u[h22++] = _, d += _ > 65535 ? 2 : 1;
         }
-        let c = h20;
-        for (let d = 1; d < r; ++d) u.copyWithin(c, 0, h20), c += h20;
+        let c = h22;
+        for (let d = 1; d < r; ++d) u.copyWithin(c, 0, h22), c += h22;
         return this.print(u, 0, c), true;
       }
       sendDeviceAttributesPrimary(e) {
@@ -7348,8 +7348,8 @@ ${h20.join(`
       requestMode(e, i) {
         let r;
         ((P) => (P[P.NOT_RECOGNIZED = 0] = "NOT_RECOGNIZED", P[P.SET = 1] = "SET", P[P.RESET = 2] = "RESET", P[P.PERMANENTLY_SET = 3] = "PERMANENTLY_SET", P[P.PERMANENTLY_RESET = 4] = "PERMANENTLY_RESET"))(r ||= {});
-        let n = this._coreService.decPrivateModes, { activeProtocol: o, activeEncoding: l } = this._coreMouseService, a = this._coreService, { buffers: u, cols: h20 } = this._bufferService, { active: c, alt: d } = u, _ = this._optionsService.rawOptions, p = (A, R) => (a.triggerDataEvent(`${b.ESC}[${i ? "" : "?"}${A};${R}$y`), true), m = (A) => A ? 1 : 2, f = e.params[0];
-        return i ? f === 2 ? p(f, 4) : f === 4 ? p(f, m(a.modes.insertMode)) : f === 12 ? p(f, 3) : f === 20 ? p(f, m(_.convertEol)) : p(f, 0) : f === 1 ? p(f, m(n.applicationCursorKeys)) : f === 3 ? p(f, _.windowOptions.setWinLines ? h20 === 80 ? 2 : h20 === 132 ? 1 : 0 : 0) : f === 6 ? p(f, m(n.origin)) : f === 7 ? p(f, m(n.wraparound)) : f === 8 ? p(f, 3) : f === 9 ? p(f, m(o === "X10")) : f === 12 ? p(f, m(_.cursorBlink)) : f === 25 ? p(f, m(!a.isCursorHidden)) : f === 45 ? p(f, m(n.reverseWraparound)) : f === 66 ? p(f, m(n.applicationKeypad)) : f === 67 ? p(f, 4) : f === 1e3 ? p(f, m(o === "VT200")) : f === 1002 ? p(f, m(o === "DRAG")) : f === 1003 ? p(f, m(o === "ANY")) : f === 1004 ? p(f, m(n.sendFocus)) : f === 1005 ? p(f, 4) : f === 1006 ? p(f, m(l === "SGR")) : f === 1015 ? p(f, 4) : f === 1016 ? p(f, m(l === "SGR_PIXELS")) : f === 1048 ? p(f, 1) : f === 47 || f === 1047 || f === 1049 ? p(f, m(c === d)) : f === 2004 ? p(f, m(n.bracketedPasteMode)) : f === 2026 ? p(f, m(n.synchronizedOutput)) : p(f, 0);
+        let n = this._coreService.decPrivateModes, { activeProtocol: o, activeEncoding: l } = this._coreMouseService, a = this._coreService, { buffers: u, cols: h22 } = this._bufferService, { active: c, alt: d } = u, _ = this._optionsService.rawOptions, p = (A, R) => (a.triggerDataEvent(`${b.ESC}[${i ? "" : "?"}${A};${R}$y`), true), m = (A) => A ? 1 : 2, f = e.params[0];
+        return i ? f === 2 ? p(f, 4) : f === 4 ? p(f, m(a.modes.insertMode)) : f === 12 ? p(f, 3) : f === 20 ? p(f, m(_.convertEol)) : p(f, 0) : f === 1 ? p(f, m(n.applicationCursorKeys)) : f === 3 ? p(f, _.windowOptions.setWinLines ? h22 === 80 ? 2 : h22 === 132 ? 1 : 0 : 0) : f === 6 ? p(f, m(n.origin)) : f === 7 ? p(f, m(n.wraparound)) : f === 8 ? p(f, 3) : f === 9 ? p(f, m(o === "X10")) : f === 12 ? p(f, m(_.cursorBlink)) : f === 25 ? p(f, m(!a.isCursorHidden)) : f === 45 ? p(f, m(n.reverseWraparound)) : f === 66 ? p(f, m(n.applicationKeypad)) : f === 67 ? p(f, 4) : f === 1e3 ? p(f, m(o === "VT200")) : f === 1002 ? p(f, m(o === "DRAG")) : f === 1003 ? p(f, m(o === "ANY")) : f === 1004 ? p(f, m(n.sendFocus)) : f === 1005 ? p(f, 4) : f === 1006 ? p(f, m(l === "SGR")) : f === 1015 ? p(f, 4) : f === 1016 ? p(f, m(l === "SGR_PIXELS")) : f === 1048 ? p(f, 1) : f === 47 || f === 1047 || f === 1049 ? p(f, m(c === d)) : f === 2004 ? p(f, m(n.bracketedPasteMode)) : f === 2026 ? p(f, m(n.synchronizedOutput)) : p(f, 0);
       }
       _updateAttrColor(e, i, r, n, o) {
         return i === 2 ? (e |= 50331648, e &= -16777216, e |= De.fromColorRGB([r, n, o])) : i === 5 && (e &= -50331904, e |= 33554432 | r & 255), e;
@@ -8019,8 +8019,8 @@ ${h20.join(`
       _renderRows(e, i) {
         let r = this._terminal.buffer, n = r.lines.length.toString();
         for (let o = e; o <= i; o++) {
-          let l = r.lines.get(r.ydisp + o), a = [], u = l?.translateToString(true, void 0, void 0, a) || "", h20 = (r.ydisp + o + 1).toString(), c = this._rowElements[o];
-          c && (u.length === 0 ? (c.textContent = " ", this._rowColumns.set(c, [0, 1])) : (c.textContent = u, this._rowColumns.set(c, a)), c.setAttribute("aria-posinset", h20), c.setAttribute("aria-setsize", n), this._alignRowWidth(c));
+          let l = r.lines.get(r.ydisp + o), a = [], u = l?.translateToString(true, void 0, void 0, a) || "", h22 = (r.ydisp + o + 1).toString(), c = this._rowElements[o];
+          c && (u.length === 0 ? (c.textContent = " ", this._rowColumns.set(c, [0, 1])) : (c.textContent = u, this._rowColumns.set(c, a)), c.setAttribute("aria-posinset", h22), c.setAttribute("aria-setsize", n), this._alignRowWidth(c));
         }
         this._announceCharacters();
       }
@@ -8032,11 +8032,11 @@ ${h20.join(`
         if (o === l || e.relatedTarget !== n) return;
         let a, u;
         if (i === 0 ? (a = r, u = this._rowElements.pop(), this._rowContainer.removeChild(u)) : (a = this._rowElements.shift(), u = r, this._rowContainer.removeChild(a)), a.removeEventListener("focus", this._topBoundaryFocusListener), u.removeEventListener("focus", this._bottomBoundaryFocusListener), i === 0) {
-          let h20 = this._createAccessibilityTreeNode();
-          this._rowElements.unshift(h20), this._rowContainer.insertAdjacentElement("afterbegin", h20);
+          let h22 = this._createAccessibilityTreeNode();
+          this._rowElements.unshift(h22), this._rowContainer.insertAdjacentElement("afterbegin", h22);
         } else {
-          let h20 = this._createAccessibilityTreeNode();
-          this._rowElements.push(h20), this._rowContainer.appendChild(h20);
+          let h22 = this._createAccessibilityTreeNode();
+          this._rowElements.push(h22), this._rowContainer.appendChild(h22);
         }
         this._rowElements[0].addEventListener("focus", this._topBoundaryFocusListener), this._rowElements[this._rowElements.length - 1].addEventListener("focus", this._bottomBoundaryFocusListener), this._terminal.scrollLines(i === 0 ? -1 : 1), this._rowElements[i === 0 ? 1 : this._rowElements.length - 2].focus(), e.preventDefault(), e.stopImmediatePropagation();
       }
@@ -8056,12 +8056,12 @@ ${h20.join(`
         if ((i.node.compareDocumentPosition(r.node) & Node.DOCUMENT_POSITION_PRECEDING || i.node === r.node && i.offset > r.offset) && ([i, r] = [r, i]), i.node.compareDocumentPosition(this._rowElements[0]) & (Node.DOCUMENT_POSITION_CONTAINED_BY | Node.DOCUMENT_POSITION_FOLLOWING) && (i = { node: this._rowElements[0].childNodes[0], offset: 0 }), !this._rowContainer.contains(i.node)) return;
         let n = this._rowElements.slice(-1)[0];
         if (r.node.compareDocumentPosition(n) & (Node.DOCUMENT_POSITION_CONTAINED_BY | Node.DOCUMENT_POSITION_PRECEDING) && (r = { node: n, offset: n.textContent?.length ?? 0 }), !this._rowContainer.contains(r.node)) return;
-        let o = ({ node: u, offset: h20 }) => {
+        let o = ({ node: u, offset: h22 }) => {
           let c = u instanceof Text ? u.parentNode : u, d = parseInt(c?.getAttribute("aria-posinset"), 10) - 1;
           if (isNaN(d)) return console.warn("row is invalid. Race condition?"), null;
           let _ = this._rowColumns.get(c);
           if (!_) return console.warn("columns is null. Race condition?"), null;
-          let p = h20 < _.length ? _[h20] : _.slice(-1)[0] + 1;
+          let p = h22 < _.length ? _[h22] : _.slice(-1)[0] + 1;
           return p >= this._terminal.cols && (++d, p = 0), { row: d, column: p };
         }, l = o(i), a = o(r);
         if (!(!l || !a)) {
@@ -8162,8 +8162,8 @@ ${h20.join(`
         for (let n = 0; n < i.size; n++) {
           let o = i.get(n);
           if (o) for (let l = 0; l < o.length; l++) {
-            let a = o[l], u = a.link.range.start.y < e ? 0 : a.link.range.start.x, h20 = a.link.range.end.y > e ? this._bufferService.cols : a.link.range.end.x;
-            for (let c = u; c <= h20; c++) {
+            let a = o[l], u = a.link.range.start.y < e ? 0 : a.link.range.start.x, h22 = a.link.range.end.y > e ? this._bufferService.cols : a.link.range.end.x;
+            for (let c = u; c <= h22; c++) {
               if (r.has(c)) {
                 o.splice(l--, 1);
                 break;
@@ -8404,27 +8404,27 @@ ${h20.join(`
         function r(l) {
           let a = e._mouseService.getMouseReportCoords(l, e.screenElement);
           if (!a) return false;
-          let u, h20;
+          let u, h22;
           switch (l.overrideType || l.type) {
             case "mousemove":
-              h20 = 32, l.buttons === void 0 ? (u = 3, l.button !== void 0 && (u = l.button < 3 ? l.button : 3)) : u = l.buttons & 1 ? 0 : l.buttons & 4 ? 1 : l.buttons & 2 ? 2 : 3;
+              h22 = 32, l.buttons === void 0 ? (u = 3, l.button !== void 0 && (u = l.button < 3 ? l.button : 3)) : u = l.buttons & 1 ? 0 : l.buttons & 4 ? 1 : l.buttons & 2 ? 2 : 3;
               break;
             case "mouseup":
-              h20 = 0, u = l.button < 3 ? l.button : 3;
+              h22 = 0, u = l.button < 3 ? l.button : 3;
               break;
             case "mousedown":
-              h20 = 1, u = l.button < 3 ? l.button : 3;
+              h22 = 1, u = l.button < 3 ? l.button : 3;
               break;
             case "wheel":
               if (e._customWheelEventHandler && e._customWheelEventHandler(l) === false) return false;
               let c = l.deltaY;
               if (c === 0 || e.coreMouseService.consumeWheelEvent(l, e._renderService?.dimensions?.device?.cell?.height, e._coreBrowserService?.dpr) === 0) return false;
-              h20 = c < 0 ? 0 : 1, u = 4;
+              h22 = c < 0 ? 0 : 1, u = 4;
               break;
             default:
               return false;
           }
-          return h20 === void 0 || u === void 0 || u > 4 ? false : e.coreMouseService.triggerMouseEvent({ col: a.col, row: a.row, x: a.x, y: a.y, button: u, action: h20, ctrl: l.ctrlKey, alt: l.altKey, shift: l.shiftKey });
+          return h22 === void 0 || u === void 0 || u > 4 ? false : e.coreMouseService.triggerMouseEvent({ col: a.col, row: a.row, x: a.x, y: a.y, button: u, action: h22, ctrl: l.ctrlKey, alt: l.altKey, shift: l.shiftKey });
         }
         let n = { mouseup: null, wheel: null, mousedrag: null, mousemove: null }, o = { mouseup: (l) => (r(l), l.buttons || (this._document.removeEventListener("mouseup", n.mouseup), n.mousedrag && this._document.removeEventListener("mousemove", n.mousedrag)), this.cancel(l)), wheel: (l) => (r(l), this.cancel(l, true)), mousedrag: (l) => {
           l.buttons && r(l);
@@ -8441,8 +8441,8 @@ ${h20.join(`
             if (!this.buffer.hasScrollback) {
               if (l.deltaY === 0) return false;
               if (e.coreMouseService.consumeWheelEvent(l, e._renderService?.dimensions?.device?.cell?.height, e._coreBrowserService?.dpr) === 0) return this.cancel(l, true);
-              let h20 = b.ESC + (this.coreService.decPrivateModes.applicationCursorKeys ? "O" : "[") + (l.deltaY < 0 ? "A" : "B");
-              return this.coreService.triggerDataEvent(h20, true), this.cancel(l, true);
+              let h22 = b.ESC + (this.coreService.decPrivateModes.applicationCursorKeys ? "O" : "[") + (l.deltaY < 0 ? "A" : "B");
+              return this.coreService.triggerDataEvent(h22, true), this.cancel(l, true);
             }
           }
         }, { passive: false }));
@@ -8976,7 +8976,7 @@ module.exports = __toCommonJS(index_exports);
 
 // src/client/core.js
 var import_client = require("@automagik/bots-dsh/client");
-var { call, t, hostText, addStrings, onShell, toolCards, nav, badges, botChildren, headerButtons, botSettings, chatSuggestions } = import_client.omni;
+var { call, t, hostText, addStrings, onShell, toolCards, nav, badges, botChildren, botChannels, headerButtons, botSettings, chatSuggestions, face } = import_client.omni;
 var { OmniMark, BotMark, MAIN_LOOK, CHARACTERS, relativeShort, createSource } = import_client.omni.ui;
 var icons = import_client.omni.ui.icons;
 
@@ -10689,6 +10689,12 @@ var createDataURL = function(width, height, getPixel) {
 var qrcode_default = qrcode;
 var stringToBytes = qrcode.stringToBytes;
 
+// ../../docs/brand/logo/svg/omni-mark-ink-32.svg
+var omni_mark_ink_32_default = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="Omni"><path fill="#3c3049" fill-rule="evenodd" d="M73.86 61.49a2.51 2.51 0 0 0-2.67 2.44a2.51 2.51 0 0 0 2.43 2.57c4.11 .11 7.54-2.92 10.01-5.9c5.29-6.38 6.92-15.19 5.68-23.25c-.93-6.03-3.25-11.57-6.65-16.62c-4.44-6.59-10.59-11.84-17.45-15.78c-.53-.31-1.07-.61-1.6-.92c-.1-.06-.2-.1-.29-.16c-.06-.04-.12-.09-.18-.13l-2.09-.66l-2.19 .01l-2.08 .69l-1.76 1.3l-1.28 1.78l-.66 2.09l.01 2.19l.69 2.08l1.3 1.76l1.78 1.28c1.51 .61 3.04 1.17 4.53 1.83c1.06 .47 2.08 .96 3.1 1.51c6.8 3.67 12.47 9.2 15.52 16.38c3.03 7.15 3.09 15.86-1.8 22.21c-.94 1.21-2.62 3.08-4.23 3.29c-.04 .01-.08 .01-.12 .01ZM68.66 70.78a2.5 2.5 0 0 0-3.53-.09a2.5 2.5 0 0 0-.09 3.54c2.82 2.98 7.39 3.26 11.24 2.91c5.7-.52 11.16-3.22 15.44-6.96c9.34-8.17 13.45-20.91 12.86-33.08c-.17-3.44-.64-6.78-1.42-10.14c-.28-1.22-.61-2.43-.94-3.64c-.08-.29-.17-.58-.22-.88l-1.01-1.95l-1.56-1.53l-1.95-.99l-2.17-.33l-2.16 .36l-1.95 1.01l-1.53 1.56l-.99 1.95l-.32 2.17l.35 2.16c.67 1.6 1.41 3.15 2.02 4.77c1.97 5.25 2.96 10.64 2.54 16.25c-.49 6.48-2.9 12.88-7.46 17.6c-3.4 3.52-7.8 5.91-12.73 6.23c-1.3 .08-3.28 .06-4.33-.84c-.03-.03-.06-.05-.09-.08ZM58.51 73.86a2.51 2.51 0 0 0-2.44-2.67a2.51 2.51 0 0 0-2.57 2.43c-.11 4.11 2.92 7.54 5.9 10.01c6.38 5.29 15.19 6.92 23.25 5.68c6.03-.93 11.57-3.25 16.62-6.65c6.59-4.44 11.84-10.59 15.78-17.45c.31-.53 .61-1.07 .92-1.6c.06-.1 .1-.2 .16-.29c.04-.06 .09-.12 .13-.18l.66-2.09l-.01-2.19l-.69-2.08l-1.3-1.76l-1.78-1.28l-2.09-.66l-2.19 .01l-2.08 .69l-1.76 1.3l-1.28 1.78c-.61 1.51-1.17 3.04-1.83 4.53c-.47 1.06-.96 2.08-1.51 3.1c-3.67 6.8-9.2 12.47-16.38 15.52c-7.15 3.03-15.86 3.09-22.21-1.8c-1.21-.94-3.08-2.62-3.29-4.23c-.01-.04-.01-.08-.01-.12ZM49.22 68.66a2.5 2.5 0 0 0 .09-3.53a2.5 2.5 0 0 0-3.54-.09c-2.98 2.82-3.26 7.39-2.91 11.24c.52 5.7 3.22 11.16 6.96 15.44c8.17 9.34 20.91 13.45 33.08 12.86c3.44-.17 6.78-.64 10.14-1.42c1.22-.28 2.43-.61 3.64-.94c.29-.08 .58-.17 .88-.22l1.95-1.01l1.53-1.56l.99-1.95l.33-2.17l-.36-2.16l-1.01-1.95l-1.56-1.53l-1.95-.99l-2.17-.32l-2.16 .35c-1.6 .67-3.15 1.41-4.77 2.02c-5.25 1.97-10.64 2.96-16.25 2.54c-6.48-.49-12.88-2.9-17.6-7.46c-3.52-3.4-5.91-7.8-6.23-12.73c-.08-1.3-.06-3.28 .84-4.33c.03-.03 .05-.06 .08-.09ZM46.14 58.51a2.51 2.51 0 0 0 2.67-2.44a2.51 2.51 0 0 0-2.43-2.57c-4.11-.11-7.54 2.92-10.01 5.9c-5.29 6.38-6.92 15.19-5.68 23.25c.93 6.03 3.25 11.57 6.65 16.62c4.44 6.59 10.59 11.84 17.45 15.78c.53 .31 1.07 .61 1.6 .92c.1 .06 .2 .1 .29 .16c.06 .04 .12 .09 .18 .13l2.09 .66l2.19-.01l2.08-.69l1.76-1.3l1.28-1.78l.66-2.09l-.01-2.19l-.69-2.08l-1.3-1.76l-1.78-1.28c-1.51-.61-3.04-1.17-4.53-1.83c-1.06-.47-2.08-.96-3.1-1.51c-6.8-3.67-12.47-9.2-15.52-16.38c-3.03-7.15-3.09-15.86 1.8-22.21c.94-1.21 2.62-3.08 4.23-3.29c.04-.01 .08-.01 .12-.01ZM51.34 49.22a2.5 2.5 0 0 0 3.53 .09a2.5 2.5 0 0 0 .09-3.54c-2.82-2.98-7.39-3.26-11.24-2.91c-5.7 .52-11.16 3.22-15.44 6.96c-9.34 8.17-13.45 20.91-12.86 33.08c.17 3.44 .64 6.78 1.42 10.14c.28 1.22 .61 2.43 .94 3.64c.08 .29 .17 .58 .22 .88l1.01 1.95l1.56 1.53l1.95 .99l2.17 .33l2.16-.36l1.95-1.01l1.53-1.56l.99-1.95l.32-2.17l-.35-2.16c-.67-1.6-1.41-3.15-2.02-4.77c-1.97-5.25-2.96-10.64-2.54-16.25c.49-6.48 2.9-12.88 7.46-17.6c3.4-3.52 7.8-5.91 12.73-6.23c1.3-.08 3.28-.06 4.33 .84c.03 .03 .06 .05 .09 .08ZM61.49 46.14a2.51 2.51 0 0 0 2.44 2.67a2.51 2.51 0 0 0 2.57-2.43c.11-4.11-2.92-7.54-5.9-10.01c-6.38-5.29-15.19-6.92-23.25-5.68c-6.03 .93-11.57 3.25-16.62 6.65c-6.59 4.44-11.84 10.59-15.78 17.45c-.31 .53-.61 1.07-.92 1.6c-.06 .1-.1 .2-.16 .29c-.04 .06-.09 .12-.13 .18l-.66 2.09l.01 2.19l.69 2.08l1.3 1.76l1.78 1.28l2.09 .66l2.19-.01l2.08-.69l1.76-1.3l1.28-1.78c.61-1.51 1.17-3.04 1.83-4.53c.47-1.06 .96-2.08 1.51-3.1c3.67-6.8 9.2-12.47 16.38-15.52c7.15-3.03 15.86-3.09 22.21 1.8c1.21 .94 3.08 2.62 3.29 4.23c.01 .04 .01 .08 .01 .12ZM70.78 51.34a2.5 2.5 0 0 0-.09 3.53a2.5 2.5 0 0 0 3.54 .09c2.98-2.82 3.26-7.39 2.91-11.24c-.52-5.7-3.22-11.16-6.96-15.44c-8.17-9.34-20.91-13.45-33.08-12.86c-3.44 .17-6.78 .64-10.14 1.42c-1.22 .28-2.43 .61-3.64 .94c-.29 .08-.58 .17-.88 .22l-1.95 1.01l-1.53 1.56l-.99 1.95l-.33 2.17l.36 2.16l1.01 1.95l1.56 1.53l1.95 .99l2.17 .32l2.16-.35c1.6-.67 3.15-1.41 4.77-2.02c5.25-1.97 10.64-2.96 16.25-2.54c6.48 .49 12.88 2.9 17.6 7.46c3.52 3.4 5.91 7.8 6.23 12.73c.08 1.3 .06 3.28-.84 4.33c-.03 .03-.05 .06-.08 .09Z"/></svg>\n';
+
+// ../../docs/brand/logo/svg/omni-mark-cream-32.svg
+var omni_mark_cream_32_default = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="Omni"><path fill="#f3e9dd" fill-rule="evenodd" d="M73.86 61.49a2.51 2.51 0 0 0-2.67 2.44a2.51 2.51 0 0 0 2.43 2.57c4.11 .11 7.54-2.92 10.01-5.9c5.29-6.38 6.92-15.19 5.68-23.25c-.93-6.03-3.25-11.57-6.65-16.62c-4.44-6.59-10.59-11.84-17.45-15.78c-.53-.31-1.07-.61-1.6-.92c-.1-.06-.2-.1-.29-.16c-.06-.04-.12-.09-.18-.13l-2.09-.66l-2.19 .01l-2.08 .69l-1.76 1.3l-1.28 1.78l-.66 2.09l.01 2.19l.69 2.08l1.3 1.76l1.78 1.28c1.51 .61 3.04 1.17 4.53 1.83c1.06 .47 2.08 .96 3.1 1.51c6.8 3.67 12.47 9.2 15.52 16.38c3.03 7.15 3.09 15.86-1.8 22.21c-.94 1.21-2.62 3.08-4.23 3.29c-.04 .01-.08 .01-.12 .01ZM68.66 70.78a2.5 2.5 0 0 0-3.53-.09a2.5 2.5 0 0 0-.09 3.54c2.82 2.98 7.39 3.26 11.24 2.91c5.7-.52 11.16-3.22 15.44-6.96c9.34-8.17 13.45-20.91 12.86-33.08c-.17-3.44-.64-6.78-1.42-10.14c-.28-1.22-.61-2.43-.94-3.64c-.08-.29-.17-.58-.22-.88l-1.01-1.95l-1.56-1.53l-1.95-.99l-2.17-.33l-2.16 .36l-1.95 1.01l-1.53 1.56l-.99 1.95l-.32 2.17l.35 2.16c.67 1.6 1.41 3.15 2.02 4.77c1.97 5.25 2.96 10.64 2.54 16.25c-.49 6.48-2.9 12.88-7.46 17.6c-3.4 3.52-7.8 5.91-12.73 6.23c-1.3 .08-3.28 .06-4.33-.84c-.03-.03-.06-.05-.09-.08ZM58.51 73.86a2.51 2.51 0 0 0-2.44-2.67a2.51 2.51 0 0 0-2.57 2.43c-.11 4.11 2.92 7.54 5.9 10.01c6.38 5.29 15.19 6.92 23.25 5.68c6.03-.93 11.57-3.25 16.62-6.65c6.59-4.44 11.84-10.59 15.78-17.45c.31-.53 .61-1.07 .92-1.6c.06-.1 .1-.2 .16-.29c.04-.06 .09-.12 .13-.18l.66-2.09l-.01-2.19l-.69-2.08l-1.3-1.76l-1.78-1.28l-2.09-.66l-2.19 .01l-2.08 .69l-1.76 1.3l-1.28 1.78c-.61 1.51-1.17 3.04-1.83 4.53c-.47 1.06-.96 2.08-1.51 3.1c-3.67 6.8-9.2 12.47-16.38 15.52c-7.15 3.03-15.86 3.09-22.21-1.8c-1.21-.94-3.08-2.62-3.29-4.23c-.01-.04-.01-.08-.01-.12ZM49.22 68.66a2.5 2.5 0 0 0 .09-3.53a2.5 2.5 0 0 0-3.54-.09c-2.98 2.82-3.26 7.39-2.91 11.24c.52 5.7 3.22 11.16 6.96 15.44c8.17 9.34 20.91 13.45 33.08 12.86c3.44-.17 6.78-.64 10.14-1.42c1.22-.28 2.43-.61 3.64-.94c.29-.08 .58-.17 .88-.22l1.95-1.01l1.53-1.56l.99-1.95l.33-2.17l-.36-2.16l-1.01-1.95l-1.56-1.53l-1.95-.99l-2.17-.32l-2.16 .35c-1.6 .67-3.15 1.41-4.77 2.02c-5.25 1.97-10.64 2.96-16.25 2.54c-6.48-.49-12.88-2.9-17.6-7.46c-3.52-3.4-5.91-7.8-6.23-12.73c-.08-1.3-.06-3.28 .84-4.33c.03-.03 .05-.06 .08-.09ZM46.14 58.51a2.51 2.51 0 0 0 2.67-2.44a2.51 2.51 0 0 0-2.43-2.57c-4.11-.11-7.54 2.92-10.01 5.9c-5.29 6.38-6.92 15.19-5.68 23.25c.93 6.03 3.25 11.57 6.65 16.62c4.44 6.59 10.59 11.84 17.45 15.78c.53 .31 1.07 .61 1.6 .92c.1 .06 .2 .1 .29 .16c.06 .04 .12 .09 .18 .13l2.09 .66l2.19-.01l2.08-.69l1.76-1.3l1.28-1.78l.66-2.09l-.01-2.19l-.69-2.08l-1.3-1.76l-1.78-1.28c-1.51-.61-3.04-1.17-4.53-1.83c-1.06-.47-2.08-.96-3.1-1.51c-6.8-3.67-12.47-9.2-15.52-16.38c-3.03-7.15-3.09-15.86 1.8-22.21c.94-1.21 2.62-3.08 4.23-3.29c.04-.01 .08-.01 .12-.01ZM51.34 49.22a2.5 2.5 0 0 0 3.53 .09a2.5 2.5 0 0 0 .09-3.54c-2.82-2.98-7.39-3.26-11.24-2.91c-5.7 .52-11.16 3.22-15.44 6.96c-9.34 8.17-13.45 20.91-12.86 33.08c.17 3.44 .64 6.78 1.42 10.14c.28 1.22 .61 2.43 .94 3.64c.08 .29 .17 .58 .22 .88l1.01 1.95l1.56 1.53l1.95 .99l2.17 .33l2.16-.36l1.95-1.01l1.53-1.56l.99-1.95l.32-2.17l-.35-2.16c-.67-1.6-1.41-3.15-2.02-4.77c-1.97-5.25-2.96-10.64-2.54-16.25c.49-6.48 2.9-12.88 7.46-17.6c3.4-3.52 7.8-5.91 12.73-6.23c1.3-.08 3.28-.06 4.33 .84c.03 .03 .06 .05 .09 .08ZM61.49 46.14a2.51 2.51 0 0 0 2.44 2.67a2.51 2.51 0 0 0 2.57-2.43c.11-4.11-2.92-7.54-5.9-10.01c-6.38-5.29-15.19-6.92-23.25-5.68c-6.03 .93-11.57 3.25-16.62 6.65c-6.59 4.44-11.84 10.59-15.78 17.45c-.31 .53-.61 1.07-.92 1.6c-.06 .1-.1 .2-.16 .29c-.04 .06-.09 .12-.13 .18l-.66 2.09l.01 2.19l.69 2.08l1.3 1.76l1.78 1.28l2.09 .66l2.19-.01l2.08-.69l1.76-1.3l1.28-1.78c.61-1.51 1.17-3.04 1.83-4.53c.47-1.06 .96-2.08 1.51-3.1c3.67-6.8 9.2-12.47 16.38-15.52c7.15-3.03 15.86-3.09 22.21 1.8c1.21 .94 3.08 2.62 3.29 4.23c.01 .04 .01 .08 .01 .12ZM70.78 51.34a2.5 2.5 0 0 0-.09 3.53a2.5 2.5 0 0 0 3.54 .09c2.98-2.82 3.26-7.39 2.91-11.24c-.52-5.7-3.22-11.16-6.96-15.44c-8.17-9.34-20.91-13.45-33.08-12.86c-3.44 .17-6.78 .64-10.14 1.42c-1.22 .28-2.43 .61-3.64 .94c-.29 .08-.58 .17-.88 .22l-1.95 1.01l-1.53 1.56l-.99 1.95l-.33 2.17l.36 2.16l1.01 1.95l1.56 1.53l1.95 .99l2.17 .32l2.16-.35c1.6-.67 3.15-1.41 4.77-2.02c5.25-1.97 10.64-2.96 16.25-2.54c6.48 .49 12.88 2.9 17.6 7.46c3.52 3.4 5.91 7.8 6.23 12.73c.08 1.3 .06 3.28-.84 4.33c-.03 .03-.05 .06-.08 .09Z"/></svg>\n';
+
 // src/client/onboarding.js
 var CONNECT_STEP = Object.freeze({ id: "omni-connect", order: -250 });
 var SKIPPED_KEY = "omni-ui:connect-omni-skipped";
@@ -11218,20 +11224,20 @@ function omniActions(select, call2) {
       const body = text.trim();
       const before = omniStore.getSnapshot();
       if (body === "" || !canSend(before)) return;
-      const at2 = Date.now();
-      const localId = `local-${at2}`;
+      const sent = sentMessage(body, before.messages[chatId]);
+      const { id: localId, at: at2 } = sent;
       const channelId = chatOf(before, chatId)?.channelId ?? before.chatChannels?.[chatId];
       const stillExists = () => channelId ? Boolean(channelOf(omniStore.getSnapshot(), channelId)) : Boolean(chatOf(omniStore.getSnapshot(), chatId));
       set((state) => ({
-        messages: { ...state.messages, [chatId]: [...state.messages[chatId] ?? [], { id: localId, from: "you", text: body, at: at2, ...state.preview ? {} : { sending: true } }] },
+        messages: { ...state.messages, [chatId]: [...state.messages[chatId] ?? [], state.preview ? { id: localId, from: "you", text: body, at: at2 } : sent] },
         chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, preview: `You: ${body}`, at: at2 } : chat),
         sendError: null
       }));
       if (before.preview || !call2) return;
       call2("omni-send", { chatId, text: body }).then(
-        () => {
+        (reply) => {
           if (!stillExists()) return;
-          set((state) => ({ messages: { ...state.messages, [chatId]: (state.messages[chatId] ?? []).map((message) => message.id === localId ? { ...message, sending: false } : message) } }));
+          set((state) => ({ messages: { ...state.messages, [chatId]: (state.messages[chatId] ?? []).map((message) => message.id === localId ? sentAnswered(message, reply?.messageId) : message) } }));
           void loadMessages(call2, chatId);
         },
         (error) => {
@@ -11311,12 +11317,42 @@ function omniActions(select, call2) {
 var POLL_MS = 15e3;
 var polling = null;
 var markSeen = (seen, chats) => chats.map((chat) => (seen[chat.id] ?? -1) >= chat.at ? { ...chat, unread: 0 } : chat);
+var sentCount = 0;
+function sentMessage(text, shown = [], at2 = Date.now()) {
+  sentCount += 1;
+  return {
+    id: `local-${at2}-${sentCount}`,
+    from: "you",
+    fromMe: true,
+    text,
+    at: at2,
+    sending: true,
+    local: { messageId: null, before: shown.filter((message) => !message.local).map((message) => message.id) }
+  };
+}
+var sentAnswered = (message, messageId) => ({
+  ...message,
+  sending: false,
+  status: "sent",
+  local: { ...message.local, messageId: typeof messageId === "string" && messageId !== "" ? messageId : null }
+});
+function withSent(rows, sent) {
+  const taken = [];
+  const take = (message, matches) => {
+    const row = rows.find((row2) => !taken.includes(row2.id) && row2.from !== "them" && !message.local.before.includes(row2.id) && matches(row2));
+    if (row !== void 0) taken.push(row.id);
+    return row !== void 0;
+  };
+  const kept = sent.filter((message) => !(message.local.messageId !== null && take(message, (row) => row.externalId === message.local.messageId))).filter((message) => !(message.local.messageId === null && take(message, (row) => row.text === message.text)));
+  const left = taken.length === 0 ? kept : kept.map((message) => ({ ...message, local: { ...message.local, before: [...message.local.before, ...taken] } }));
+  return { messages: left.length === 0 ? rows : [...rows, ...left].sort((a, b2) => a.at - b2.at), left };
+}
 async function loadMessages(call2, chatId) {
   const generation = dataGeneration;
   try {
     const { messages } = await call2("omni-messages", { chatId });
     if (generation !== dataGeneration || deleting.size || !chatOf(omniStore.getSnapshot(), chatId)) return;
-    set((state) => ({ messages: { ...state.messages, [chatId]: messages } }));
+    set((state) => ({ messages: { ...state.messages, [chatId]: withSent(messages, (state.messages[chatId] ?? []).filter((message) => message.local)).messages } }));
   } catch (error) {
     console.warn("Could not load messages:", error);
     if (generation !== dataGeneration || deleting.size || !chatOf(omniStore.getSnapshot(), chatId)) return;
@@ -11325,7 +11361,8 @@ async function loadMessages(call2, chatId) {
 }
 async function refreshLive(call2) {
   const generation = dataGeneration;
-  const reply = await call2("omni-overview");
+  const { preview, chatId } = omniStore.getSnapshot();
+  const reply = await (preview || chatId === null ? call2("omni-overview") : call2("omni-overview", { chatId }));
   if (generation !== dataGeneration || deleting.size) return;
   if (!reply.configured) {
     set((state) => state.preview ? { source: { kind: "preview", missing: reply.missing } } : {});
@@ -12490,7 +12527,7 @@ function ChannelSettings({ channel, writable, request = call, refresh = () => re
 
 // src/client/channels.js
 var import_react5 = require("react");
-var { ArrowUpIcon, ChevronLeftIcon: ChevronLeftIcon2, ChevronRightIcon, PlusIcon } = icons;
+var { ArrowUpIcon, CheckIcon, ChevronLeftIcon: ChevronLeftIcon2, ChevronRightIcon, ClockIcon, InfoIcon, PlusIcon, SmileIcon } = icons;
 var useOmni = () => (0, import_react5.useSyncExternalStore)(omniStore.subscribe, omniStore.getSnapshot, omniStore.getSnapshot);
 var useActions = (actions) => (0, import_react5.useMemo)(() => omniActions((id) => actions.selectPanel(id), call), [actions]);
 var stroke = { fill: "none", stroke: "currentColor", strokeWidth: 1.9, strokeLinecap: "round", strokeLinejoin: "round" };
@@ -12664,7 +12701,34 @@ function useStayAtEnd(chatId, count) {
   };
   return { scroller, onScroll, onSized };
 }
-function ChatMessages({ messages, onSized }) {
+var TICKS = Object.freeze({
+  pending: { label: "Waiting to send", marks: [ClockIcon] },
+  sent: { label: "Sent", marks: [CheckIcon] },
+  delivered: { label: "Delivered", marks: [CheckIcon, CheckIcon] },
+  read: { label: "Seen", marks: [CheckIcon, CheckIcon] },
+  // The team's info mark turned over: an exclamation mark in a circle.
+  failed: { label: "Not delivered", marks: [InfoIcon] }
+});
+function TickMark({ status }) {
+  const tick = Object.hasOwn(TICKS, status) ? TICKS[status] : null;
+  if (!tick) return null;
+  return (0, import_react5.createElement)(
+    "span",
+    { className: "oc-tick", "data-status": status, role: "img", "aria-label": t(tick.label), title: t(tick.label) },
+    tick.marks.map((Mark, index) => (0, import_react5.createElement)(Mark, { key: index }))
+  );
+}
+function SenderPhoto({ message, chat }) {
+  const group = chat?.kind === "group";
+  const name = (group ? message.author : chat?.name ?? message.author) || "?";
+  const photo = message.authorPhoto ?? (group ? null : chat?.avatarUrl ?? null);
+  return (0, import_react5.createElement)(
+    "span",
+    { className: "oc-msg-ava", "aria-hidden": true },
+    (0, import_react5.createElement)(ChatAvatar, { chat: { name, initials: !group && chat?.initials ? chat.initials : initialsOf(name), avatarUrl: photo }, size: 28 })
+  );
+}
+function ChatMessages({ messages, onSized, chat }) {
   return messages.map((message, index) => {
     const mine = message.from !== "them";
     const newDay = index === 0 || dayKey(messages[index - 1].at) !== dayKey(message.at);
@@ -12673,6 +12737,7 @@ function ChatMessages({ messages, onSized }) {
       "div",
       { className: `oc-msg oc-msg-${message.from}${first ? " oc-msg-first" : ""}` },
       first && !mine && message.author ? (0, import_react5.createElement)("span", { className: "oc-msg-author" }, message.author) : null,
+      first && !mine ? (0, import_react5.createElement)(SenderPhoto, { message, chat }) : null,
       first && message.from === "omni" ? (0, import_react5.createElement)("span", { className: "oc-msg-author oc-msg-omni" }, (0, import_react5.createElement)(OmniMark, { size: 12 }), "Omni") : null,
       (0, import_react5.createElement)(
         "div",
@@ -12680,10 +12745,128 @@ function ChatMessages({ messages, onSized }) {
         drawnMedia(message) ? (0, import_react5.createElement)(MediaPart, { message, onSized }) : null,
         drawnMedia(message) ? message.text ? (0, import_react5.createElement)("span", { className: "oc-media-caption" }, message.text) : null : message.text,
         drawnMedia(message) && message.mediaText ? (0, import_react5.createElement)("span", { className: "oc-media-text" }, message.mediaText) : null,
-        (0, import_react5.createElement)("time", null, message.sending ? t("Sending…") : new Date(message.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }))
+        (0, import_react5.createElement)(
+          "span",
+          { className: "oc-meta" },
+          (0, import_react5.createElement)("time", null, message.sending ? t("Sending…") : new Date(message.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })),
+          mine ? (0, import_react5.createElement)(TickMark, { status: message.sending ? "pending" : message.status }) : null
+        )
       )
     ));
   });
+}
+function initialsOf(name) {
+  const text = String(name ?? "").trim();
+  if (text.startsWith("#")) return "#";
+  const words = text.split(/\s+/).filter((word) => /\p{L}|\p{N}/u.test(word));
+  return (words.length > 1 ? words[0][0] + words.at(-1)[0] : (words[0] ?? "?").slice(0, 2)).toUpperCase();
+}
+function ChatHead({ chat, name, status = null, off = false, className = "", children }) {
+  const actions = [children].flat().filter(Boolean);
+  return (0, import_react5.createElement)(
+    "header",
+    { className: `oc-chat-head${className ? ` ${className}` : ""}`, "data-status": status ? true : void 0 },
+    (0, import_react5.createElement)("strong", { className: "oc-chat-name" }, name),
+    status ? (0, import_react5.createElement)("span", { className: "oc-chat-status", "data-off": off || void 0 }, status) : null,
+    actions.length > 0 ? (0, import_react5.createElement)("div", { className: "oc-chat-acts" }, actions) : null,
+    (0, import_react5.createElement)(ChatAvatar, { chat: { name, initials: chat?.initials ?? initialsOf(name), avatarUrl: chat?.avatarUrl ?? null }, size: 40 })
+  );
+}
+var EMOJI = Object.freeze(["😀", "😂", "😊", "😍", "😘", "😉", "😎", "🤔", "😅", "😭", "😢", "😡", "😴", "🙄", "😮", "🥳", "🤗", "🙏", "👍", "👎", "👏", "🙌", "👋", "💪", "🤝", "👌", "✌️", "🤞", "❤️", "💔", "🔥", "✨", "🎉", "✅", "❌", "⭐", "💯", "👀", "☕", "🚀"]);
+function insertAt(text, insert, start = text.length, end = start) {
+  const clamp = (at2) => Math.min(Math.max(Number.isInteger(at2) ? at2 : text.length, 0), text.length);
+  const from = Math.min(clamp(start), clamp(end));
+  const to2 = Math.max(clamp(start), clamp(end));
+  return { text: text.slice(0, from) + insert + text.slice(to2), caret: from + insert.length };
+}
+function MessageBar({ value, onChange, onSend, disabled = false, sending = false, placeholder, label, maxLength, boxRef, className = "", children }) {
+  const ownBox = (0, import_react5.useRef)(null);
+  const box = boxRef ?? ownBox;
+  const opener = (0, import_react5.useRef)(null);
+  const caret = (0, import_react5.useRef)(null);
+  const [picking, setPicking] = (0, import_react5.useState)(false);
+  (0, import_react5.useEffect)(() => {
+    if (caret.current === null) return;
+    const at2 = caret.current;
+    caret.current = null;
+    box.current?.focus?.();
+    box.current?.setSelectionRange?.(at2, at2);
+  }, [value]);
+  const off = disabled || sending;
+  const empty = value.trim() === "";
+  const send = () => {
+    if (off || empty) return;
+    setPicking(false);
+    onSend();
+  };
+  const pick = (emoji) => {
+    const node = box.current;
+    const end = typeof node?.selectionEnd === "number" ? node.selectionEnd : value.length;
+    const next = insertAt(value, emoji, typeof node?.selectionStart === "number" ? node.selectionStart : end, end);
+    if (typeof maxLength === "number" && next.text.length > maxLength) return;
+    caret.current = next.caret;
+    onChange(next.text);
+  };
+  const closePicker = () => {
+    setPicking(false);
+    opener.current?.focus?.();
+  };
+  return (0, import_react5.createElement)(
+    "footer",
+    { className: `oc-bar-wrap${className ? ` ${className}` : ""}` },
+    children,
+    (0, import_react5.createElement)(
+      "div",
+      { className: "oc-bar", "data-off": disabled || void 0 },
+      (0, import_react5.createElement)(
+        "div",
+        { className: "oc-bar-field" },
+        (0, import_react5.createElement)("button", {
+          ref: opener,
+          type: "button",
+          className: "oc-bar-emoji",
+          disabled: off,
+          "aria-label": t("Emoji"),
+          "aria-expanded": picking,
+          title: t("Emoji"),
+          onClick: () => setPicking((open) => !open)
+        }, (0, import_react5.createElement)(SmileIcon)),
+        picking && !off ? (0, import_react5.createElement)("div", {
+          className: "oc-emoji",
+          role: "group",
+          "aria-label": t("Pick an emoji"),
+          onKeyDown: (event) => {
+            if (event.key === "Escape") {
+              event.preventDefault();
+              closePicker();
+            }
+          }
+        }, EMOJI.map((emoji) => (0, import_react5.createElement)("button", { key: emoji, type: "button", className: "oc-emoji-pick", onClick: () => pick(emoji) }, emoji))) : null,
+        (0, import_react5.createElement)("textarea", {
+          ref: box,
+          rows: 1,
+          value,
+          disabled: off,
+          maxLength,
+          placeholder,
+          "aria-label": label,
+          onChange: (event) => onChange(event.target.value),
+          onMouseDown: () => setPicking(false),
+          onKeyDown: (event) => {
+            if (event.key === "Escape" && picking) {
+              event.preventDefault();
+              setPicking(false);
+              return;
+            }
+            if (event.key !== "Enter" || event.shiftKey || event.nativeEvent?.isComposing) return;
+            event.preventDefault();
+            send();
+          }
+        })
+      ),
+      (0, import_react5.createElement)("button", { type: "button", className: "oc-send", disabled: off || empty, "aria-label": t("Send"), onClick: send }, (0, import_react5.createElement)(ArrowUpIcon))
+    )
+  );
 }
 function ChatPage({ actions }) {
   const state = useOmni();
@@ -12713,15 +12896,8 @@ function ChatPage({ actions }) {
     "div",
     { className: "oc-page oc-chat" },
     (0, import_react5.createElement)(
-      "header",
-      { className: "oc-chat-head" },
-      (0, import_react5.createElement)(ChatAvatar, { chat, channel, size: 40 }),
-      (0, import_react5.createElement)(
-        "div",
-        { className: "oc-chat-who" },
-        (0, import_react5.createElement)("strong", null, chat.name),
-        (0, import_react5.createElement)("span", null, `${type.label} · ${channel.name}`)
-      ),
+      ChatHead,
+      { chat, name: chat.name, status: `${type.label} · ${channel.name}` },
       (0, import_react5.createElement)(
         "span",
         { className: "oc-answer", "data-by": channel.answeredBy === "Omni" ? "omni" : "you" },
@@ -12737,37 +12913,18 @@ function ChatPage({ actions }) {
         "div",
         { className: "oc-thread-in" },
         loading ? (0, import_react5.createElement)("div", { className: "oc-day" }, (0, import_react5.createElement)("span", { className: "oc-spinner", "aria-hidden": true }), t("Loading messages…")) : null,
-        (0, import_react5.createElement)(ChatMessages, { messages, onSized })
+        (0, import_react5.createElement)(ChatMessages, { messages, onSized, chat })
       )
     ),
     (0, import_react5.createElement)(
-      "footer",
-      { className: "oc-compose-wrap" },
+      MessageBar,
+      { className: "oc-compose-wrap", value: draft, onChange: setDraft, onSend: send, disabled: !live, placeholder: t("Reply on {channel}", { channel: type.label }), label: t("Reply") },
       failed ? (0, import_react5.createElement)("button", { type: "button", className: "oc-compose-note oc-compose-fail", role: "alert", onClick: () => setDraft(failed.text) }, t("Not sent: {reason}", { reason: failed.message }), " ", (0, import_react5.createElement)("u", null, t("Put it back"))) : null,
       !writable ? (0, import_react5.createElement)("div", { className: "oc-compose-note oc-compose-info" }, t("This device's key can't send messages; ask your Omni's owner.")) : live ? null : (0, import_react5.createElement)(
         "button",
         { type: "button", className: "oc-compose-note", onClick: () => omni2.openChannels("channel", channel.id) },
         (0, import_react5.createElement)(StatusDot, { status: channel.status }),
         t("{name} is not connected. Fix it to reply.", { name: channel.name })
-      ),
-      (0, import_react5.createElement)(
-        "div",
-        { className: "oc-compose", "data-off": live ? void 0 : true },
-        (0, import_react5.createElement)("textarea", {
-          rows: 1,
-          value: draft,
-          disabled: !live,
-          placeholder: t("Reply on {channel}", { channel: type.label }),
-          "aria-label": t("Reply"),
-          onChange: (event) => setDraft(event.target.value),
-          onKeyDown: (event) => {
-            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-              event.preventDefault();
-              send();
-            }
-          }
-        }),
-        (0, import_react5.createElement)("button", { type: "button", className: "oc-send", disabled: !live || draft.trim() === "", "aria-label": t("Send"), onClick: send }, (0, import_react5.createElement)(ArrowUpIcon))
       )
     )
   );
@@ -13177,6 +13334,10 @@ function SampleQr({ seed = 1 }) {
   return (0, import_react5.createElement)("svg", { viewBox: `-1 -1 ${N + 2} ${N + 2}`, width: 196, height: 196, "aria-hidden": true }, (0, import_react5.createElement)("g", { fill: "currentColor" }, cells, eyes));
 }
 var TONES = "[data-tone=ok]{--oc-tone:#16a34a}[data-tone=busy]{--oc-tone:#0ea5e9}[data-tone=warn]{--oc-tone:#f59e0b}[data-tone=off]{--oc-tone:#94a3b8}";
+var VORTEX = {
+  ink: "data:image/svg+xml;charset=utf-8," + encodeURIComponent(omni_mark_ink_32_default),
+  cream: "data:image/svg+xml;charset=utf-8," + encodeURIComponent(omni_mark_cream_32_default)
+};
 function ChannelsFooter({ wide, actions }) {
   const state = useOmni();
   (0, import_react5.useEffect)(() => {
@@ -13188,16 +13349,25 @@ function ChannelsFooter({ wide, actions }) {
   return (0, import_react5.createElement)("span", { className: "bt-connect-wrap" }, (0, import_react5.createElement)(
     "button",
     { type: "button", className: "bt-connect bt-connect-foot bt-channels-foot", title: label, "aria-label": `${t("Channels")}, ${label}`, onClick: () => actions.selectPanel(CHANNELS_PANEL) },
-    (0, import_react5.createElement)("span", { className: "bt-channels-tiles", "aria-hidden": true }, state.channels.slice(0, 4).map((channel) => (0, import_react5.createElement)(Tile, { key: channel.id, type: channel.type, size: 18 }))),
+    (0, import_react5.createElement)(
+      "span",
+      { className: "bt-channels-mark", "aria-hidden": true },
+      (0, import_react5.createElement)("img", { className: "oc-vortex oc-vortex-ink", src: VORTEX.ink, alt: "", width: 32, height: 32 }),
+      (0, import_react5.createElement)("img", { className: "oc-vortex oc-vortex-cream", src: VORTEX.cream, alt: "", width: 32, height: 32 })
+    ),
     t("Channels"),
     summary.attention > 0 ? (0, import_react5.createElement)("span", { className: "oc-warn-dot", "aria-hidden": true }) : (0, import_react5.createElement)("span", { className: "bt-channels-count" }, `${summary.connected}/${summary.total}`)
   ));
 }
 var CHANNELS_CSS = `
 .bt-channels-foot{gap:8px;justify-content:flex-start;padding:0 12px 0 8px}
-.bt-channels-tiles{display:inline-flex}
-.bt-channels-tiles .oc-tile{margin-left:-5px;box-shadow:0 0 0 1.5px var(--bt-main)}
-.bt-channels-tiles .oc-tile:first-child{margin-left:0}
+/* The control keeps the bar's own row height, so the mark and the update button sit on one line. */
+.bt-channels-foot{min-height:36px;gap:8px}
+.bt-channels-mark{display:inline-flex;align-items:center;justify-content:center;flex:none;width:32px;height:32px}
+.bt-channels-mark .oc-vortex{display:block;width:32px;height:32px}
+.bt-channels-mark .oc-vortex-cream{display:none}
+body[data-ds-dark-theme] .bt-channels-mark .oc-vortex-ink{display:none}
+body[data-ds-dark-theme] .bt-channels-mark .oc-vortex-cream{display:block}
 .bt-channels-count{margin-left:auto;font-size:12px;color:var(--bt-ink-3)}
 .bt-channels-foot .oc-warn-dot{margin-left:auto}
 ${TONES}
@@ -13223,7 +13393,6 @@ body[data-ds-dark-theme] .oc-ava{background:hsl(var(--oc-hue) 30% 26%);color:hsl
 .oc-ava-face{font-weight:600;letter-spacing:.01em}
 .oc-ava-img{position:absolute;inset:0;width:100%;height:100%;border-radius:50%;object-fit:cover}
 .oc-ava-badge{position:absolute;right:-4px;bottom:-4px;display:inline-flex;border-radius:32%;box-shadow:0 0 0 2px var(--bt-sidebar)}
-.oc-chat .oc-ava-badge{box-shadow:0 0 0 2px var(--bt-main)}
 
 /* Main panels */
 .oc-page{position:relative;height:100%;min-height:0;display:flex;flex-direction:column;background:var(--bt-main);color:var(--bt-ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;animation:oc-page-in .22s cubic-bezier(.2,0,0,1)}
@@ -13242,53 +13411,102 @@ body[data-ds-dark-theme] .oc-ava{background:hsl(var(--oc-hue) 30% 26%);color:hsl
 .oc-spinner{width:14px;height:14px;border-radius:50%;border:2px solid color-mix(in srgb,var(--bt-accent) 25%,transparent);border-top-color:var(--bt-accent);animation:oc-spin .8s linear infinite;flex:none}
 @keyframes oc-spin{to{transform:rotate(360deg)}}
 
-/* Chat */
+/* The chat view: the chat page (.oc-chat) and the chat pane (.op-pane, omni-phone.js) draw the
+   same header, log and bar from the DSH tokens alone. Light: white bubbles in from the person
+   on a soft wallpaper, accent-tinted bubbles out; dark: the team's bubble surface in, its accent
+   tint out. The wallpaper's pattern is two staggered dot grids of the ink. */
+.oc-chat,.op-pane{--oc-me:var(--bt-accent);--oc-them:var(--bt-magic-pink);--oc-wall:color-mix(in srgb,var(--bt-ink) 4%,var(--bt-main));--oc-in:color-mix(in srgb,var(--oc-them) 16%,var(--bt-card));--oc-out:color-mix(in srgb,var(--oc-me) 20%,var(--bt-card));--oc-dot:color-mix(in srgb,var(--bt-ink) 9%,transparent);--oc-shade:color-mix(in srgb,var(--bt-ink) 12%,transparent)}
+body[data-ds-dark-theme] :is(.oc-chat,.op-pane){--oc-wall:var(--bt-main);--oc-in:color-mix(in srgb,var(--oc-them) 26%,var(--bt-bubble));--oc-out:color-mix(in srgb,var(--oc-me) 34%,var(--bt-bubble));--oc-dot:color-mix(in srgb,var(--bt-ink) 6%,transparent);--oc-shade:color-mix(in srgb,var(--bt-main) 70%,transparent)}
+.oc-chat{container:oc-chat/inline-size}
 .oc-chat-empty{align-items:center;justify-content:center;gap:12px;color:var(--bt-ink-3)}
-.oc-chat-head{display:flex;align-items:center;gap:12px;padding:12px 20px;border-bottom:.5px solid var(--bt-line-2);flex-wrap:wrap}
-.oc-chat-who{display:flex;flex-direction:column;min-width:0;margin-right:auto}
-.oc-chat-who strong{font-size:15px;line-height:20px;font-weight:600}
-.oc-chat-who span{font-size:12.5px;color:var(--bt-ink-2)}
+.oc-chat-head{position:relative;z-index:1;flex:none;display:grid;grid-template-columns:auto minmax(0,1fr) auto;grid-template-rows:auto auto;column-gap:12px;align-items:center;min-height:60px;padding:8px 12px 8px 16px;box-sizing:border-box;border-bottom:.5px solid var(--bt-line-2);background:var(--bt-main)}
+.oc-chat-head>.oc-ava{grid-column:1;grid-row:1/3}
+.oc-chat-name{grid-column:2;grid-row:1;align-self:end;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:15px;line-height:20px;font-weight:600}
+.oc-chat-head:not([data-status]) .oc-chat-name{grid-row:1/3;align-self:center}
+.oc-chat-status{grid-column:2;grid-row:2;align-self:start;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12.5px;line-height:17px;color:var(--bt-ink-2)}
+.oc-chat-status[data-off]{color:var(--bt-danger)}
+.oc-chat-acts{grid-column:3;grid-row:1/3;display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:4px 6px}
+@container oc-chat (max-width:560px){.oc-chat-head{grid-template-columns:auto minmax(0,1fr)}.oc-chat-acts{grid-column:1/-1;grid-row:3;justify-content:flex-start;margin-top:6px}}
+.oc-icon-act{display:inline-grid;place-items:center;width:36px;height:36px;padding:0;border:0;border-radius:50%;background:none;color:var(--bt-ink-2);cursor:pointer;transition:background-color .12s ease,color .12s ease}
+.oc-icon-act:hover{background:var(--bt-hover);color:var(--bt-ink)}
+.oc-icon-act[aria-checked=true]{background:color-mix(in srgb,var(--bt-accent) 14%,transparent);color:var(--bt-accent)}
+.oc-icon-act svg{width:18px;height:18px}
+:is(.oc-chat,.op-pane) button:focus-visible{outline:2px solid var(--bt-accent);outline-offset:2px}
 .oc-answer{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 11px;border-radius:999px;font-size:12.5px;color:var(--bt-accent);background:color-mix(in srgb,var(--bt-accent) 10%,transparent)}
 .oc-answer[data-by=you]{color:var(--bt-ink-2);background:var(--bt-hover)}
-.oc-thread{flex:1;min-height:0;overflow-y:auto}
-.oc-thread-in{display:flex;flex-direction:column;gap:2px;max-width:var(--dsh-chat-content-width,748px);margin:0 auto;padding:20px 24px 12px}
-.oc-day{align-self:center;margin:4px 0 12px;font-size:11.5px;color:var(--bt-ink-3)}
-.oc-msg{display:flex;flex-direction:column;max-width:72%;animation:oc-msg-in .2s cubic-bezier(.2,0,0,1)}
+.oc-chat-acts .oc-preview-chip{margin-left:0}
+.oc-thread{flex:1;min-height:0;overflow-y:auto;background-color:var(--oc-wall);background-image:radial-gradient(circle,var(--oc-dot) 1px,transparent 1.5px),radial-gradient(circle,var(--oc-dot) 1px,transparent 1.5px);background-size:22px 22px;background-position:0 0,11px 11px}
+.oc-thread-in{display:flex;flex-direction:column;gap:2px;max-width:var(--dsh-chat-content-width,748px);margin:0 auto;padding:12px 20px 16px;box-sizing:border-box}
+.oc-day{align-self:center;display:inline-flex;align-items:center;gap:8px;margin:10px 0 6px;padding:4px 12px;border-radius:8px;background:var(--oc-in);box-shadow:0 1px 1px var(--oc-shade);font-size:12px;line-height:17px;font-weight:500;color:var(--bt-ink-2)}
+.oc-msg{display:flex;flex-direction:column;max-width:min(80%,560px);animation:oc-msg-in .2s cubic-bezier(.2,0,0,1)}
 @keyframes oc-msg-in{from{opacity:0;transform:translateY(4px)}}
-.oc-msg-first{margin-top:10px}
-.oc-msg-them{align-self:flex-start;align-items:flex-start}
+.oc-msg-first{margin-top:8px}
+.oc-msg-them{align-self:flex-start;align-items:flex-start;position:relative;box-sizing:border-box;padding-left:36px;max-width:min(calc(80% + 36px),596px)}
+.oc-msg-ava{position:absolute;left:0;top:0;display:flex}
+.oc-msg-author~.oc-msg-ava{top:18px}
 .oc-msg-omni,.oc-msg-you{align-self:flex-end;align-items:flex-end}
-.oc-msg-author{display:inline-flex;align-items:center;gap:4px;margin:0 12px 3px;font-size:12px;font-weight:500;color:var(--bt-ink-2)}
+.oc-msg-author{display:inline-flex;align-items:center;gap:4px;margin:0 10px 2px;font-size:12px;line-height:16px;font-weight:600;color:var(--bt-ink-2)}
 .oc-msg-omni .oc-msg-author{color:var(--bt-accent)}
-.oc-bubble{position:relative;padding:8px 12px 7px;border-radius:18px;font-size:14.5px;line-height:21px;white-space:pre-wrap;overflow-wrap:anywhere;margin-top:2px}
-.oc-bubble time{float:right;margin:5px 0 -3px 10px;font-size:10.5px;line-height:14px;opacity:.55}
-.oc-msg-them .oc-bubble{background:var(--bt-bubble);color:var(--bt-ink)}
-.oc-msg-omni .oc-bubble{background:color-mix(in srgb,var(--bt-accent) 14%,var(--bt-main));color:var(--bt-ink)}
-.oc-msg-you .oc-bubble{background:var(--bt-user);color:var(--bt-user-ink)}
-.oc-bubble[data-media]{padding:4px 4px 7px}
-.oc-media-caption,.oc-media-text{display:block;margin:2px 8px 0}
-.oc-bubble[data-media]>time{margin-right:8px}
-.oc-bubble[data-media=sticker]{background:none;padding:0}
-.oc-media-img{display:block;max-width:100%;max-height:340px;border-radius:14px;margin-bottom:4px}
-.oc-media-sticker{display:block;width:140px;height:140px;object-fit:contain}
-.oc-media-audio{display:block;width:260px;max-width:100%;height:40px;margin-top:4px;margin-bottom:4px}
-.oc-media-still{display:grid;place-items:center;width:240px;max-width:100%;aspect-ratio:16/10;margin-bottom:4px;border:0;border-radius:14px;background:linear-gradient(160deg,#2b2f36,#14161a);color:#fff;cursor:pointer}
-.oc-media-play{display:grid;place-items:center;width:48px;height:48px;border-radius:50%;background:rgba(0,0,0,.45);padding-left:3px;box-sizing:border-box}
-.oc-media-wait{display:grid;place-items:center;width:240px;max-width:100%;aspect-ratio:4/3;margin-bottom:4px;border-radius:14px;background:var(--bt-hover)}
-.oc-media-wait-audio{aspect-ratio:auto;height:40px;width:260px}
-.oc-media-wait-sticker{width:140px;aspect-ratio:1}
-.oc-media-doc{display:flex;align-items:center;gap:8px;min-width:180px;padding:8px 10px;border-radius:12px;background:var(--bt-hover);font-size:13.5px}
-.oc-media-doc span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.oc-bubble{position:relative;max-width:100%;box-sizing:border-box;padding:6px 9px 7px 10px;border-radius:12px;font-size:14px;line-height:20px;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--bt-ink);background:var(--oc-in);box-shadow:0 1px 1px var(--oc-shade)}
+.oc-msg-omni .oc-bubble,.oc-msg-you .oc-bubble{background:var(--oc-out)}
+.oc-msg-first .oc-bubble::before{content:"";position:absolute;top:0;width:8px;height:12px;background:inherit}
+.oc-msg-them.oc-msg-first .oc-bubble{border-top-left-radius:0}
+.oc-msg-them.oc-msg-first .oc-bubble::before{left:-7px;clip-path:polygon(0 0,100% 0,100% 100%)}
+:is(.oc-msg-omni,.oc-msg-you).oc-msg-first .oc-bubble{border-top-right-radius:0}
+:is(.oc-msg-omni,.oc-msg-you).oc-msg-first .oc-bubble::before{right:-7px;clip-path:polygon(0 0,100% 0,0 100%)}
+.oc-meta{float:right;position:relative;display:inline-flex;align-items:center;gap:3px;margin:6px -2px -5px 12px;font-size:11px;line-height:15px;white-space:nowrap;color:color-mix(in srgb,var(--bt-ink) 70%,transparent)}
+.oc-meta time{font-variant-numeric:tabular-nums}
+.oc-tick{display:inline-flex;align-items:center}
+.oc-tick svg{width:15px;height:15px}
+.oc-tick svg+svg{margin-left:-10px}
+.oc-tick[data-status=read]{color:color-mix(in srgb,var(--bt-accent) 72%,var(--bt-ink))}
+.oc-tick[data-status=failed]{color:var(--bt-danger)}
+body[data-ds-dark-theme] .oc-tick{color:color-mix(in srgb,var(--bt-ink) 45%,transparent)}
+body[data-ds-dark-theme] .oc-tick[data-status=read]{color:color-mix(in srgb,var(--bt-accent) 50%,var(--bt-ink))}
+body[data-ds-dark-theme] .oc-tick[data-status=failed]{color:color-mix(in srgb,var(--bt-danger) 60%,var(--bt-ink))}
+.oc-tick[data-status=failed] svg{transform:rotate(180deg)}
+.oc-bubble[data-media]{padding:3px 3px 6px}
+.oc-media-caption,.oc-media-text{display:block;margin:4px 7px 0}
+.oc-bubble[data-media]>.oc-meta{margin-right:5px}
+.oc-bubble[data-media=sticker]{padding:0;background:none;box-shadow:none}
+.oc-bubble[data-media=sticker]::before{display:none}
+.oc-media-img{display:block;max-width:100%;max-height:300px;border-radius:9px}
+.oc-media-sticker{display:block;width:120px;height:120px;object-fit:contain}
+.oc-media-audio{display:block;width:240px;max-width:100%;height:40px;margin:2px 0}
+.oc-media-still{display:grid;place-items:center;width:220px;max-width:100%;aspect-ratio:16/10;border:0;border-radius:9px;background:color-mix(in srgb,var(--bt-ink) 80%,var(--bt-main));color:var(--bt-main);cursor:pointer}
+.oc-media-play{display:grid;place-items:center;width:48px;height:48px;border-radius:50%;background:color-mix(in srgb,var(--bt-main) 22%,transparent);padding-left:3px;box-sizing:border-box}
+.oc-media-wait{display:grid;place-items:center;width:220px;max-width:100%;aspect-ratio:4/3;border-radius:9px;background:var(--bt-hover)}
+.oc-media-wait-audio{aspect-ratio:auto;height:40px;width:240px}
+.oc-media-wait-sticker{width:120px;aspect-ratio:1}
+.oc-media-doc{display:flex;align-items:center;gap:8px;min-width:0;max-width:100%;width:220px;padding:10px;border-radius:9px;box-sizing:border-box;background:color-mix(in srgb,var(--bt-ink) 6%,transparent);font-size:13.5px}
+.oc-media-doc svg{flex:none;color:var(--bt-accent)}
+.oc-media-doc span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .oc-media-miss{margin:6px 8px 2px;font-size:12.5px;color:var(--bt-ink-3)}
-.oc-media-text{font-size:13px;line-height:19px;opacity:.75}
-.oc-compose-wrap{padding:8px 24px 20px}
-.oc-compose-note{display:flex;align-items:center;gap:8px;max-width:var(--dsh-chat-content-width,748px);margin:0 auto 8px;width:100%;padding:8px 12px;border:0;border-radius:12px;background:color-mix(in srgb,#f59e0b 12%,transparent);color:var(--bt-ink);font:inherit;font-size:13px;text-align:left;cursor:pointer;box-sizing:border-box}
-.oc-compose{display:flex;align-items:flex-end;gap:8px;max-width:var(--dsh-chat-content-width,748px);margin:0 auto;padding:6px 6px 6px 16px;border-radius:24px;border:1px solid var(--bt-line-2);background:var(--bt-card);box-shadow:0 2px 8px -2px rgba(0,0,0,.06);box-sizing:border-box}
-.oc-compose[data-off]{opacity:.6}
-.oc-compose textarea{flex:1;height:36px;min-height:36px;max-height:160px;padding:8px 0;box-sizing:border-box;border:0;background:none;color:var(--bt-ink);font:inherit;font-size:14.5px;line-height:20px;resize:none;outline:none;field-sizing:content}
-.oc-send{width:36px;height:36px;border-radius:50%;border:0;background:var(--bt-accent);color:var(--bt-accent-ink,#fff);display:inline-grid;place-items:center;cursor:pointer;flex:none;transition:opacity .12s ease,transform .12s ease}
-.oc-send:disabled{opacity:.3;cursor:default}
+.oc-media-text{font-size:13px;line-height:19px;color:var(--bt-ink-2)}
+/* The message bar, pinned to the chat's foot, and the notes over it. */
+.oc-bar-wrap{flex:none;display:flex;flex-direction:column;gap:6px;padding:8px 12px 12px;box-sizing:border-box;border-top:.5px solid var(--bt-line-2);background:var(--bt-main)}
+.oc-bar-wrap>*{width:100%;max-width:var(--dsh-chat-content-width,748px);margin-left:auto;margin-right:auto;box-sizing:border-box}
+.oc-bar{position:relative;display:flex;align-items:flex-end;gap:8px}
+.oc-bar[data-off]{opacity:.6}
+.oc-bar-field{flex:1;min-width:0;display:flex;align-items:flex-end;gap:2px;padding:2px 14px 2px 3px;border:1px solid var(--bt-line-2);border-radius:22px;background:var(--bt-card);transition:border-color .12s ease,box-shadow .12s ease}
+.oc-bar-field:focus-within{border-color:var(--bt-accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--bt-accent) 16%,transparent)}
+.oc-bar textarea{flex:1;min-width:0;height:auto;min-height:38px;max-height:138px;padding:9px 2px;box-sizing:border-box;border:0;background:none;color:var(--bt-ink);font:inherit;font-size:14px;line-height:20px;resize:none;outline:none;overflow-y:auto;field-sizing:content}
+.oc-bar textarea::placeholder{color:var(--bt-ink-3)}
+.oc-bar-emoji{flex:none;display:inline-grid;place-items:center;width:34px;height:34px;margin:1px 0;padding:0;border:0;border-radius:50%;background:none;color:var(--bt-ink-2);cursor:pointer}
+.oc-bar-emoji:hover:not(:disabled),.oc-bar-emoji[aria-expanded=true]{background:var(--bt-hover);color:var(--bt-ink)}
+.oc-bar-emoji:disabled{cursor:default}
+.oc-bar-emoji svg{width:20px;height:20px}
+.oc-emoji{position:absolute;left:0;bottom:calc(100% + 8px);z-index:3;display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:2px;width:min(320px,100%);padding:8px;box-sizing:border-box;border:.5px solid var(--bt-line-2);border-radius:16px;background:var(--bt-card);box-shadow:0 14px 36px -14px var(--oc-shade)}
+.oc-emoji-pick{display:grid;place-items:center;min-width:0;aspect-ratio:1;padding:0;border:0;border-radius:8px;background:none;font-size:20px;line-height:1;cursor:pointer}
+.oc-emoji-pick:hover{background:var(--bt-hover)}
+.oc-send{flex:none;display:inline-grid;place-items:center;width:42px;height:42px;padding:0;border:0;border-radius:50%;background:var(--bt-accent);color:var(--bt-knob);cursor:pointer;transition:opacity .12s ease,transform .12s ease}
+.oc-send svg{width:18px;height:18px}
+.oc-send:disabled{opacity:.35;cursor:default}
 .oc-send:active:not(:disabled){transform:scale(.94)}
+.oc-compose-note{display:flex;align-items:center;gap:8px;margin:0;padding:8px 12px;border:0;border-radius:12px;background:var(--bt-hover);color:var(--bt-ink);font:inherit;font-size:13px;text-align:left;cursor:pointer}
+.oc-compose-info{cursor:default;color:var(--bt-ink-2)}
+.oc-compose-fail{color:color-mix(in srgb,var(--bt-danger) 80%,var(--bt-ink));background:color-mix(in srgb,var(--bt-danger) 10%,transparent)}
+.oc-bubble[data-sending]{opacity:.6}
 
 /* Channels */
 .oc-channels{overflow-y:auto}
@@ -13400,9 +13618,7 @@ body[data-ds-dark-theme] .oc-ava{background:hsl(var(--oc-hue) 30% 26%);color:hsl
 .oc-live-chip{gap:6px;border-style:solid;border-color:color-mix(in srgb,#16a34a 35%,transparent);color:color-mix(in srgb,#16a34a 70%,var(--bt-ink))}
 .oc-live-chip[data-error]{border-color:color-mix(in srgb,#f59e0b 45%,transparent);color:color-mix(in srgb,#d97706 80%,var(--bt-ink))}
 .oc-live-dot{width:6px;height:6px;border-radius:50%;background:currentColor;animation:oc-pulse 2s ease-in-out infinite}
-.oc-compose-info{cursor:default;background:var(--bt-hover);color:var(--bt-ink-2)}
 .oc-seg-static{cursor:default}
-.oc-day{display:inline-flex;align-items:center;gap:8px}
 .oc-qr-wait{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;color:var(--bt-ink-2)}
 .oc-qr .oc-qr-wait{color:#475569}
 .oc-qr-code{position:relative;display:inline-flex}
@@ -13415,8 +13631,6 @@ body[data-ds-dark-theme] .oc-ava{background:hsl(var(--oc-hue) 30% 26%);color:hsl
 .oc-fix{display:flex;align-items:flex-end;gap:10px}
 .oc-fix .oc-field{flex:1}
 .oc-problem{margin:4px 0 0;padding:10px 12px;border-radius:12px;font-size:13px;color:color-mix(in srgb,#d97706 85%,var(--bt-ink));background:color-mix(in srgb,#f59e0b 12%,transparent)}
-.oc-compose-fail{color:color-mix(in srgb,#d97706 85%,var(--bt-ink));background:color-mix(in srgb,#f59e0b 12%,transparent)}
-.oc-bubble[data-sending]{opacity:.6}
 .oc-type:disabled{opacity:.5;cursor:not-allowed}
 .oc-qr-empty{display:grid;place-items:center;width:196px;height:196px}
 @media (max-width:720px){.oc-guide{grid-template-columns:1fr;gap:12px}.oc-guide-steps{flex-direction:row;flex-wrap:wrap;gap:4px 14px}.oc-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.oc-seg{grid-template-columns:1fr}.oc-channels-in{padding:20px 16px 40px}.oc-head{flex-direction:column}}
@@ -13432,12 +13646,12 @@ var hueOf2 = (name) => {
   for (const char of String(name ?? "")) sum = sum * 31 + char.charCodeAt(0) >>> 0;
   return HUES2[sum % HUES2.length];
 };
-var initialsOf = (name) => String(name ?? "?").replace(/[^\p{L}\p{N} ]/gu, "").trim().split(/\s+/).slice(0, 2).map((word) => word[0] ?? "").join("").toUpperCase() || "?";
+var initialsOf2 = (name) => String(name ?? "?").replace(/[^\p{L}\p{N} ]/gu, "").trim().split(/\s+/).slice(0, 2).map((word) => word[0] ?? "").join("").toUpperCase() || "?";
 function Avatar({ name, url, size = 28 }) {
   return (0, import_react6.createElement)(
     "span",
     { className: "op-ava", style: { width: size, height: size, "--op-hue": hueOf2(name), fontSize: Math.round(size * 0.38) } },
-    initialsOf(name),
+    initialsOf2(name),
     url ? (0, import_react6.createElement)("img", { src: url, alt: "", loading: "lazy", referrerPolicy: "no-referrer", onError: (event) => {
       event.currentTarget.remove();
     } }) : null
@@ -15483,57 +15697,12 @@ function registerSettings(ctx) {
   ctx.slots.inject("settings.section", () => ctx.slots.register({ name: "settings.section", id: SETTINGS_SECTION.id, order: SETTINGS_SECTION.order, label: "Omni" }, OmniSettingsSection));
 }
 
-// src/client/phone-frame.js
-var import_react12 = require("react");
-var FRAME_SHELL = 16;
-var FRAME_BORDER = 1;
-var SCREEN_RADIUS_RATIO = 55 / 390;
-var FRAME_MAX_WIDTH = 300;
-function frameMetrics(width) {
-  const screen = Math.max(0, width - 2 * (FRAME_SHELL + FRAME_BORDER));
-  const screenRadius = Math.round(screen * SCREEN_RADIUS_RATIO * 10) / 10;
-  return { screen, screenRadius, shellRadius: Math.round((screenRadius + FRAME_SHELL) * 10) / 10 };
-}
-var SIDE_BUTTONS = Object.freeze([
-  { id: "mute", side: "left", top: "21%", height: 16 },
-  { id: "volume-up", side: "left", top: "34%", height: 36 },
-  { id: "volume-down", side: "left", top: "47%", height: 36 },
-  { id: "power", side: "right", top: "36%", height: 52 }
-]);
-function PhoneFrame({ label, children }) {
-  return (0, import_react12.createElement)(
-    "div",
-    { className: "op-device" },
-    (0, import_react12.createElement)(
-      "div",
-      { className: "op-frame" },
-      SIDE_BUTTONS.map((button) => (0, import_react12.createElement)("span", { key: button.id, className: "op-button", "data-side": button.side, "aria-hidden": true, style: { [button.side]: -2, top: button.top, height: button.height } })),
-      (0, import_react12.createElement)("div", { className: "op-screen", role: "region", "aria-label": label }, children)
-    )
-  );
-}
-var PhoneGlyph = () => (0, import_react12.createElement)(
-  "svg",
-  { width: 14, height: 14, viewBox: "0 0 20 20", fill: "none", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true, focusable: "false" },
-  (0, import_react12.createElement)("path", { d: "M7 2.75h6A1.75 1.75 0 0 1 14.75 4.5v11A1.75 1.75 0 0 1 13 17.25H7a1.75 1.75 0 0 1-1.75-1.75v-11A1.75 1.75 0 0 1 7 2.75z" }),
-  (0, import_react12.createElement)("path", { d: "M8.75 4.75h2.5" })
-);
-var SCREEN_WIDTH = `(100cqi - ${2 * (FRAME_SHELL + FRAME_BORDER)}px)`;
-var SCREEN_RADIUS = `calc(${SCREEN_WIDTH} * 55 / 390)`;
-var SHELL_RADIUS = `calc(${SCREEN_WIDTH} * 55 / 390 + ${FRAME_SHELL}px)`;
-var PHONE_FRAME_CSS = `
-.op-device{container-type:inline-size;width:100%;max-width:${FRAME_MAX_WIDTH}px;margin:0 auto}
-.op-frame{position:relative;box-sizing:border-box;width:100%;padding:${FRAME_SHELL}px;border:${FRAME_BORDER}px solid rgba(0,0,0,.6);border-radius:${SHELL_RADIUS};background:linear-gradient(145deg,#2b2e35 0%,#101116 45%,#1c1e25 100%);box-shadow:inset 0 0 0 1px rgba(255,255,255,.12),0 18px 50px rgba(0,0,0,.55)}
-.op-button{position:absolute;width:3px;border-radius:2px;background:#3a3d44;box-shadow:0 1px 2px rgba(0,0,0,.5)}
-.op-screen{position:relative;box-sizing:border-box;width:100%;aspect-ratio:390/844;display:flex;flex-direction:column;overflow:hidden;border:1px solid rgba(255,255,255,.06);border-radius:${SCREEN_RADIUS};background:var(--bt-main, #fff);color:var(--bt-ink)}
-`;
-
 // src/client/omni-phone.js
-var import_react13 = require("react");
+var import_react12 = require("react");
 var PHONE_KIND = "omni-phone";
 var PHONE_TAB_ID = "ds-bot/omni-phone";
 var phoneTabId = (threadId) => `${PHONE_TAB_ID}:${threadId}`;
-var phoneTabDefinition = () => ({ id: PHONE_TAB_ID, kind: PHONE_KIND, title: () => t("Phone pane") });
+var phoneTabDefinition = () => ({ id: PHONE_TAB_ID, kind: PHONE_KIND, title: () => t("Chat") });
 var phoneParams = (thread) => ({ threadId: thread.id, chatId: thread.chatId });
 var threadsIn = (roster) => Array.isArray(roster?.omniThreads) ? roster.omniThreads : [];
 var threadName = (thread) => thread.title || (thread.kind === "group" ? t("Group") : t("Chat"));
@@ -15564,10 +15733,10 @@ function phoneSurfaceIs(right, thread) {
   const screen = right.screen();
   return screen !== void 0 && screen.sessionId === thread.sessionId;
 }
-function installPhone(ctx, face) {
+function installPhone(ctx, face2) {
   const fiber = ctx.inject(["sidebarRight", "sidebarRightTabs"], (scope) => {
     scope.effect(() => scope.sidebarRightTabs.register(phoneTabDefinition()), "ds-bot: phone tab type");
-    scope.effect(() => ctx.slots.inject("sidebar.right.pane.tab", () => ctx.slots.register({ name: "sidebar.right.pane.tab", key: PHONE_TAB_ID, inject: face }, PhoneTab)), "ds-bot: phone tab");
+    scope.effect(() => ctx.slots.inject("sidebar.right.pane.tab", () => ctx.slots.register({ name: "sidebar.right.pane.tab", key: PHONE_TAB_ID, inject: face2 }, PhoneTab)), "ds-bot: phone tab");
     scope.effect(() => {
       phoneRight = scope.sidebarRight;
       return () => {
@@ -15578,14 +15747,14 @@ function installPhone(ctx, face) {
   });
   return () => fiber.dispose();
 }
-var phoneUnavailable = () => t("Open a conversation first; the phone pane opens beside it.");
+var phoneUnavailable = () => t("Open a conversation first; the chat opens beside it.");
 var phoneFailure = (error) => {
   console.warn("Could not open the phone pane:", error);
   return phoneUnavailable();
 };
 function openPhone(thread) {
   const right = phoneRight;
-  if (!right) return t("The phone pane needs DSH's right column.");
+  if (!right) return t("The chat needs DSH's right column.");
   try {
     const snapshot = right.mounted?.getSnapshot?.();
     if (snapshot === void 0 || typeof right.actionsFor === "function" && right.actionsFor(snapshot) === void 0) return phoneUnavailable();
@@ -15597,14 +15766,14 @@ function openPhone(thread) {
 }
 function requestPhone(thread) {
   const right = phoneRight;
-  if (!right) return t("The phone pane needs DSH's right column.");
+  if (!right) return t("The chat needs DSH's right column.");
   if (phoneSurfaceIs(right, thread)) return openPhone(thread);
   noteIntent(thread.id);
   return null;
 }
 function useChatPoll(chatId, on2) {
-  const [read, setRead] = (0, import_react13.useState)({ chatId: null, messages: null, error: null });
-  (0, import_react13.useEffect)(() => {
+  const [read, setRead] = (0, import_react12.useState)({ chatId: null, messages: null, error: null });
+  (0, import_react12.useEffect)(() => {
     if (!chatId || !on2) return void 0;
     let stopped = false;
     let timer = 0;
@@ -15633,9 +15802,9 @@ function useChatPoll(chatId, on2) {
 var sendsAllowed = (thread) => thread?.answerChild === true ? thread.sendingMode === "sending" : thread?.permissions?.sends === "allow";
 function SendSwitch({ thread }) {
   const on2 = sendsAllowed(thread);
-  const [wanted, setWanted] = (0, import_react13.useState)(null);
-  const [problem, setProblem] = (0, import_react13.useState)(null);
-  (0, import_react13.useEffect)(() => {
+  const [wanted, setWanted] = (0, import_react12.useState)(null);
+  const [problem, setProblem] = (0, import_react12.useState)(null);
+  (0, import_react12.useEffect)(() => {
     setWanted(null);
   }, [on2]);
   const shown = wanted ?? on2;
@@ -15650,64 +15819,156 @@ function SendSwitch({ thread }) {
       setProblem(t("Could not change this chat's settings. Try again."));
     });
   };
-  return (0, import_react13.createElement)(
+  return (0, import_react12.createElement)(
     "div",
     { className: "op-send" },
-    (0, import_react13.createElement)(
-      "label",
-      { className: "op-send-row" },
-      (0, import_react13.createElement)("span", null, t("Always allow send")),
-      (0, import_react13.createElement)("button", {
-        type: "button",
-        role: "switch",
-        "aria-checked": shown,
-        className: "op-switch",
-        "data-thread-id": thread.id,
-        title: shown ? t("Sends into this chat go without asking you") : t("Each send into this chat asks you first"),
-        onClick: flip
-      }, (0, import_react13.createElement)("span"))
-    ),
-    problem ? (0, import_react13.createElement)("span", { className: "op-send-problem", role: "alert" }, hostText(problem)) : null
+    (0, import_react12.createElement)("button", {
+      type: "button",
+      role: "switch",
+      "aria-checked": shown,
+      "aria-label": t("Always allow send"),
+      className: "oc-icon-act op-switch",
+      "data-thread-id": thread.id,
+      title: shown ? t("Sends into this chat go without asking you") : t("Each send into this chat asks you first"),
+      onClick: flip
+    }, (0, import_react12.createElement)(icons.ArrowUpIcon)),
+    problem ? (0, import_react12.createElement)("span", { className: "op-send-problem", role: "alert" }, hostText(problem)) : null
+  );
+}
+var PHONE_TEXT_MAX = 4096;
+function PhoneComposer({ thread, sent }) {
+  const [text, setText] = (0, import_react12.useState)("");
+  const [editing, setEditing] = (0, import_react12.useState)(null);
+  const [sending, setSending] = (0, import_react12.useState)(false);
+  const [problem, setProblem] = (0, import_react12.useState)(null);
+  const busy = (0, import_react12.useRef)(false);
+  const box = (0, import_react12.useRef)(null);
+  const draft = thread.waitingDraft ?? null;
+  const send = async () => {
+    const message = text.trim();
+    if (busy.current || message === "") return;
+    busy.current = true;
+    setSending(true);
+    setProblem(null);
+    const shown = sent?.add(message);
+    try {
+      const reply = await call("omni-phone-send", { threadId: thread.id, text: message, ...editing === null ? {} : { draftId: editing } });
+      sent?.answered(shown, reply?.messageId);
+      setText("");
+      setEditing(null);
+    } catch (error) {
+      sent?.drop(shown);
+      console.warn("Could not send the message:", error);
+      setProblem(typeof error?.message === "string" && error.message !== "" ? error.message : "Could not send this message. Check your connection and access, then try again.");
+    } finally {
+      busy.current = false;
+      setSending(false);
+    }
+  };
+  const edit = () => {
+    setText(draft.text);
+    setEditing(draft.id);
+    setProblem(null);
+    box.current?.focus?.();
+  };
+  const editingDraft = draft !== null && editing === draft.id;
+  return (0, import_react12.createElement)(
+    MessageBar,
+    {
+      className: "op-compose",
+      value: text,
+      sending,
+      maxLength: PHONE_TEXT_MAX,
+      placeholder: t("Write your own message"),
+      label: t("Your message"),
+      boxRef: box,
+      // An emptied field lets the draft go back to waiting on its card.
+      onChange: (next) => {
+        setText(next);
+        if (next === "") setEditing(null);
+      },
+      onSend: () => {
+        void send();
+      }
+    },
+    draft && draft.replaced !== true && !editingDraft ? (0, import_react12.createElement)(
+      "div",
+      { className: "op-draft", "data-draft-id": draft.id },
+      (0, import_react12.createElement)(
+        "div",
+        { className: "op-draft-head" },
+        (0, import_react12.createElement)("span", null, t("The bot's draft, waiting on its card")),
+        (0, import_react12.createElement)("button", { type: "button", className: "op-draft-edit", disabled: sending, onClick: edit }, (0, import_react12.createElement)(icons.PencilIcon), t("Edit"))
+      ),
+      (0, import_react12.createElement)("p", { className: "op-draft-text" }, draft.text)
+    ) : null,
+    editingDraft && draft.replaced !== true ? (0, import_react12.createElement)("p", { className: "op-edit-note", role: "status" }, (0, import_react12.createElement)(icons.PencilIcon), t("Editing the bot's draft")) : null,
+    draft?.replaced === true ? (0, import_react12.createElement)("p", { className: "op-compose-note", role: "status" }, t("Reject the bot's draft on its card")) : null,
+    problem ? (0, import_react12.createElement)("p", { className: "op-compose-note op-compose-fail", role: "alert" }, t("Not sent: {reason}", { reason: hostText(problem) })) : null
   );
 }
 function PhonePane({ params, sessionId, useRoster, visible = true }) {
   const thread = useRoster((roster) => phoneThreadOf(roster, params, sessionId));
   const read = useChatPoll(thread?.chatId ?? null, visible);
-  const messages = read.messages ?? [];
+  const overview = useOmni();
+  const sent = useSent(thread?.chatId ?? null, read.messages);
+  const messages = withSent(read.messages ?? [], sent.messages).messages;
   const { scroller, onScroll, onSized } = useStayAtEnd(thread?.chatId, messages.length);
   if (!thread) {
     const named = typeof params?.threadId === "string" || typeof params?.chatId === "string";
-    return (0, import_react13.createElement)("div", { className: "op-pane" }, (0, import_react13.createElement)("p", { className: "op-note" }, named ? t("This chat is no longer in the sidebar.") : t("Open the phone pane from a chat in the sidebar.")));
+    return (0, import_react12.createElement)("div", { className: "op-pane" }, (0, import_react12.createElement)("p", { className: "op-note" }, named ? t("This chat is no longer in the sidebar.") : t("Open a chat from the sidebar to see it here.")));
   }
   const loading = read.messages === null && read.error === null;
   const name = threadName(thread);
-  return (0, import_react13.createElement)(
+  const cut = thread.connected === false && Boolean(thread.reason);
+  const chat = chatOf(overview, thread.chatId);
+  return (0, import_react12.createElement)(
     "div",
-    { className: "op-pane", "data-thread-id": thread.id },
-    (0, import_react13.createElement)(
-      PhoneFrame,
-      { label: t("{name} on the phone", { name }) },
-      (0, import_react13.createElement)(
-        "header",
-        { className: "op-head" },
-        (0, import_react13.createElement)("strong", null, name),
-        thread.connected === false && thread.reason ? (0, import_react13.createElement)("span", null, threadReason(thread)) : null,
-        (0, import_react13.createElement)(SendSwitch, { thread })
-      ),
-      (0, import_react13.createElement)(
+    { className: "op-pane", "data-thread-id": thread.id, role: "region", "aria-label": t("Chat with {name}", { name }) },
+    (0, import_react12.createElement)(
+      ChatHead,
+      { className: "op-head", chat, name, status: cut ? threadReason(thread) : channelOf(overview, thread.channelId)?.name ?? null, off: cut },
+      (0, import_react12.createElement)(SendSwitch, { thread })
+    ),
+    (0, import_react12.createElement)(
+      "div",
+      { ref: scroller, className: "oc-thread op-log", onScroll, role: "log", "aria-label": t("Conversation with {name}", { name }) },
+      (0, import_react12.createElement)(
         "div",
-        { ref: scroller, className: "oc-thread op-log", onScroll, role: "log", "aria-label": t("Conversation with {name}", { name }) },
-        (0, import_react13.createElement)(
-          "div",
-          { className: "oc-thread-in" },
-          loading ? (0, import_react13.createElement)("div", { className: "oc-day" }, (0, import_react13.createElement)("span", { className: "oc-spinner", "aria-hidden": true }), t("Loading messages…")) : null,
-          read.error ? (0, import_react13.createElement)("p", { className: "op-note", role: "alert" }, hostText(read.error)) : null,
-          read.messages?.length === 0 ? (0, import_react13.createElement)("p", { className: "op-note" }, t("No messages yet")) : null,
-          (0, import_react13.createElement)(ChatMessages, { messages, onSized })
-        )
+        { className: "oc-thread-in" },
+        loading ? (0, import_react12.createElement)("div", { className: "oc-day" }, (0, import_react12.createElement)("span", { className: "oc-spinner", "aria-hidden": true }), t("Loading messages…")) : null,
+        read.error ? (0, import_react12.createElement)("p", { className: "op-note", role: "alert" }, hostText(read.error)) : null,
+        read.messages !== null && messages.length === 0 ? (0, import_react12.createElement)("p", { className: "op-note" }, t("No messages yet")) : null,
+        (0, import_react12.createElement)(ChatMessages, { messages, onSized, chat: chat ?? { name, kind: thread.kind === "group" ? "group" : "direct" } })
       )
-    )
+    ),
+    (0, import_react12.createElement)(PhoneComposer, { thread, sent })
   );
+}
+function useSent(chatId, rows) {
+  const [held, setHeld] = (0, import_react12.useState)({ chatId, messages: [] });
+  const latest = (0, import_react12.useRef)(rows);
+  latest.current = rows;
+  const messages = held.chatId === chatId ? held.messages : [];
+  (0, import_react12.useEffect)(() => {
+    if (rows === null) return;
+    setHeld((before) => {
+      if (before.chatId !== chatId || before.messages.length === 0) return before;
+      const { left } = withSent(rows, before.messages);
+      return left.length === before.messages.length ? before : { chatId, messages: left };
+    });
+  }, [chatId, rows]);
+  const change = (0, import_react12.useMemo)(() => (update) => setHeld((before) => ({ chatId, messages: update(before.chatId === chatId ? before.messages : []) })), [chatId]);
+  return (0, import_react12.useMemo)(() => ({
+    messages,
+    add(text) {
+      const message = sentMessage(text, latest.current ?? []);
+      change((messages2) => [...messages2, message]);
+      return message.id;
+    },
+    answered: (id, messageId) => change((messages2) => messages2.map((message) => message.id === id ? sentAnswered(message, messageId) : message)),
+    drop: (id) => change((messages2) => messages2.filter((message) => message.id !== id))
+  }), [messages, change]);
 }
 var KEPT_KEY = "omni.phone.tabs";
 var KEPT_TABS = 50;
@@ -15735,17 +15996,17 @@ function PhoneTab({ useTabInfo, sessionId, useRoster }) {
   const tab = typeof useTabInfo === "function" ? useTabInfo()?.tab : void 0;
   const opened = tab?.navigation?.params;
   const where = `${sessionId ?? ""}/${tab?.id ?? ""}`;
-  const params = (0, import_react13.useMemo)(() => opened ?? keptParams(where), [where, opened]);
-  (0, import_react13.useEffect)(() => {
+  const params = (0, import_react12.useMemo)(() => opened ?? keptParams(where), [where, opened]);
+  (0, import_react12.useEffect)(() => {
     if (opened && typeof opened.threadId === "string") keepParams(where, opened);
   }, [where, opened]);
-  return (0, import_react13.createElement)(PhonePane, { key: phoneTabId(params?.threadId ?? ""), params, sessionId, useRoster, visible: tab?.visible !== false });
+  return (0, import_react12.createElement)(PhonePane, { key: phoneTabId(params?.threadId ?? ""), params, sessionId, useRoster, visible: tab?.visible !== false });
 }
 function PhoneDock({ sessionId, useRoster }) {
   const thread = useRoster((roster) => threadsIn(roster).find((item) => item.sessionId === sessionId) ?? null);
-  const [problem, setProblem] = (0, import_react13.useState)(null);
+  const [problem, setProblem] = (0, import_react12.useState)(null);
   const id = thread?.id ?? null;
-  (0, import_react13.useEffect)(() => {
+  (0, import_react12.useEffect)(() => {
     if (id === null || !hasPhoneIntent(id)) return;
     const right = phoneRight;
     let timer;
@@ -15775,37 +16036,35 @@ function PhoneDock({ sessionId, useRoster }) {
     };
   }, [id]);
   if (problem === null) return null;
-  return (0, import_react13.createElement)("div", { className: "op-dock" }, (0, import_react13.createElement)("span", { className: "op-dock-problem", role: "alert" }, hostText(problem)));
+  return (0, import_react12.createElement)("div", { className: "op-dock" }, (0, import_react12.createElement)("span", { className: "op-dock-problem", role: "alert" }, hostText(problem)));
 }
-var OMNI_PHONE_CSS = `${PHONE_FRAME_CSS}
-.op-pane{box-sizing:border-box;height:100%;overflow-y:auto;padding:20px 16px}
-.op-head{display:flex;flex-direction:column;align-items:center;gap:1px;padding:28px 12px 8px;border-bottom:1px solid var(--bt-line, rgba(127,127,127,.2));text-align:center}
-.op-head strong{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:600}
-.op-head > span{font-size:11px;color:var(--bt-ink-3)}
-.op-send{display:flex;flex-direction:column;align-items:center;gap:2px;margin-top:4px}
-.op-send-row{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--bt-ink-2, var(--bt-ink-3));cursor:pointer}
-.op-send-problem{font-size:11px;color:var(--bt-danger, #dc2626)}
-.op-switch{position:relative;flex:none;width:26px;height:15px;border-radius:999px;border:0;padding:0;background:var(--bt-line-2, rgba(127,127,127,.35));cursor:pointer;transition:background-color .15s ease}
-.op-switch span{position:absolute;top:2px;left:2px;width:11px;height:11px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .18s cubic-bezier(.2,0,0,1)}
-.op-switch[aria-checked=true]{background:var(--bt-accent, #22d3ee)}
-.op-switch[aria-checked=true] span{transform:translateX(11px)}
-.op-screen .oc-thread-in{max-width:none;padding:8px 8px 14px}
-.op-screen .oc-msg{max-width:86%}
-.op-screen .oc-bubble{padding:6px 10px 5px;border-radius:16px;font-size:13px;line-height:18px}
-.op-screen .oc-bubble[data-media]{padding:3px 3px 6px}
-.op-screen .oc-bubble[data-media=sticker]{padding:0}
-.op-screen .oc-media-img{max-height:220px;border-radius:12px}
-.op-screen .oc-media-still,.op-screen .oc-media-wait{width:180px}
-.op-screen .oc-media-audio,.op-screen .oc-media-wait-audio{width:190px}
-.op-screen .oc-media-sticker,.op-screen .oc-media-wait-sticker{width:110px;height:110px}
-.op-screen .oc-media-doc{min-width:0;font-size:12.5px}
+var OMNI_PHONE_CSS = `
+.op-pane{box-sizing:border-box;flex:1 1 auto;height:100%;min-width:0;min-height:0;display:flex;flex-direction:column;overflow:hidden;background:var(--bt-main);color:var(--bt-ink);font-family:var(--bt-font)}
+.op-pane .oc-chat-head{padding:8px 8px 8px 12px;min-height:58px}
+.op-pane .oc-thread-in{max-width:none;padding:8px 14px 14px}
+.op-pane .oc-bar-wrap{padding:8px 10px 10px}
+.op-send{display:contents}
+.op-send-problem{position:absolute;top:calc(100% + 6px);left:12px;right:12px;z-index:2;padding:6px 10px;border-radius:10px;background:var(--bt-card);box-shadow:0 6px 18px -8px var(--oc-shade);font-size:12px;line-height:16px;color:var(--bt-danger)}
 .op-note{margin:12px 8px;font-size:12.5px;color:var(--bt-ink-3);text-align:center}
+.op-pane>.op-note{margin:auto 16px}
 .op-dock{display:flex;justify-content:flex-end;align-items:center;gap:8px;padding:0 4px 4px}
-.op-dock-problem{margin:0 8px 4px;font-size:11.5px;color:var(--bt-danger, #dc2626)}
+.op-dock-problem{margin:0 8px 4px;font-size:11.5px;color:var(--bt-danger)}
+.op-draft{display:flex;flex-direction:column;gap:4px;padding:8px 10px 9px 12px;border-left:3px solid var(--bt-accent);border-radius:10px;background:color-mix(in srgb,var(--bt-accent) 7%,var(--bt-card))}
+.op-draft-head{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;line-height:16px;font-weight:600;color:var(--bt-accent)}
+.op-draft-head span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.op-draft-edit{flex:none;display:inline-flex;align-items:center;gap:4px;height:26px;padding:0 10px 0 8px;border:1px solid var(--bt-line-2);border-radius:999px;background:var(--bt-card);color:var(--bt-ink);font:inherit;font-size:12px;font-weight:500;cursor:pointer}
+.op-draft-edit svg{width:13px;height:13px}
+.op-draft-edit:hover:not(:disabled){background:var(--bt-hover)}
+.op-draft-edit:disabled{opacity:.5;cursor:default}
+.op-draft-text{margin:0;max-height:76px;overflow-y:auto;font-size:13px;line-height:18px;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--bt-ink-2)}
+.op-edit-note{display:flex;align-items:center;gap:6px;margin:0;padding:0 4px;font-size:12px;line-height:16px;font-weight:600;color:var(--bt-accent)}
+.op-edit-note svg{width:13px;height:13px}
+.op-compose-note{margin:0;padding:7px 10px;border-radius:10px;background:var(--bt-hover);font-size:12.5px;line-height:17px;color:var(--bt-ink-2);overflow-wrap:anywhere}
+.op-compose-fail{color:color-mix(in srgb,var(--bt-danger) 80%,var(--bt-ink));background:color-mix(in srgb,var(--bt-danger) 10%,transparent)}
 `;
 
 // src/client/subscriptions.js
-var import_react14 = require("react");
+var import_react13 = require("react");
 var { AtIcon, FileIcon, KeywordIcon, MessageIcon, ShieldIcon, UnplugIcon, VoiceIcon } = icons;
 var TRIGGER_ICONS = { message: MessageIcon, mention: AtIcon, keyword: KeywordIcon, voice: VoiceIcon, media: FileIcon, down: UnplugIcon };
 var FRESH_MS = 6e3;
@@ -15834,14 +16093,14 @@ function workerOf(worker, roster, where = {}) {
 }
 function WorkerMark({ worker, roster, where, size = 24 }) {
   const info = workerOf(worker, roster, where);
-  if (info.session) return (0, import_react14.createElement)("span", { className: "os-session", style: { width: size, height: size } }, (0, import_react14.createElement)(OmniMark, { size: Math.round(size * 0.62) }));
-  if (info.chat !== void 0) return (0, import_react14.createElement)(ChatAvatar, { chat: { name: info.chat, initials: initials(info.chat) }, size });
-  return (0, import_react14.createElement)(BotMark, info.bot ? { bot: info.bot, size } : { look: info.look, size });
+  if (info.session) return (0, import_react13.createElement)("span", { className: "os-session", style: { width: size, height: size } }, (0, import_react13.createElement)(OmniMark, { size: Math.round(size * 0.62) }));
+  if (info.chat !== void 0) return (0, import_react13.createElement)(ChatAvatar, { chat: { name: info.chat, initials: initials(info.chat) }, size });
+  return (0, import_react13.createElement)(BotMark, info.bot ? { bot: info.bot, size } : { look: info.look, size });
 }
-var TriggerBadge = ({ trigger, size = 36 }) => (0, import_react14.createElement)(
+var TriggerBadge = ({ trigger, size = 36 }) => (0, import_react13.createElement)(
   "span",
   { className: "os-trigger", "data-kind": trigger.kind, style: { width: size, height: size, fontSize: Math.round(size * 0.5), "--os-icon": `${Math.round(size * 0.52)}px` } },
-  trigger.kind === "reaction" ? trigger.emoji : (0, import_react14.createElement)(TRIGGER_ICONS[trigger.kind])
+  trigger.kind === "reaction" ? trigger.emoji : (0, import_react13.createElement)(TRIGGER_ICONS[trigger.kind])
 );
 function triggerText(trigger) {
   if (trigger.kind === "reaction") return t("you react");
@@ -15858,32 +16117,32 @@ function sourcesText(sources) {
   return [count(channels2, "1 channel", "{n} channels"), count(groups, "1 group", "{n} groups"), count(chats, "1 chat", "{n} chats")].filter(Boolean).join(" + ");
 }
 var initials = (name) => name.startsWith("#") ? "#" : name.split(/\s+/).filter(Boolean).slice(0, 2).map((word) => word[0]).join("").toUpperCase() || "?";
-var SourceMark = ({ source, size }) => source.kind === "channel" ? (0, import_react14.createElement)(Tile, { type: source.type, size }) : (0, import_react14.createElement)(ChatAvatar, { chat: { name: source.name, initials: initials(source.name) }, size });
+var SourceMark = ({ source, size }) => source.kind === "channel" ? (0, import_react13.createElement)(Tile, { type: source.type, size }) : (0, import_react13.createElement)(ChatAvatar, { chat: { name: source.name, initials: initials(source.name) }, size });
 function SourceStack({ sources, size = 16 }) {
-  return (0, import_react14.createElement)(
+  return (0, import_react13.createElement)(
     "span",
     { className: "os-stack" },
-    sources.slice(0, 3).map((source) => (0, import_react14.createElement)("span", { key: `${source.kind}-${source.id}`, className: "os-stack-item" }, (0, import_react14.createElement)(SourceMark, { source, size }))),
-    sources.length > 3 ? (0, import_react14.createElement)("span", { className: "os-stack-more" }, `+${sources.length - 3}`) : null
+    sources.slice(0, 3).map((source) => (0, import_react13.createElement)("span", { key: `${source.kind}-${source.id}`, className: "os-stack-item" }, (0, import_react13.createElement)(SourceMark, { source, size }))),
+    sources.length > 3 ? (0, import_react13.createElement)("span", { className: "os-stack-more" }, `+${sources.length - 3}`) : null
   );
 }
 function Sentence({ sub, roster }) {
-  return (0, import_react14.createElement)(
+  return (0, import_react13.createElement)(
     "p",
     { className: "os-sentence" },
-    (0, import_react14.createElement)("span", { className: "os-w" }, t("When")),
+    (0, import_react13.createElement)("span", { className: "os-w" }, t("When")),
     " ",
-    (0, import_react14.createElement)("span", { className: "os-chip os-chip-trigger" }, sub.trigger.kind === "reaction" ? (0, import_react14.createElement)("b", { className: "os-emoji" }, sub.trigger.emoji) : null, triggerText(sub.trigger)),
+    (0, import_react13.createElement)("span", { className: "os-chip os-chip-trigger" }, sub.trigger.kind === "reaction" ? (0, import_react13.createElement)("b", { className: "os-emoji" }, sub.trigger.emoji) : null, triggerText(sub.trigger)),
     " ",
-    (0, import_react14.createElement)("span", { className: "os-w" }, t("in")),
+    (0, import_react13.createElement)("span", { className: "os-w" }, t("in")),
     " ",
-    (0, import_react14.createElement)("span", { className: "os-chip" }, (0, import_react14.createElement)(SourceStack, { sources: sub.sources }), sourcesText(sub.sources)),
+    (0, import_react13.createElement)("span", { className: "os-chip" }, (0, import_react13.createElement)(SourceStack, { sources: sub.sources }), sourcesText(sub.sources)),
     " ",
-    (0, import_react14.createElement)("span", { className: "os-w" }, "→"),
+    (0, import_react13.createElement)("span", { className: "os-w" }, "→"),
     " ",
-    (0, import_react14.createElement)("span", { className: "os-chip os-chip-worker" }, (0, import_react14.createElement)(WorkerMark, { worker: sub.worker, roster, where: sub, size: 18 }), workerOf(sub.worker, roster, sub).name),
-    sub.outputs.react ? (0, import_react14.createElement)(import_react14.Fragment, null, " ", (0, import_react14.createElement)("span", { className: "os-chip os-chip-soft" }, t("reacts 👀 then ✅"))) : null,
-    sub.outputs.replyToMe ? (0, import_react14.createElement)(import_react14.Fragment, null, " ", (0, import_react14.createElement)("span", { className: "os-chip os-chip-soft" }, t("replies to you"))) : null
+    (0, import_react13.createElement)("span", { className: "os-chip os-chip-worker" }, (0, import_react13.createElement)(WorkerMark, { worker: sub.worker, roster, where: sub, size: 18 }), workerOf(sub.worker, roster, sub).name),
+    sub.outputs.react ? (0, import_react13.createElement)(import_react13.Fragment, null, " ", (0, import_react13.createElement)("span", { className: "os-chip os-chip-soft" }, t("reacts 👀 then ✅"))) : null,
+    sub.outputs.replyToMe ? (0, import_react13.createElement)(import_react13.Fragment, null, " ", (0, import_react13.createElement)("span", { className: "os-chip os-chip-soft" }, t("replies to you"))) : null
   );
 }
 var RUN_STATUS = {
@@ -15898,18 +16157,18 @@ var useWaiting = (useWork) => new Set((useWork ? useWork((work) => (work.approva
 function EventsBadge({ roster, useWork, botId }) {
   roster = ownedRoster(roster, botId);
   const waiting = waitingRuns(roster, useWaiting(useWork));
-  return waiting > 0 ? (0, import_react14.createElement)("span", { className: "os-pending", title: t("{n} waiting for you", { n: waiting }) }, String(waiting)) : null;
+  return waiting > 0 ? (0, import_react13.createElement)("span", { className: "os-pending", title: t("{n} waiting for you", { n: waiting }) }, String(waiting)) : null;
 }
 function SubscriptionsButton({ roster, onToggle, useWork, botId }) {
   roster = ownedRoster(roster, botId);
   const count = headCount(roster);
   const waiting = waitingRuns(roster, useWaiting(useWork));
-  return (0, import_react14.createElement)(
+  return (0, import_react13.createElement)(
     "button",
     { type: "button", className: "os-head-btn", onClick: onToggle },
     t("Automations"),
-    count === null ? null : (0, import_react14.createElement)("span", { className: "os-head-count" }, String(count)),
-    waiting > 0 ? (0, import_react14.createElement)("span", { className: "os-pending" }, String(waiting)) : null
+    count === null ? null : (0, import_react13.createElement)("span", { className: "os-head-count" }, String(count)),
+    waiting > 0 ? (0, import_react13.createElement)("span", { className: "os-pending" }, String(waiting)) : null
   );
 }
 var SAVED = /^Saved (sub-[a-z0-9]+) · (.*?): when /;
@@ -15926,19 +16185,19 @@ function savedNotice({ askFirst, main }) {
 function SavedAutomationCard({ argValue, content, done, roster }) {
   if (!done) return null;
   const saved = savedOf(content, roster, argValue?.("ask_first"));
-  if (saved === null) return (0, import_react14.createElement)("div", { className: "bt-event", title: content }, String(content ?? "").slice(0, 160));
+  if (saved === null) return (0, import_react13.createElement)("div", { className: "bt-event", title: content }, String(content ?? "").slice(0, 160));
   const notice = savedNotice({ askFirst: saved.askFirst, main: roster?.byId?.[roster.eventsBotId]?.name ?? "Omni" });
-  return (0, import_react14.createElement)(
+  return (0, import_react13.createElement)(
     "div",
     { className: "os-saved", "data-loud": notice.loud || void 0 },
-    (0, import_react14.createElement)(
+    (0, import_react13.createElement)(
       "div",
       { className: "os-saved-top" },
-      saved.sub ? (0, import_react14.createElement)(TriggerBadge, { trigger: saved.sub.trigger, size: 22 }) : null,
-      (0, import_react14.createElement)("span", null, t("Saved automation")),
-      (0, import_react14.createElement)("strong", null, saved.name)
+      saved.sub ? (0, import_react13.createElement)(TriggerBadge, { trigger: saved.sub.trigger, size: 22 }) : null,
+      (0, import_react13.createElement)("span", null, t("Saved automation")),
+      (0, import_react13.createElement)("strong", null, saved.name)
     ),
-    (0, import_react14.createElement)("p", { className: "os-saved-note", role: notice.loud ? "alert" : void 0 }, (0, import_react14.createElement)(ShieldIcon), (0, import_react14.createElement)("span", null, notice.text))
+    (0, import_react13.createElement)("p", { className: "os-saved-note", role: notice.loud ? "alert" : void 0 }, (0, import_react13.createElement)(ShieldIcon), (0, import_react13.createElement)("span", null, notice.text))
   );
 }
 var BOARD_KIND = "omni-subscriptions";
@@ -15950,12 +16209,12 @@ function BoardTab({ useRoster, useWork, actions, useTabInfo, sessionId }) {
   const tab = typeof useTabInfo === "function" ? useTabInfo()?.tab : void 0;
   const ownerId = tab?.navigation?.params?.botId ?? Object.values(roster.byId ?? {}).find((bot2) => bot2.sessionId === sessionId || bot2.parts?.includes(sessionId))?.id ?? roster.eventsBotId;
   const bot = roster.byId?.[ownerId];
-  if (!bot) return (0, import_react14.createElement)("div", { className: "os-board" }, (0, import_react14.createElement)("p", { className: "os-board-note" }, t("Automations belong to the Main Bot, which this team does not have.")));
-  return (0, import_react14.createElement)(SubscriptionsBoard, { bot, roster, actions, waiting });
+  if (!bot) return (0, import_react13.createElement)("div", { className: "os-board" }, (0, import_react13.createElement)("p", { className: "os-board-note" }, t("Automations belong to the Main Bot, which this team does not have.")));
+  return (0, import_react13.createElement)(SubscriptionsBoard, { bot, roster, actions, waiting });
 }
 function SubscriptionsBoard({ bot, roster, actions, waiting }) {
   const omni2 = useOmni();
-  (0, import_react14.useEffect)(() => {
+  (0, import_react13.useEffect)(() => {
     startLive(call);
   }, []);
   roster = ownedRoster(roster, bot.id);
@@ -15963,32 +16222,32 @@ function SubscriptionsBoard({ bot, roster, actions, waiting }) {
   const runs = runsOf(roster);
   const watched = new Set(subs.filter((sub) => sub.on).flatMap((sub) => sub.sources.map((source) => `${source.kind}:${source.id}`))).size;
   const listening = (roster.omniEvents?.listening ?? []).length > 0;
-  return (0, import_react14.createElement)(
+  return (0, import_react13.createElement)(
     "div",
     { className: "os-board" },
-    subs.length === 0 ? (0, import_react14.createElement)(Empty, { bot, live: omni2.source.kind === "live" }) : (0, import_react14.createElement)(
-      import_react14.Fragment,
+    subs.length === 0 ? (0, import_react13.createElement)(Empty, { bot, live: omni2.source.kind === "live" }) : (0, import_react13.createElement)(
+      import_react13.Fragment,
       null,
-      (0, import_react14.createElement)(
+      (0, import_react13.createElement)(
         "div",
         { className: "os-board-status" },
-        (0, import_react14.createElement)("span", { className: "oc-live-dot", "data-on": listening || void 0, "aria-hidden": true }),
+        (0, import_react13.createElement)("span", { className: "oc-live-dot", "data-on": listening || void 0, "aria-hidden": true }),
         !subs.some((sub) => sub.on) ? t("Everything is paused.") : `${watched === 1 ? t("Watching 1 chat or channel.") : t("Watching {n} chats and channels.", { n: watched })} ${listening ? t("Listening to omni.") : t("Connecting to omni…")}`
       ),
-      subs.some((sub) => sub.on && (sub.outputs.react || sub.outputs.replyToMe)) ? (0, import_react14.createElement)("div", { className: "os-board-note os-board-pending" }, t("Reactions and replies to you are not sent yet. Results stay in the runs below.")) : null,
-      (0, import_react14.createElement)("div", { className: "os-list" }, subs.map((sub) => (0, import_react14.createElement)(AutomationRow, { key: sub.id, sub, roster, runs: runs.filter((run) => run.subId === sub.id) }))),
-      runs.length > 0 ? (0, import_react14.createElement)(
-        import_react14.Fragment,
+      subs.some((sub) => sub.on && (sub.outputs.react || sub.outputs.replyToMe)) ? (0, import_react13.createElement)("div", { className: "os-board-note os-board-pending" }, t("Reactions and replies to you are not sent yet. Results stay in the runs below.")) : null,
+      (0, import_react13.createElement)("div", { className: "os-list" }, subs.map((sub) => (0, import_react13.createElement)(AutomationRow, { key: sub.id, sub, roster, runs: runs.filter((run) => run.subId === sub.id) }))),
+      runs.length > 0 ? (0, import_react13.createElement)(
+        import_react13.Fragment,
         null,
-        (0, import_react14.createElement)("div", { className: "os-board-h" }, t("Runs")),
-        (0, import_react14.createElement)("div", { className: "os-list" }, runs.slice(0, 20).map((run) => (0, import_react14.createElement)(RunRow, { key: run.id, run, sub: subs.find((sub) => sub.id === run.subId), roster, actions, asking: waiting?.has(run.sessionId) && run.status === "working" })))
+        (0, import_react13.createElement)("div", { className: "os-board-h" }, t("Runs")),
+        (0, import_react13.createElement)("div", { className: "os-list" }, runs.slice(0, 20).map((run) => (0, import_react13.createElement)(RunRow, { key: run.id, run, sub: subs.find((sub) => sub.id === run.subId), roster, actions, asking: waiting?.has(run.sessionId) && run.status === "working" })))
       ) : null
     ),
-    (0, import_react14.createElement)(
+    (0, import_react13.createElement)(
       "div",
       { className: "os-safety" },
-      (0, import_react14.createElement)(ShieldIcon),
-      (0, import_react14.createElement)("span", null, t("Anyone in a watched chat can write text that tries to steer a Bot. Work started by an event reads on its own and asks you before any shell command, file change, web or connector call, or message, unless you tell {name} otherwise. What you allow runs with that Bot's keys.", { name: bot.name }))
+      (0, import_react13.createElement)(ShieldIcon),
+      (0, import_react13.createElement)("span", null, t("Anyone in a watched chat can write text that tries to steer a Bot. Work started by an event reads on its own and asks you before any shell command, file change, web or connector call, or message, unless you tell {name} otherwise. What you allow runs with that Bot's keys.", { name: bot.name }))
     )
   );
 }
@@ -15999,18 +16258,18 @@ var automationExamples = () => [
 ];
 function Empty({ bot, live }) {
   const examples2 = automationExamples().map((example) => example.text);
-  return (0, import_react14.createElement)(
+  return (0, import_react13.createElement)(
     "div",
     { className: "os-empty-board" },
-    (0, import_react14.createElement)(BotMark, { bot, size: 48, live: true }),
-    (0, import_react14.createElement)("strong", null, t("Tell {name} what to watch", { name: bot.name })),
-    (0, import_react14.createElement)("span", null, live ? t("Say it in the chat. {name} finds the chats, asks what is missing, and the subscription shows up here.", { name: bot.name }) : t("Omni is not connected to this DSH yet, so there is nothing to watch.")),
-    (0, import_react14.createElement)("ul", { className: "os-examples" }, examples2.map((text) => (0, import_react14.createElement)("li", { key: text }, text)))
+    (0, import_react13.createElement)(BotMark, { bot, size: 48, live: true }),
+    (0, import_react13.createElement)("strong", null, t("Tell {name} what to watch", { name: bot.name })),
+    (0, import_react13.createElement)("span", null, live ? t("Say it in the chat. {name} finds the chats, asks what is missing, and the subscription shows up here.", { name: bot.name }) : t("Omni is not connected to this DSH yet, so there is nothing to watch.")),
+    (0, import_react13.createElement)("ul", { className: "os-examples" }, examples2.map((text) => (0, import_react13.createElement)("li", { key: text }, text)))
   );
 }
 function AutomationRow({ sub, roster, runs, onOpen }) {
-  const [confirming, setConfirming] = (0, import_react14.useState)(false);
-  const [busy, setBusy] = (0, import_react14.useState)("");
+  const [confirming, setConfirming] = (0, import_react13.useState)(false);
+  const [busy, setBusy] = (0, import_react13.useState)("");
   const fresh = Date.now() - (sub.updatedAt ?? 0) < FRESH_MS;
   const run = async (endpoint, payload) => {
     setBusy(endpoint);
@@ -16021,18 +16280,18 @@ function AutomationRow({ sub, roster, runs, onOpen }) {
     }
   };
   const last = runs[0];
-  return (0, import_react14.createElement)(
+  return (0, import_react13.createElement)(
     "div",
     { className: "os-row", "data-off": sub.on ? void 0 : true, "data-fresh": fresh || void 0 },
-    (0, import_react14.createElement)(TriggerBadge, { trigger: sub.trigger, size: 28 }),
-    (0, import_react14.createElement)(
+    (0, import_react13.createElement)(TriggerBadge, { trigger: sub.trigger, size: 28 }),
+    (0, import_react13.createElement)(
       "div",
       { className: "os-row-body" },
-      (0, import_react14.createElement)(
+      (0, import_react13.createElement)(
         "div",
         { className: "os-row-top" },
-        onOpen ? (0, import_react14.createElement)("button", { type: "button", className: "os-row-name os-row-open", onClick: onOpen }, sub.name) : (0, import_react14.createElement)("span", { className: "os-row-name" }, sub.name),
-        (0, import_react14.createElement)("button", {
+        onOpen ? (0, import_react13.createElement)("button", { type: "button", className: "os-row-name os-row-open", onClick: onOpen }, sub.name) : (0, import_react13.createElement)("span", { className: "os-row-name" }, sub.name),
+        (0, import_react13.createElement)("button", {
           type: "button",
           role: "switch",
           "aria-checked": sub.on,
@@ -16040,23 +16299,23 @@ function AutomationRow({ sub, roster, runs, onOpen }) {
           disabled: busy !== "",
           "aria-label": sub.on ? t("Pause {name}", { name: sub.name }) : t("Resume {name}", { name: sub.name }),
           onClick: () => run("automation-set-on", { id: sub.id, on: !sub.on })
-        }, (0, import_react14.createElement)("span"))
+        }, (0, import_react13.createElement)("span"))
       ),
-      (0, import_react14.createElement)(Sentence, { sub, roster }),
-      (0, import_react14.createElement)(
+      (0, import_react13.createElement)(Sentence, { sub, roster }),
+      (0, import_react13.createElement)(
         "div",
         { className: "os-row-foot" },
-        (0, import_react14.createElement)("span", null, last ? t("last run {time}", { time: relativeShort(last.at) }) : t("not fired yet")),
-        sub.askFirst ? null : (0, import_react14.createElement)("span", { className: "os-row-warn" }, t("acts without asking")),
+        (0, import_react13.createElement)("span", null, last ? t("last run {time}", { time: relativeShort(last.at) }) : t("not fired yet")),
+        sub.askFirst ? null : (0, import_react13.createElement)("span", { className: "os-row-warn" }, t("acts without asking")),
         // Paused by the host, with why (a team without the hook, a worker it does not know).
-        !sub.on && sub.pausedReason ? (0, import_react14.createElement)("span", { className: "os-row-warn os-row-paused" }, hostText(sub.pausedReason)) : null,
+        !sub.on && sub.pausedReason ? (0, import_react13.createElement)("span", { className: "os-row-warn os-row-paused" }, hostText(sub.pausedReason)) : null,
         // What the host says about it, once (its worker moved to its chats' threads).
-        sub.note ? (0, import_react14.createElement)("span", { className: "os-row-note" }, hostText(sub.note)) : null,
-        (0, import_react14.createElement)(
+        sub.note ? (0, import_react13.createElement)("span", { className: "os-row-note" }, hostText(sub.note)) : null,
+        (0, import_react13.createElement)(
           "span",
           { className: "os-row-actions" },
-          (0, import_react14.createElement)("button", { type: "button", className: "os-link", disabled: busy !== "", onClick: () => run("automation-test", { id: sub.id }) }, t("Test")),
-          (0, import_react14.createElement)("button", {
+          (0, import_react13.createElement)("button", { type: "button", className: "os-link", disabled: busy !== "", onClick: () => run("automation-test", { id: sub.id }) }, t("Test")),
+          (0, import_react13.createElement)("button", {
             type: "button",
             className: confirming ? "os-link os-link-danger" : "os-link",
             disabled: busy !== "",
@@ -16073,22 +16332,22 @@ function RunRow({ run, sub, roster, actions, asking = false }) {
   const status = RUN_STATUS[asking ? "waiting" : run.status];
   const open = run.sessionId ? () => actions.openSession(run.sessionId) : void 0;
   const where = { sources: sub.sources, sessionId: run.sessionId ?? void 0 };
-  return (0, import_react14.createElement)(
+  return (0, import_react13.createElement)(
     "button",
     { type: "button", className: "os-run", "data-tone": status.tone, disabled: !open, onClick: open, title: open ? t("Open this run") : void 0 },
-    (0, import_react14.createElement)(WorkerMark, { worker: sub.worker, roster, where, size: 22 }),
-    (0, import_react14.createElement)(
+    (0, import_react13.createElement)(WorkerMark, { worker: sub.worker, roster, where, size: 22 }),
+    (0, import_react13.createElement)(
       "span",
       { className: "os-run-body" },
-      (0, import_react14.createElement)(
+      (0, import_react13.createElement)(
         "span",
         { className: "os-run-top" },
-        (0, import_react14.createElement)("span", { className: "os-run-name" }, workerOf(sub.worker, roster, where).name),
-        (0, import_react14.createElement)("span", { className: "os-run-status" }, run.test ? `${t("Test")} · ${t(status.label)}` : t(status.label)),
-        (0, import_react14.createElement)("time", null, relativeShort(run.at))
+        (0, import_react13.createElement)("span", { className: "os-run-name" }, workerOf(sub.worker, roster, where).name),
+        (0, import_react13.createElement)("span", { className: "os-run-status" }, run.test ? `${t("Test")} · ${t(status.label)}` : t(status.label)),
+        (0, import_react13.createElement)("time", null, relativeShort(run.at))
       ),
-      run.excerpt && !run.test ? (0, import_react14.createElement)("span", { className: "os-run-quote" }, run.from ? `${run.from}: ` : "", run.excerpt) : null,
-      (0, import_react14.createElement)("span", { className: "os-run-text" }, run.summary)
+      run.excerpt && !run.test ? (0, import_react13.createElement)("span", { className: "os-run-quote" }, run.from ? `${run.from}: ` : "", run.excerpt) : null,
+      (0, import_react13.createElement)("span", { className: "os-run-text" }, run.summary)
     )
   );
 }
@@ -16214,15 +16473,15 @@ function whenText(task) {
 }
 
 // src/client/automations-page.js
-var import_react15 = require("react");
-var { ClockIcon, PlusIcon: PlusIcon2, SearchIcon } = icons;
+var import_react14 = require("react");
+var { ClockIcon: ClockIcon2, PlusIcon: PlusIcon2, SearchIcon } = icons;
 var AUTOMATIONS_PANEL = "omni-automations";
 function AutomationsPage({ useRoster, actions }) {
   const roster = useRoster((value) => value);
-  const [filter, setFilter] = (0, import_react15.useState)("all");
-  const [query, setQuery] = (0, import_react15.useState)("");
-  const [schedules, setSchedules] = (0, import_react15.useState)({ available: false, tasks: [] });
-  (0, import_react15.useEffect)(() => {
+  const [filter, setFilter] = (0, import_react14.useState)("all");
+  const [query, setQuery] = (0, import_react14.useState)("");
+  const [schedules, setSchedules] = (0, import_react14.useState)({ available: false, tasks: [] });
+  (0, import_react14.useEffect)(() => {
     let live = true;
     const load = () => call("schedules").then((value) => {
       if (live) setSchedules(value);
@@ -16239,7 +16498,7 @@ function AutomationsPage({ useRoster, actions }) {
   const runs = runsOf(roster);
   const autopilot = roster.byId?.[roster.eventsBotId];
   const needle = query.trim().toLowerCase();
-  const rows = (0, import_react15.useMemo)(() => {
+  const rows = (0, import_react14.useMemo)(() => {
     const list = [
       ...events.map((sub) => ({ kind: "event", id: sub.id, on: sub.on, title: sub.name, sort: sub.createdAt, sub })),
       ...schedules.tasks.map((task) => ({ kind: "schedule", id: `${task.sessionId}:${task.id}`, on: task.status === "active", title: task.title, sort: Date.parse(task.scheduledAt) || 0, task }))
@@ -16249,23 +16508,23 @@ function AutomationsPage({ useRoster, actions }) {
   const talk = () => {
     if (autopilot) actions.openSession(autopilot.id);
   };
-  return (0, import_react15.createElement)(
+  return (0, import_react14.createElement)(
     "div",
     { className: "oa-page" },
-    (0, import_react15.createElement)(
+    (0, import_react14.createElement)(
       "div",
       { className: "oa-in" },
-      (0, import_react15.createElement)(
+      (0, import_react14.createElement)(
         "header",
         { className: "oa-head" },
-        (0, import_react15.createElement)("h1", null, t("Automations")),
-        (0, import_react15.createElement)("button", { type: "button", className: "oa-new", disabled: !autopilot, onClick: talk, title: autopilot ? t("Tell {name} what to automate", { name: autopilot.name }) : void 0 }, (0, import_react15.createElement)(PlusIcon2), t("New"))
+        (0, import_react14.createElement)("h1", null, t("Automations")),
+        (0, import_react14.createElement)("button", { type: "button", className: "oa-new", disabled: !autopilot, onClick: talk, title: autopilot ? t("Tell {name} what to automate", { name: autopilot.name }) : void 0 }, (0, import_react14.createElement)(PlusIcon2), t("New"))
       ),
-      (0, import_react15.createElement)("p", { className: "oa-lede" }, autopilot ? t("Things that run on their own: when something happens in your chats, or on a schedule. Say what you want to {name}; it sets it up and it shows here.", { name: autopilot.name }) : t("Things that run on their own, on a schedule or when something happens in your chats.")),
-      (0, import_react15.createElement)(
+      (0, import_react14.createElement)("p", { className: "oa-lede" }, autopilot ? t("Things that run on their own: when something happens in your chats, or on a schedule. Say what you want to {name}; it sets it up and it shows here.", { name: autopilot.name }) : t("Things that run on their own, on a schedule or when something happens in your chats.")),
+      (0, import_react14.createElement)(
         "div",
         { className: "oa-filters", role: "radiogroup", "aria-label": t("Show") },
-        [["all", t("All")], ["enabled", t("Enabled")], ["inactive", t("Inactive")]].map(([value, label]) => (0, import_react15.createElement)("button", {
+        [["all", t("All")], ["enabled", t("Enabled")], ["inactive", t("Inactive")]].map(([value, label]) => (0, import_react14.createElement)("button", {
           key: value,
           type: "button",
           role: "radio",
@@ -16273,14 +16532,14 @@ function AutomationsPage({ useRoster, actions }) {
           onClick: () => setFilter(value)
         }, label))
       ),
-      (0, import_react15.createElement)("label", { className: "oa-search" }, (0, import_react15.createElement)(SearchIcon), (0, import_react15.createElement)("input", { value: query, placeholder: t("Search automations"), "aria-label": t("Search automations"), onChange: (event) => setQuery(event.target.value) })),
-      rows.length === 0 ? (0, import_react15.createElement)(
+      (0, import_react14.createElement)("label", { className: "oa-search" }, (0, import_react14.createElement)(SearchIcon), (0, import_react14.createElement)("input", { value: query, placeholder: t("Search automations"), "aria-label": t("Search automations"), onChange: (event) => setQuery(event.target.value) })),
+      rows.length === 0 ? (0, import_react14.createElement)(
         "div",
         { className: "oa-empty" },
-        (0, import_react15.createElement)(ClockIcon),
-        (0, import_react15.createElement)("span", null, events.length + schedules.tasks.length === 0 ? t("Nothing runs on its own yet.") : t("No automations match.")),
-        autopilot ? (0, import_react15.createElement)("button", { type: "button", className: "oa-empty-go", onClick: talk }, t("Tell {name} what to automate", { name: autopilot.name })) : null
-      ) : (0, import_react15.createElement)("div", { className: "oa-list" }, rows.map((row) => row.kind === "event" ? (0, import_react15.createElement)(AutomationRow, { key: row.id, sub: row.sub, roster, runs: runs.filter((run) => run.subId === row.id), onOpen: talk }) : (0, import_react15.createElement)(ScheduleRow, { key: row.id, task: row.task, roster, actions })))
+        (0, import_react14.createElement)(ClockIcon2),
+        (0, import_react14.createElement)("span", null, events.length + schedules.tasks.length === 0 ? t("Nothing runs on its own yet.") : t("No automations match.")),
+        autopilot ? (0, import_react14.createElement)("button", { type: "button", className: "oa-empty-go", onClick: talk }, t("Tell {name} what to automate", { name: autopilot.name })) : null
+      ) : (0, import_react14.createElement)("div", { className: "oa-list" }, rows.map((row) => row.kind === "event" ? (0, import_react14.createElement)(AutomationRow, { key: row.id, sub: row.sub, roster, runs: runs.filter((run) => run.subId === row.id), onOpen: talk }) : (0, import_react14.createElement)(ScheduleRow, { key: row.id, task: row.task, roster, actions })))
     )
   );
 }
@@ -16288,30 +16547,30 @@ function ScheduleRow({ task, roster, actions }) {
   const owner = roster.byId?.[task.botId];
   const room = roster.roomsById?.[task.roomId];
   const active = task.status === "active";
-  return (0, import_react15.createElement)(
+  return (0, import_react14.createElement)(
     "button",
     { type: "button", className: "os-row oa-schedule", "data-off": active ? void 0 : true, onClick: () => actions.selectPanel("schedules"), title: t("Edit the timing in Automation tasks") },
-    (0, import_react15.createElement)("span", { className: "os-trigger", "data-kind": "schedule", style: { width: 28, height: 28, "--os-icon": "15px" } }, (0, import_react15.createElement)(ClockIcon)),
-    (0, import_react15.createElement)(
+    (0, import_react14.createElement)("span", { className: "os-trigger", "data-kind": "schedule", style: { width: 28, height: 28, "--os-icon": "15px" } }, (0, import_react14.createElement)(ClockIcon2)),
+    (0, import_react14.createElement)(
       "span",
       { className: "os-row-body" },
-      (0, import_react15.createElement)(
+      (0, import_react14.createElement)(
         "span",
         { className: "os-row-top" },
-        (0, import_react15.createElement)("span", { className: "os-row-name" }, task.title),
-        (0, import_react15.createElement)("span", { className: "oa-tag" }, active ? t("Scheduled") : t("Inactive"))
+        (0, import_react14.createElement)("span", { className: "os-row-name" }, task.title),
+        (0, import_react14.createElement)("span", { className: "oa-tag" }, active ? t("Scheduled") : t("Inactive"))
       ),
-      (0, import_react15.createElement)(
+      (0, import_react14.createElement)(
         "span",
         { className: "os-sentence" },
-        (0, import_react15.createElement)("span", { className: "os-chip" }, whenText(task)),
-        (0, import_react15.createElement)("span", { className: "os-w" }, "→"),
-        (0, import_react15.createElement)("span", { className: "os-chip" }, owner ? (0, import_react15.createElement)(import_react15.Fragment, null, (0, import_react15.createElement)(BotMark, { bot: owner, size: 16 }), owner.name) : room?.name ?? t("a chat"))
+        (0, import_react14.createElement)("span", { className: "os-chip" }, whenText(task)),
+        (0, import_react14.createElement)("span", { className: "os-w" }, "→"),
+        (0, import_react14.createElement)("span", { className: "os-chip" }, owner ? (0, import_react14.createElement)(import_react14.Fragment, null, (0, import_react14.createElement)(BotMark, { bot: owner, size: 16 }), owner.name) : room?.name ?? t("a chat"))
       ),
-      (0, import_react15.createElement)(
+      (0, import_react14.createElement)(
         "span",
         { className: "os-row-foot" },
-        (0, import_react15.createElement)("span", null, active && task.scheduledAt ? t("next run {time}", { time: new Date(task.scheduledAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) }) : task.lastDelivery ? t("last run {time}", { time: relativeShort(Date.parse(task.lastDelivery.deliveredAt ?? task.lastDelivery) || Date.now()) }) : t("not run yet"))
+        (0, import_react14.createElement)("span", null, active && task.scheduledAt ? t("next run {time}", { time: new Date(task.scheduledAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) }) : task.lastDelivery ? t("last run {time}", { time: relativeShort(Date.parse(task.lastDelivery.deliveredAt ?? task.lastDelivery) || Date.now()) }) : t("not run yet"))
       )
     )
   );
@@ -16341,8 +16600,474 @@ var AUTOMATIONS_CSS = `
 @media (max-width:720px){.oa-in{padding:20px 16px 40px}}
 `;
 
-// src/client/omni-tree.js
+// src/client/bot-channels.js
+var import_react15 = require("react");
+var SOURCE_ID = "omni-channels";
+var CHATS_FRESH_MS = 1e4;
+var CHATS_POLL_MS = 15e3;
+var BOT_CHANNELS_CSS = `
+body{--oc-in:color-mix(in srgb,var(--bt-magic-pink) 16%,var(--bt-card));--oc-out:color-mix(in srgb,var(--bt-accent) 20%,var(--bt-card))}
+body[data-ds-dark-theme]{--oc-in:color-mix(in srgb,var(--bt-magic-pink) 26%,var(--bt-bubble));--oc-out:color-mix(in srgb,var(--bt-accent) 34%,var(--bt-bubble))}
+`;
+var NONE = Object.freeze({});
+var noSubscribe = () => () => {
+};
+var rosterOf = () => face?.()?.hooks?.roster ?? null;
+var channelsNow = () => rosterOf()?.getSnapshot?.()?.omniBotChannels ?? NONE;
+var ownsBot = (bot) => typeof bot?.id === "string" && Object.hasOwn(channelsNow(), bot.id);
+var chatsStore = createSource({});
+var reading = /* @__PURE__ */ new Map();
+function readChats(botId, { now = Date.now() } = {}) {
+  const kept = chatsStore.getSnapshot()[botId];
+  if (kept !== void 0 && now - kept.at < CHATS_FRESH_MS) return Promise.resolve(kept);
+  if (reading.has(botId)) return reading.get(botId);
+  const read = call("omni-bot-chats", { botId }).then((answer) => {
+    const byChannel = Object.fromEntries((Array.isArray(answer?.channels) ? answer.channels : []).map((channel) => [channel.channelId, Array.isArray(channel.chats) ? channel.chats : []]));
+    const next = { at: Date.now(), byChannel };
+    chatsStore.set((all) => ({ ...all, [botId]: next }));
+    return next;
+  }, (error) => {
+    console.warn("Could not read this Bot's chats:", error);
+    return kept ?? null;
+  }).finally(() => {
+    reading.delete(botId);
+  });
+  reading.set(botId, read);
+  return read;
+}
+var readOf = (chats, seen = {}) => chats?.map((chat) => chat.unread > 0 && (seen[chat.id] ?? -1) >= chat.lastAt ? { ...chat, unread: 0 } : chat);
+function useBotChannels(botId, { open = false } = {}) {
+  const roster = rosterOf();
+  const channels2 = (0, import_react15.useSyncExternalStore)(roster?.subscribe ?? noSubscribe, () => roster?.getSnapshot?.()?.omniBotChannels?.[botId]);
+  const loads = open === true && channels2 !== void 0;
+  const chats = (0, import_react15.useSyncExternalStore)(chatsStore.subscribe, () => chatsStore.getSnapshot()[botId]);
+  const seen = (0, import_react15.useSyncExternalStore)(omniStore.subscribe, () => omniStore.getSnapshot().seen);
+  (0, import_react15.useEffect)(() => {
+    if (!loads) return void 0;
+    void readChats(botId);
+    const timer = setInterval(() => {
+      if (typeof document === "undefined" || !document.hidden) void readChats(botId);
+    }, CHATS_POLL_MS);
+    return () => clearInterval(timer);
+  }, [botId, loads]);
+  return (0, import_react15.useMemo)(() => channels2 === void 0 ? void 0 : channels2.map((channel) => loads ? { ...channel, chats: readOf(chats?.byChannel?.[channel.id], seen) } : channel), [channels2, chats, loads, seen]);
+}
+async function openBotChat(chatId) {
+  const actions = face?.()?.actions;
+  if (typeof chatId !== "string" || typeof actions?.selectPanel !== "function") return;
+  const warn = (error) => console.warn("Could not read Omni:", error);
+  if (omniStore.getSnapshot().preview) await refreshLive(call).catch(warn);
+  if (!omniStore.getSnapshot().preview && !omniStore.getSnapshot().chats.some((chat) => chat.id === chatId)) {
+    omniStore.set((state) => ({ ...state, chatId }));
+    await refreshLive(call).catch(warn);
+  }
+  startLive(call);
+  omniActions((id) => actions.selectPanel(id), call).openChat(chatId);
+}
+function registerBotChannels(registry) {
+  if (typeof registry?.register !== "function") return void 0;
+  return registry.register({ id: SOURCE_ID, owns: ownsBot, useChannels: useBotChannels, open: (chatId) => void openBotChat(chatId) });
+}
+
+// src/client/code-pattern.js
 var import_react16 = require("react");
+var PATTERN_LENGTH_MIN = 4;
+var PATTERN_LENGTH_MAX = 64;
+var patternFields = (pattern) => ({
+  prefix: pattern?.prefix ?? "",
+  characters: pattern?.characters ?? "",
+  length: Number.isInteger(pattern?.length) ? String(pattern.length) : "",
+  lookAlikes: pattern?.lookAlikes === true
+});
+function patternOf(fields) {
+  const characters = fields.characters.trim();
+  const length = Number(fields.length);
+  if (!/^[0-9A-Za-z]{2,}$/.test(characters)) return { problem: t("Type the characters a code may have: letters and digits.") };
+  if (fields.length === "" || !Number.isInteger(length) || length < PATTERN_LENGTH_MIN || length > PATTERN_LENGTH_MAX) {
+    return { problem: t("The length is a whole number from {min} to {max}.", { min: PATTERN_LENGTH_MIN, max: PATTERN_LENGTH_MAX }) };
+  }
+  const prefix = fields.prefix.trim();
+  return { pattern: { ...prefix ? { prefix } : {}, characters, length, ...fields.lookAlikes ? { lookAlikes: true } : {} } };
+}
+function patternSummary(pattern) {
+  const shape = pattern.prefix ? t("{prefix} then {length} of {characters}", { prefix: pattern.prefix, length: pattern.length, characters: pattern.characters }) : t("{length} of {characters}", { length: pattern.length, characters: pattern.characters });
+  return pattern.lookAlikes ? `${shape} · ${t("look-alikes read as one")}` : shape;
+}
+function PatternFields({ value, onChange, locked = false, prefixRequired = false }) {
+  const set3 = (key, next) => onChange({ ...value, [key]: next });
+  const lookAlikes = t("Read look-alike characters as one (O and 0; I, L and 1)");
+  return (0, import_react16.createElement)(
+    "fieldset",
+    { className: "ot-pattern", disabled: locked, "aria-label": t("Code pattern") },
+    (0, import_react16.createElement)(
+      "div",
+      { className: "ot-pattern-row" },
+      (0, import_react16.createElement)(
+        "label",
+        { className: "ot-answer-label ot-pattern-prefix" },
+        (0, import_react16.createElement)("span", { className: "bt-field-label" }, prefixRequired ? t("Prefix") : t("Prefix (optional)")),
+        (0, import_react16.createElement)("input", { className: "bt-input", type: "text", value: value.prefix, maxLength: 16, spellCheck: false, autoComplete: "off", onChange: (event) => set3("prefix", event.target.value) })
+      ),
+      (0, import_react16.createElement)(
+        "label",
+        { className: "ot-answer-label ot-pattern-length" },
+        (0, import_react16.createElement)("span", { className: "bt-field-label" }, t("Length")),
+        (0, import_react16.createElement)("input", { className: "bt-input", type: "number", min: PATTERN_LENGTH_MIN, max: PATTERN_LENGTH_MAX, step: 1, inputMode: "numeric", value: value.length, onChange: (event) => set3("length", event.target.value) })
+      )
+    ),
+    (0, import_react16.createElement)(
+      "label",
+      { className: "ot-answer-label" },
+      (0, import_react16.createElement)("span", { className: "bt-field-label" }, t("Characters after the prefix")),
+      (0, import_react16.createElement)("input", { className: "bt-input ot-pattern-characters", type: "text", value: value.characters, maxLength: 72, spellCheck: false, autoComplete: "off", onChange: (event) => set3("characters", event.target.value) })
+    ),
+    // The Bot team's switch, as the answer settings draw it.
+    (0, import_react16.createElement)(
+      "div",
+      { className: "ot-answer-switch" },
+      (0, import_react16.createElement)("span", null, lookAlikes),
+      (0, import_react16.createElement)(
+        "button",
+        { type: "button", role: "switch", className: "bt-switch", disabled: locked, "aria-checked": value.lookAlikes, "aria-label": lookAlikes, onClick: () => set3("lookAlikes", !value.lookAlikes) },
+        (0, import_react16.createElement)("span", { className: "bt-switch-knob", "aria-hidden": true })
+      )
+    ),
+    (0, import_react16.createElement)("span", { className: "bt-note" }, locked ? t("This list's pattern is set; new codes must fit it.") : t("Case never matters. A code stands alone in the message, not inside a longer word or number."))
+  );
+}
+var CODE_PATTERN_CSS = `
+.ot-pattern{display:grid;gap:6px;min-width:0;margin:0;padding:0;border:0}
+.ot-pattern-row{display:flex;flex-wrap:wrap;gap:6px 8px;min-width:0}
+.ot-pattern-prefix{flex:1 1 96px;min-width:0}
+.ot-pattern-length{flex:0 0 72px;min-width:0}
+.ot-pattern .bt-input{box-sizing:border-box;width:100%;min-width:0}
+.ot-pattern-characters{font-family:var(--bt-mono, ui-monospace, monospace);font-size:12px}
+.ot-pattern:disabled .bt-input{opacity:.7}
+`;
+
+// src/client/code-lists.js
+var import_react17 = require("react");
+var pad2 = (value) => String(value).padStart(2, "0");
+var endOfDay = (year, month, day) => {
+  const at2 = new Date(year, month - 1, day, 23, 59, 59, 999);
+  return at2.getFullYear() === year && at2.getMonth() === month - 1 && at2.getDate() === day ? at2.toISOString() : void 0;
+};
+var dayOf = (iso) => {
+  const at2 = new Date(iso);
+  return Number.isNaN(at2.getTime()) ? "" : `${at2.getFullYear()}-${pad2(at2.getMonth() + 1)}-${pad2(at2.getDate())}`;
+};
+function parseCodeLines(text) {
+  const trimmed = String(text ?? "").trim();
+  if (trimmed === "") return { problem: t("Paste at least one code.") };
+  if (trimmed.startsWith("[")) {
+    let entries2;
+    try {
+      entries2 = JSON.parse(trimmed);
+    } catch {
+      return { problem: t("The JSON could not be read.") };
+    }
+    return Array.isArray(entries2) && entries2.length > 0 ? { entries: entries2 } : { problem: t("The JSON must be a list of codes.") };
+  }
+  const entries = [];
+  for (const [index, line] of trimmed.split(/\r?\n/).entries()) {
+    if (line.trim() === "" || line.trim().startsWith("#")) continue;
+    const parts = line.split(",").map((part) => part.trim());
+    const date = /^(?:expires\s+)?(\d{4})-(\d{2})-(\d{2})$/i.exec(parts[1] ?? "");
+    const expiresAt = date ? endOfDay(Number(date[1]), Number(date[2]), Number(date[3])) : void 0;
+    if (parts.length !== 2 || parts[0] === "" || expiresAt === void 0) return { problem: t("Line {n}: write code, expires YYYY-MM-DD.", { n: index + 1 }) };
+    entries.push({ code: parts[0], expiresAt });
+  }
+  return entries.length > 0 ? { entries } : { problem: t("Paste at least one code.") };
+}
+function parseRuleDetails(text) {
+  const trimmed = String(text ?? "").trim();
+  if (trimmed === "") return { metadata: {} };
+  if (trimmed.startsWith("{")) {
+    let metadata2;
+    try {
+      metadata2 = JSON.parse(trimmed);
+    } catch {
+      return { problem: t("The rule details JSON could not be read.") };
+    }
+    return metadata2 && typeof metadata2 === "object" && !Array.isArray(metadata2) ? { metadata: metadata2 } : { problem: t("The rule details JSON must be an object.") };
+  }
+  const metadata = {};
+  for (const [index, line] of trimmed.split(/\r?\n/).entries()) {
+    if (line.trim() === "" || line.trim().startsWith("#")) continue;
+    const at2 = line.indexOf("=");
+    const key = at2 === -1 ? "" : line.slice(0, at2).trim();
+    if (key === "") return { problem: t("Rule details line {n}: write key = value.", { n: index + 1 }) };
+    metadata[key] = line.slice(at2 + 1).trim();
+  }
+  return { metadata };
+}
+var ruleDetailsText = (metadata = {}) => Object.values(metadata).every((value) => typeof value === "string" && !value.includes("\n")) ? Object.entries(metadata).map(([key, value]) => `${key} = ${value}`).join("\n") : JSON.stringify(metadata, null, 2);
+var stateText = (state) => state === "open" ? t("Open") : state === "used" ? t("Used") : state === "expired" ? t("Expired") : state;
+var detailsLine = (metadata) => Object.entries(metadata ?? {}).map(([key, value]) => `${key} = ${typeof value === "string" ? value : JSON.stringify(value)}`).join(" · ");
+function CodeLists() {
+  const [shown, setShown] = (0, import_react17.useState)(false);
+  const [view, setView] = (0, import_react17.useState)(null);
+  const [read, setRead] = (0, import_react17.useState)(0);
+  const [name, setName] = (0, import_react17.useState)("");
+  const [fields, setFields] = (0, import_react17.useState)(patternFields());
+  const [details, setDetails] = (0, import_react17.useState)("");
+  const [text, setText] = (0, import_react17.useState)("");
+  const [busy, setBusy] = (0, import_react17.useState)(false);
+  const [result, setResult] = (0, import_react17.useState)(null);
+  (0, import_react17.useEffect)(() => {
+    if (!shown) return void 0;
+    let alive = true;
+    call("omni-code-lists", {}).then(
+      (reply) => {
+        if (alive) setView({ lists: Array.isArray(reply?.lists) ? reply.lists : [], codes: Array.isArray(reply?.codes) ? reply.codes : [] });
+      },
+      (error) => {
+        if (alive) setResult({ ok: false, text: hostText(error.message) });
+      }
+    );
+    return () => {
+      alive = false;
+    };
+  }, [shown, read]);
+  const known = view?.lists.find((list) => list.name === name.trim());
+  (0, import_react17.useEffect)(() => {
+    if (!known) return;
+    setFields(patternFields(known.pattern));
+    setDetails(ruleDetailsText(known.metadata));
+  }, [known?.name, read]);
+  const add = async () => {
+    const pattern = patternOf(fields);
+    const metadata = parseRuleDetails(details);
+    const parsed = parseCodeLines(text);
+    const problem = name.trim() === "" ? t("Name the list.") : pattern.problem ?? metadata.problem ?? parsed.problem;
+    if (problem) {
+      setResult({ ok: false, text: problem });
+      return;
+    }
+    setBusy(true);
+    setResult(null);
+    try {
+      const reply = await call("omni-code-lists-add", { list: name.trim(), pattern: pattern.pattern, metadata: metadata.metadata, entries: parsed.entries });
+      setText("");
+      const counts = t("Added {added}, updated {updated}.", { added: reply?.added ?? 0, updated: reply?.updated ?? 0 });
+      setResult({ ok: true, text: reply?.used ? `${counts} ${t("{n} already used, left as they were.", { n: reply.used })}` : counts });
+      setRead((before) => before + 1);
+    } catch (error) {
+      setResult({ ok: false, text: hostText(error.message) });
+    } finally {
+      setBusy(false);
+    }
+  };
+  const label = t("Code lists");
+  return (0, import_react17.createElement)(
+    "div",
+    { className: "ot-codes", role: "group", "aria-label": label },
+    (0, import_react17.createElement)(
+      "div",
+      { className: "ot-codes-head" },
+      (0, import_react17.createElement)("span", { className: "bt-field-label" }, shown && view !== null ? t("Code lists ({n})", { n: view.lists.length }) : label),
+      (0, import_react17.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", "aria-expanded": shown, onClick: () => setShown((before) => !before) }, shown ? t("Hide") : t("Show"))
+    ),
+    shown ? (0, import_react17.createElement)("span", { className: "bt-note" }, t("A person whose first message carries an open code from a list is let in, once. Each code admits one person.")) : null,
+    shown ? (0, import_react17.createElement)(
+      "label",
+      { className: "ot-answer-label" },
+      (0, import_react17.createElement)("span", { className: "bt-field-label" }, t("List name")),
+      (0, import_react17.createElement)("input", { className: "bt-input", type: "text", value: name, maxLength: 60, list: "ot-code-list-names", spellCheck: false, autoComplete: "off", onChange: (event) => setName(event.target.value) }),
+      (0, import_react17.createElement)("datalist", { id: "ot-code-list-names" }, (view?.lists ?? []).map((list) => (0, import_react17.createElement)("option", { key: list.name, value: list.name })))
+    ) : null,
+    shown ? (0, import_react17.createElement)(PatternFields, { value: fields, onChange: setFields, locked: known !== void 0 }) : null,
+    shown ? (0, import_react17.createElement)(
+      "div",
+      { className: "bt-field ot-answer-field" },
+      (0, import_react17.createElement)(
+        "label",
+        { className: "ot-answer-label" },
+        (0, import_react17.createElement)("span", { className: "bt-field-label" }, t("Rule details")),
+        (0, import_react17.createElement)("textarea", { className: "bt-input bt-input-area ot-codes-details", value: details, spellCheck: false, autoComplete: "off", onChange: (event) => setDetails(event.target.value) })
+      ),
+      (0, import_react17.createElement)("span", { className: "bt-note" }, t('Copied into the allow rule of each person a code from this list admits. One "key = value" a line, or a JSON object.'))
+    ) : null,
+    shown ? (0, import_react17.createElement)(
+      "div",
+      { className: "bt-field ot-answer-field" },
+      (0, import_react17.createElement)(
+        "label",
+        { className: "ot-answer-label" },
+        (0, import_react17.createElement)("span", { className: "bt-field-label" }, t("Codes to add")),
+        (0, import_react17.createElement)("textarea", { className: "bt-input bt-input-area ot-codes-paste", value: text, spellCheck: false, autoComplete: "off", onChange: (event) => setText(event.target.value) })
+      ),
+      (0, import_react17.createElement)("span", { className: "bt-note" }, t("One code a line: code, expires YYYY-MM-DD. Or paste a JSON list."))
+    ) : null,
+    shown ? (0, import_react17.createElement)(
+      "div",
+      { className: "bt-actions" },
+      (0, import_react17.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: busy || text.trim() === "", onClick: add }, t("Add codes"))
+    ) : null,
+    shown && result ? (0, import_react17.createElement)("p", { className: result.ok ? "ot-picker-note" : "ot-picker-problem", role: result.ok ? "status" : "alert" }, result.text) : null,
+    !shown || view === null ? null : view.codes.length === 0 ? (0, import_react17.createElement)("span", { className: "bt-note" }, t("No codes yet.")) : (0, import_react17.createElement)(
+      "div",
+      { className: "ot-codes-view" },
+      (0, import_react17.createElement)("ul", { className: "ot-code-lists" }, view.lists.map((list) => (0, import_react17.createElement)(
+        "li",
+        { key: list.name, className: "ot-code-list" },
+        (0, import_react17.createElement)("span", { className: "ot-code-list-name" }, list.name),
+        (0, import_react17.createElement)("span", { className: "ot-code-list-count" }, t("{open} open of {count}", { open: list.open, count: list.count })),
+        (0, import_react17.createElement)("span", { className: "ot-code-list-meta" }, patternSummary(list.pattern)),
+        Object.keys(list.metadata ?? {}).length > 0 ? (0, import_react17.createElement)("span", { className: "ot-code-list-meta" }, detailsLine(list.metadata)) : null
+      ))),
+      (0, import_react17.createElement)("ul", { className: "ot-code-items" }, view.codes.map((code) => (0, import_react17.createElement)(
+        "li",
+        { key: code.code, className: "ot-code", "data-state": code.state },
+        (0, import_react17.createElement)("span", { className: "ot-code-text" }, code.code),
+        (0, import_react17.createElement)("span", { className: "ot-code-state" }, stateText(code.state)),
+        (0, import_react17.createElement)("span", { className: "ot-code-meta" }, t("{list} · expires {day}", { list: code.list, day: dayOf(code.expiresAt) }))
+      )))
+    )
+  );
+}
+var CODE_LISTS_CSS = `${CODE_PATTERN_CSS}
+.ot-codes{display:grid;gap:6px;min-width:0}
+.ot-codes-head{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}
+.ot-codes .bt-input-area{box-sizing:border-box;width:100%;min-width:0;font-family:var(--bt-mono, ui-monospace, monospace);font-size:12px}
+.ot-codes .bt-actions{justify-content:flex-end}
+.ot-codes-view{display:grid;gap:6px;min-width:0}
+.ot-code-lists,.ot-code-items{display:grid;gap:6px;margin:0;padding:0;list-style:none;min-width:0}
+.ot-code-items{max-height:220px;overflow-y:auto}
+.ot-code-list,.ot-code{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:1px 8px;min-width:0;padding:6px 8px;border:1px solid var(--bt-line, rgba(127,127,127,.2));border-radius:8px}
+.ot-code-list-name{flex:1 0 auto;max-width:100%;overflow-wrap:anywhere;font-size:12px;line-height:17px;font-weight:600;color:var(--bt-ink)}
+.ot-code-text{flex:1 0 auto;max-width:100%;overflow-wrap:anywhere;font-family:var(--bt-mono, ui-monospace, monospace);font-size:12px;line-height:17px;color:var(--bt-ink)}
+.ot-code-list-count,.ot-code-state{flex:none;font-size:11px;line-height:17px;color:var(--bt-ink-2)}
+.ot-code[data-state=open] .ot-code-state{color:var(--bt-ok, #16a34a)}
+.ot-code-list-meta,.ot-code-meta{flex-basis:100%;min-width:0;overflow-wrap:anywhere;font-size:12px;line-height:17px;color:var(--bt-ink-3)}
+`;
+
+// src/client/outside-check.js
+var import_react18 = require("react");
+var emptyPattern = (fields) => fields.prefix.trim() === "" && fields.characters.trim() === "" && fields.length === "";
+var fieldsOf = (value) => ({
+  url: value?.url ?? "",
+  pattern: patternFields(value?.pattern),
+  label: value?.label ?? "",
+  tier: value?.tier ?? ""
+});
+function OutsideCheck({ botId, value }) {
+  const [fields, setFields] = (0, import_react18.useState)(fieldsOf(value));
+  const [secretSet, setSecretSet] = (0, import_react18.useState)(value?.secretSet === true);
+  const [secret, setSecret] = (0, import_react18.useState)("");
+  const [busy, setBusy] = (0, import_react18.useState)(false);
+  const [result, setResult] = (0, import_react18.useState)(null);
+  const shown = JSON.stringify(fieldsOf(value));
+  (0, import_react18.useEffect)(() => {
+    setFields(fieldsOf(value));
+    setSecretSet(value?.secretSet === true);
+  }, [shown, value?.secretSet]);
+  const set3 = (key, next) => setFields((before) => ({ ...before, [key]: next }));
+  const send = async (body, done) => {
+    setBusy(true);
+    setResult(null);
+    try {
+      const reply = await call("omni-outside-check", { botId, ...body });
+      setFields(fieldsOf(reply));
+      setSecretSet(reply?.secretSet === true);
+      setSecret("");
+      setResult({ ok: true, text: done });
+    } catch (error) {
+      setResult({ ok: false, text: hostText(error.message) });
+    } finally {
+      setBusy(false);
+    }
+  };
+  const changed = JSON.stringify(fields) !== shown || secret !== "";
+  const save = () => {
+    const pattern = emptyPattern(fields.pattern) ? { pattern: null } : patternOf(fields.pattern);
+    const problem = pattern.problem ?? (pattern.pattern && !pattern.pattern.prefix ? t("Give the pattern a prefix, so that ordinary words never go to the outside check.") : void 0);
+    if (problem) {
+      setResult({ ok: false, text: problem });
+      return;
+    }
+    send({
+      url: fields.url.trim() || null,
+      pattern: pattern.pattern,
+      label: fields.label.trim() || null,
+      tier: fields.tier.trim() || null,
+      ...secret === "" ? {} : { secret }
+    }, t("Saved."));
+  };
+  const clear = () => send({ secret: null }, t("The secret is cleared."));
+  const label = t("Outside code check");
+  return (0, import_react18.createElement)(
+    "div",
+    { className: "ot-outside", role: "group", "aria-label": label },
+    (0, import_react18.createElement)("span", { className: "bt-field-label" }, label),
+    (0, import_react18.createElement)("p", { className: "bt-note" }, t("A code of this pattern in the message of someone not let in is sent to this HTTPS address, and its reply goes to them. On only when the address, the secret and the pattern are all set.")),
+    (0, import_react18.createElement)(
+      "label",
+      { className: "ot-answer-label" },
+      (0, import_react18.createElement)("span", { className: "bt-field-label" }, t("Check URL")),
+      (0, import_react18.createElement)("input", { className: "bt-input ot-outside-url", type: "url", value: fields.url, title: fields.url || void 0, spellCheck: false, autoComplete: "off", onChange: (event) => set3("url", event.target.value) })
+    ),
+    (0, import_react18.createElement)(
+      "label",
+      { className: "ot-answer-label" },
+      (0, import_react18.createElement)(
+        "span",
+        { className: "ot-outside-secret-head" },
+        (0, import_react18.createElement)("span", { className: "bt-field-label" }, t("Secret")),
+        (0, import_react18.createElement)("span", { className: "ot-picker-tag ot-outside-state", "data-set": secretSet }, secretSet ? t("Set") : t("Not set"))
+      ),
+      (0, import_react18.createElement)("input", {
+        className: "bt-input ot-outside-secret",
+        type: "password",
+        value: secret,
+        spellCheck: false,
+        autoComplete: "new-password",
+        placeholder: secretSet ? t("New secret") : "",
+        onChange: (event) => setSecret(event.target.value)
+      })
+    ),
+    (0, import_react18.createElement)(PatternFields, { value: fields.pattern, onChange: (next) => set3("pattern", next), prefixRequired: true }),
+    (0, import_react18.createElement)(
+      "div",
+      { className: "bt-field ot-answer-field" },
+      (0, import_react18.createElement)(
+        "label",
+        { className: "ot-answer-label" },
+        (0, import_react18.createElement)("span", { className: "bt-field-label" }, t("Label on a confirmed row")),
+        (0, import_react18.createElement)("input", { className: "bt-input ot-outside-label", type: "text", value: fields.label, maxLength: 60, onChange: (event) => set3("label", event.target.value) })
+      ),
+      (0, import_react18.createElement)("span", { className: "bt-note" }, t("Staff see it on a request row the service confirmed. Empty: no label."))
+    ),
+    (0, import_react18.createElement)(
+      "div",
+      { className: "bt-field ot-answer-field" },
+      (0, import_react18.createElement)(
+        "label",
+        { className: "ot-answer-label" },
+        (0, import_react18.createElement)("span", { className: "bt-field-label" }, t("Tier name")),
+        (0, import_react18.createElement)("input", { className: "bt-input ot-outside-tier", type: "text", value: fields.tier, maxLength: 60, onChange: (event) => set3("tier", event.target.value) })
+      ),
+      (0, import_react18.createElement)("span", { className: "bt-note" }, t("Written on a request row the service confirmed. Empty: none."))
+    ),
+    (0, import_react18.createElement)(
+      "div",
+      { className: "bt-actions" },
+      (0, import_react18.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: busy || !secretSet, onClick: clear }, t("Clear")),
+      (0, import_react18.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: busy || !changed, onClick: save }, t("Save"))
+    ),
+    result ? (0, import_react18.createElement)("p", { className: result.ok ? "ot-picker-note" : "ot-picker-problem", role: result.ok ? "status" : "alert" }, result.text) : null
+  );
+}
+var OUTSIDE_CHECK_CSS = `
+.ot-outside{display:grid;gap:6px;min-width:0}
+.ot-outside .bt-input{box-sizing:border-box;width:100%;min-width:0}
+.ot-outside-secret-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;min-width:0}
+.ot-outside-state[data-set=true]{color:var(--bt-ok, #16a34a)}
+.ot-outside .bt-actions{justify-content:flex-end}
+`;
+
+// src/client/omni-tree.js
+var import_react19 = require("react");
 var { ChevronRightIcon: ChevronRightIcon2, CloseIcon, DotsIcon, PlusIcon: PlusIcon3, SparkIcon } = icons;
 var OPEN_KEY = "omni.tree.open";
 var SEARCH_DELAY_MS = 250;
@@ -16433,8 +17158,8 @@ function needsStaffOf(thread) {
   return { label: "Needs a person", reason: thread.needsStaff.reason, title: `Needs a person from the team: ${thread.needsStaff.reason}` };
 }
 function useNow(on2) {
-  const [now, setNow] = (0, import_react16.useState)(() => Date.now());
-  (0, import_react16.useEffect)(() => {
+  const [now, setNow] = (0, import_react19.useState)(() => Date.now());
+  (0, import_react19.useEffect)(() => {
     if (!on2) return void 0;
     setNow(Date.now());
     const timer = setInterval(() => setNow(Date.now()), 15e3);
@@ -16473,14 +17198,14 @@ function ThreadRow({ thread, actions, rowProps = {}, shown = true }) {
   const asking = useStatus((map) => map.get(id)?.pendingInteraction !== void 0);
   const running = useStatus((map) => map.get(id)?.running === true);
   const active = useRetain(id, (info) => (info?.retainedBy?.mainView ?? 0) > 0);
-  const [confirming, setConfirming] = (0, import_react16.useState)(false);
-  const [deleting2, setDeleting] = (0, import_react16.useState)(null);
-  const [problem, setProblem] = (0, import_react16.useState)(null);
-  const [menu, setMenu] = (0, import_react16.useState)(false);
-  const [whyOpen, setWhyOpen] = (0, import_react16.useState)(false);
-  const row = (0, import_react16.useRef)(null);
+  const [confirming, setConfirming] = (0, import_react19.useState)(false);
+  const [deleting2, setDeleting] = (0, import_react19.useState)(null);
+  const [problem, setProblem] = (0, import_react19.useState)(null);
+  const [menu, setMenu] = (0, import_react19.useState)(false);
+  const [whyOpen, setWhyOpen] = (0, import_react19.useState)(false);
+  const row = (0, import_react19.useRef)(null);
   const opens = teamReady(rowProps.roster);
-  (0, import_react16.useEffect)(() => {
+  (0, import_react19.useEffect)(() => {
     if (!menu || typeof document === "undefined" || typeof document.addEventListener !== "function") return void 0;
     const away = (event) => {
       if (!row.current?.contains?.(event.target)) setMenu(false);
@@ -16488,10 +17213,10 @@ function ThreadRow({ thread, actions, rowProps = {}, shown = true }) {
     document.addEventListener("pointerdown", away, true);
     return () => document.removeEventListener("pointerdown", away, true);
   }, [menu]);
-  (0, import_react16.useEffect)(() => {
+  (0, import_react19.useEffect)(() => {
     if (opens && openOnArrival.delete(thread.id)) openThread(thread, actions, setProblem);
   }, [opens, thread.id]);
-  (0, import_react16.useEffect)(() => {
+  (0, import_react19.useEffect)(() => {
     if (!opens) return void 0;
     const opener = () => openThread(thread, actions, setProblem);
     rowOpeners.set(thread.id, opener);
@@ -16560,10 +17285,10 @@ function ThreadRow({ thread, actions, rowProps = {}, shown = true }) {
     event.stopPropagation();
     setMenu(false);
   };
-  return (0, import_react16.createElement)(
+  return (0, import_react19.createElement)(
     "div",
     { ref: row, className: "ot-thread", "data-idle": state === "idle" || void 0, "data-answer": answer ? true : void 0, "data-paused": pause ? true : void 0, "data-needs": need ? true : void 0 },
-    (0, import_react16.createElement)(
+    (0, import_react19.createElement)(
       "button",
       {
         type: "button",
@@ -16576,17 +17301,17 @@ function ThreadRow({ thread, actions, rowProps = {}, shown = true }) {
         tabIndex: shown ? void 0 : -1,
         onClick
       },
-      (0, import_react16.createElement)("span", { className: state === "waiting" ? "bt-thread-wait" : state === "working" ? "bt-thread-spin" : "ot-thread-idle", "aria-hidden": true }),
-      (0, import_react16.createElement)("span", { className: "bt-thread-title" }, name),
-      answer && !pause ? (0, import_react16.createElement)("span", { className: "ot-mode", "data-mode": answer.mode, title: answer.title, "aria-hidden": true }, answer.label) : null,
-      reason ? (0, import_react16.createElement)("span", { className: "ot-thread-reason" }, reason) : null,
-      free ? (0, import_react16.createElement)("span", { className: "ot-thread-free", title: free, "aria-hidden": true }, (0, import_react16.createElement)(SparkIcon)) : null,
-      dot ? (0, import_react16.createElement)("span", { className: "bt-unread", "aria-hidden": true }) : null
+      (0, import_react19.createElement)("span", { className: state === "waiting" ? "bt-thread-wait" : state === "working" ? "bt-thread-spin" : "ot-thread-idle", "aria-hidden": true }),
+      (0, import_react19.createElement)("span", { className: "bt-thread-title" }, name),
+      answer && !pause ? (0, import_react19.createElement)("span", { className: "ot-mode", "data-mode": answer.mode, title: answer.title, "aria-hidden": true }, answer.label) : null,
+      reason ? (0, import_react19.createElement)("span", { className: "ot-thread-reason" }, reason) : null,
+      free ? (0, import_react19.createElement)("span", { className: "ot-thread-free", title: free, "aria-hidden": true }, (0, import_react19.createElement)(SparkIcon)) : null,
+      dot ? (0, import_react19.createElement)("span", { className: "bt-unread", "aria-hidden": true }) : null
     ),
-    (0, import_react16.createElement)(
+    (0, import_react19.createElement)(
       "span",
       { className: "ot-thread-acts", "data-on": confirming || menu || void 0 },
-      confirming ? null : (0, import_react16.createElement)("button", {
+      confirming ? null : (0, import_react19.createElement)("button", {
         type: "button",
         className: "ot-thread-more",
         "aria-label": menuLabel,
@@ -16595,8 +17320,8 @@ function ThreadRow({ thread, actions, rowProps = {}, shown = true }) {
         "aria-expanded": menu,
         tabIndex: shown ? void 0 : -1,
         onClick: () => setMenu((open) => !open)
-      }, (0, import_react16.createElement)(DotsIcon)),
-      (0, import_react16.createElement)("button", {
+      }, (0, import_react19.createElement)(DotsIcon)),
+      (0, import_react19.createElement)("button", {
         type: "button",
         className: "ot-thread-remove",
         "data-confirm": confirming || void 0,
@@ -16605,15 +17330,15 @@ function ThreadRow({ thread, actions, rowProps = {}, shown = true }) {
         tabIndex: shown ? void 0 : -1,
         onClick: remove,
         onBlur: () => setConfirming(false)
-      }, confirming ? t("Remove") : (0, import_react16.createElement)(CloseIcon))
+      }, confirming ? t("Remove") : (0, import_react19.createElement)(CloseIcon))
     ),
     // Needs a person: its own line under the name, at every width: the badge and Dismiss, then
     // the child's reason, cut to one line until it is opened; the whole reason is the tooltip.
-    need ? (0, import_react16.createElement)(
+    need ? (0, import_react19.createElement)(
       "div",
       { className: "ot-needs", title: need.title },
-      (0, import_react16.createElement)("span", { className: "ot-mode", "data-mode": "needs", "aria-hidden": true }, need.label),
-      (0, import_react16.createElement)("button", {
+      (0, import_react19.createElement)("span", { className: "ot-mode", "data-mode": "needs", "aria-hidden": true }, need.label),
+      (0, import_react19.createElement)("button", {
         type: "button",
         className: "ot-needs-why",
         "aria-expanded": whyOpen,
@@ -16621,7 +17346,7 @@ function ThreadRow({ thread, actions, rowProps = {}, shown = true }) {
         tabIndex: shown ? void 0 : -1,
         onClick: () => setWhyOpen((open) => !open)
       }, need.reason),
-      (0, import_react16.createElement)("button", {
+      (0, import_react19.createElement)("button", {
         type: "button",
         className: "bt-soft bt-soft-sm ot-dismiss",
         "aria-label": `Dismiss: ${name} needs a person`,
@@ -16631,12 +17356,12 @@ function ThreadRow({ thread, actions, rowProps = {}, shown = true }) {
       }, "Dismiss")
     ) : null,
     // Paused: its own line under the name, at every width, with the time left and Resume.
-    pause ? (0, import_react16.createElement)(
+    pause ? (0, import_react19.createElement)(
       "div",
       { className: "ot-paused", title: pause.title },
-      (0, import_react16.createElement)("span", { className: "ot-mode", "data-mode": "paused", "aria-hidden": true }, pause.label),
-      (0, import_react16.createElement)("span", { className: "ot-paused-left", "aria-hidden": true }, pause.left),
-      (0, import_react16.createElement)("button", {
+      (0, import_react19.createElement)("span", { className: "ot-mode", "data-mode": "paused", "aria-hidden": true }, pause.label),
+      (0, import_react19.createElement)("span", { className: "ot-paused-left", "aria-hidden": true }, pause.left),
+      (0, import_react19.createElement)("button", {
         type: "button",
         className: "bt-soft bt-soft-sm ot-resume",
         "aria-label": `Resume answering in ${name}`,
@@ -16645,14 +17370,14 @@ function ThreadRow({ thread, actions, rowProps = {}, shown = true }) {
         onClick: resume
       }, "Resume")
     ) : null,
-    menu ? (0, import_react16.createElement)(
+    menu ? (0, import_react19.createElement)(
       "div",
       { className: "ot-thread-menu", role: "menu", "aria-label": menuLabel, onKeyDown: onMenuKey },
-      permissionMenuOf(thread).map((group) => (0, import_react16.createElement)(
+      permissionMenuOf(thread).map((group) => (0, import_react19.createElement)(
         "div",
         { key: group.field, className: "ot-thread-menu-group", role: "group", "aria-label": group.label },
-        (0, import_react16.createElement)("span", { className: "ot-thread-menu-head" }, group.label),
-        group.items.map((choice) => (0, import_react16.createElement)("button", {
+        (0, import_react19.createElement)("span", { className: "ot-thread-menu-head" }, group.label),
+        group.items.map((choice) => (0, import_react19.createElement)("button", {
           key: String(choice.value),
           type: "button",
           role: "menuitemradio",
@@ -16663,33 +17388,33 @@ function ThreadRow({ thread, actions, rowProps = {}, shown = true }) {
           onClick: () => choose(choice)
         }, choice.label))
       )),
-      answer?.progress ? (0, import_react16.createElement)("span", { className: "ot-thread-menu-note" }, answer.progress) : null
+      answer?.progress ? (0, import_react19.createElement)("span", { className: "ot-thread-menu-note" }, answer.progress) : null
     ) : null,
-    (thread.automations?.length ?? 0) > 0 ? (0, import_react16.createElement)(
+    (thread.automations?.length ?? 0) > 0 ? (0, import_react19.createElement)(
       "ul",
       { className: "ot-thread-automations", "aria-label": "Automations" },
-      thread.automations.map((automation) => (0, import_react16.createElement)("li", { key: automation.id }, automation.name))
+      thread.automations.map((automation) => (0, import_react19.createElement)("li", { key: automation.id }, automation.name))
     ) : null,
-    deleting2 ? (0, import_react16.createElement)(
+    deleting2 ? (0, import_react19.createElement)(
       "div",
       { className: "ot-thread-menu", role: "group", "aria-label": "What should happen to these automations?" },
-      (0, import_react16.createElement)("p", null, `What should happen to: ${deleting2.map((automation) => automation.name).join(", ")}?`),
-      ...[["keep", "Keep automations"], ["pause", "Pause automations"], ["delete", "Delete automations"]].map(([choice, label2]) => (0, import_react16.createElement)("button", {
+      (0, import_react19.createElement)("p", null, `What should happen to: ${deleting2.map((automation) => automation.name).join(", ")}?`),
+      ...[["keep", "Keep automations"], ["pause", "Pause automations"], ["delete", "Delete automations"]].map(([choice, label2]) => (0, import_react19.createElement)("button", {
         key: choice,
         type: "button",
         onClick: () => {
           void remove(choice);
         }
       }, label2)),
-      (0, import_react16.createElement)("button", { type: "button", onClick: () => setDeleting(null) }, "Cancel")
+      (0, import_react19.createElement)("button", { type: "button", onClick: () => setDeleting(null) }, "Cancel")
     ) : null,
-    problem ? (0, import_react16.createElement)("span", { className: "ot-thread-problem", role: "alert" }, hostText(problem)) : null
+    problem ? (0, import_react19.createElement)("span", { className: "ot-thread-problem", role: "alert" }, hostText(problem)) : null
   );
 }
 function PickerChat({ chat, busy, selected, onPick }) {
   const name = chat.name ?? (chat.kind === "group" ? t("Group") : t("Chat"));
   const tag = chat.added ? t("Added") : busy === chat.id ? t("Adding…") : null;
-  return (0, import_react16.createElement)(
+  return (0, import_react19.createElement)(
     "button",
     {
       type: "button",
@@ -16704,40 +17429,40 @@ function PickerChat({ chat, busy, selected, onPick }) {
         void onPick(chat);
       }
     },
-    (0, import_react16.createElement)(ChatAvatar, { chat: { ...chat, name }, size: 30 }),
-    (0, import_react16.createElement)(
+    (0, import_react19.createElement)(ChatAvatar, { chat: { ...chat, name }, size: 30 }),
+    (0, import_react19.createElement)(
       "span",
       { className: "ot-picker-body" },
-      (0, import_react16.createElement)(
+      (0, import_react19.createElement)(
         "span",
         { className: "ot-picker-top" },
-        (0, import_react16.createElement)("span", { className: "ot-picker-name" }, name),
-        tag ? (0, import_react16.createElement)("span", { className: "ot-picker-tag" }, tag) : chat.at > 0 ? (0, import_react16.createElement)("span", { className: "ot-picker-at" }, relativeShort(chat.at)) : null
+        (0, import_react19.createElement)("span", { className: "ot-picker-name" }, name),
+        tag ? (0, import_react19.createElement)("span", { className: "ot-picker-tag" }, tag) : chat.at > 0 ? (0, import_react19.createElement)("span", { className: "ot-picker-at" }, relativeShort(chat.at)) : null
       ),
-      chat.number ? (0, import_react16.createElement)("span", { className: "ot-picker-number" }, chat.number) : null,
-      chat.preview ? (0, import_react16.createElement)("span", { className: "ot-picker-preview" }, chat.preview) : null
+      chat.number ? (0, import_react19.createElement)("span", { className: "ot-picker-number" }, chat.number) : null,
+      chat.preview ? (0, import_react19.createElement)("span", { className: "ot-picker-preview" }, chat.preview) : null
     )
   );
 }
 function ThreadPicker({ channel, channels: channels2 = [channel], onPick, onClose }) {
-  const [query, setQuery] = (0, import_react16.useState)("");
-  const [channelId, setChannelId] = (0, import_react16.useState)(channel.id);
-  const [selected, setSelected] = (0, import_react16.useState)([]);
-  const [title, setTitle] = (0, import_react16.useState)("");
-  const [notes, setNotes] = (0, import_react16.useState)("");
-  const [list, setList] = (0, import_react16.useState)({ status: "loading", chats: [], error: null });
-  const [busy, setBusy] = (0, import_react16.useState)(null);
-  const [problem, setProblem] = (0, import_react16.useState)(null);
-  const asked = (0, import_react16.useRef)(0);
-  const alive = (0, import_react16.useRef)(true);
-  (0, import_react16.useEffect)(() => {
+  const [query, setQuery] = (0, import_react19.useState)("");
+  const [channelId, setChannelId] = (0, import_react19.useState)(channel.id);
+  const [selected, setSelected] = (0, import_react19.useState)([]);
+  const [title, setTitle] = (0, import_react19.useState)("");
+  const [notes, setNotes] = (0, import_react19.useState)("");
+  const [list, setList] = (0, import_react19.useState)({ status: "loading", chats: [], error: null });
+  const [busy, setBusy] = (0, import_react19.useState)(null);
+  const [problem, setProblem] = (0, import_react19.useState)(null);
+  const asked = (0, import_react19.useRef)(0);
+  const alive = (0, import_react19.useRef)(true);
+  (0, import_react19.useEffect)(() => {
     alive.current = true;
     return () => {
       alive.current = false;
     };
   }, []);
   const words = query.trim();
-  (0, import_react16.useEffect)(() => {
+  (0, import_react19.useEffect)(() => {
     const ticket = ++asked.current;
     const load = () => call("omni-thread-chats", words ? { channelId, query: words } : { channelId }).then(
       (reply) => {
@@ -16789,21 +17514,21 @@ function ThreadPicker({ channel, channels: channels2 = [channel], onPick, onClos
   const availableChats = list.chats.filter((chat) => chat.added !== true);
   const empty = list.status === "ready" && availableChats.length === 0;
   const emptyText = list.chats.length > 0 ? t("No chats to add here. Search for another chat.") : words ? t("No chats match.") : t("No chats yet");
-  return (0, import_react16.createElement)(
+  return (0, import_react19.createElement)(
     "div",
     { className: "ot-picker", role: "group", "aria-label": t("Add a chat from {name}", { name: channel.name }), onKeyDown },
-    (0, import_react16.createElement)(
+    (0, import_react19.createElement)(
       "select",
       { "aria-label": "Channel", value: channelId, disabled: busy !== null, onChange: (event) => {
         setChannelId(event.target.value);
         setQuery("");
       } },
-      channels2.map((item) => (0, import_react16.createElement)("option", { key: item.id, value: item.id }, item.name))
+      channels2.map((item) => (0, import_react19.createElement)("option", { key: item.id, value: item.id }, item.name))
     ),
-    (0, import_react16.createElement)(
+    (0, import_react19.createElement)(
       "div",
       { className: "ot-picker-head" },
-      (0, import_react16.createElement)("input", {
+      (0, import_react19.createElement)("input", {
         type: "search",
         className: "ot-picker-search",
         value: query,
@@ -16812,28 +17537,28 @@ function ThreadPicker({ channel, channels: channels2 = [channel], onPick, onClos
         autoFocus: true,
         onChange: (event) => setQuery(event.target.value)
       }),
-      (0, import_react16.createElement)("button", { type: "button", className: "ot-picker-close", "aria-label": t("Close"), title: t("Close"), onClick: onClose }, (0, import_react16.createElement)(CloseIcon))
+      (0, import_react19.createElement)("button", { type: "button", className: "ot-picker-close", "aria-label": t("Close"), title: t("Close"), onClick: onClose }, (0, import_react19.createElement)(CloseIcon))
     ),
-    problem ? (0, import_react16.createElement)("p", { className: "ot-picker-problem", role: "alert" }, hostText(problem)) : null,
-    list.status === "loading" ? (0, import_react16.createElement)("p", { className: "ot-picker-note" }, t("Loading…")) : null,
-    list.status === "failed" ? (0, import_react16.createElement)("p", { className: "ot-picker-problem", role: "alert" }, hostText(list.error)) : null,
-    empty ? (0, import_react16.createElement)("p", { className: "ot-picker-note" }, emptyText) : null,
-    availableChats.length > 0 ? (0, import_react16.createElement)(
+    problem ? (0, import_react19.createElement)("p", { className: "ot-picker-problem", role: "alert" }, hostText(problem)) : null,
+    list.status === "loading" ? (0, import_react19.createElement)("p", { className: "ot-picker-note" }, t("Loading…")) : null,
+    list.status === "failed" ? (0, import_react19.createElement)("p", { className: "ot-picker-problem", role: "alert" }, hostText(list.error)) : null,
+    empty ? (0, import_react19.createElement)("p", { className: "ot-picker-note" }, emptyText) : null,
+    availableChats.length > 0 ? (0, import_react19.createElement)(
       "div",
       { className: "ot-picker-list" },
-      availableChats.map((chat) => (0, import_react16.createElement)(PickerChat, { key: chat.id, chat, busy, selected: selected.some((item) => item.chatId === chat.id), onPick: toggle }))
+      availableChats.map((chat) => (0, import_react19.createElement)(PickerChat, { key: chat.id, chat, busy, selected: selected.some((item) => item.chatId === chat.id), onPick: toggle }))
     ) : null,
-    (0, import_react16.createElement)("p", { className: "ot-picker-selected" }, selected.map((item) => item.name ?? item.chatId).join(", ")),
-    (0, import_react16.createElement)("input", { "aria-label": "Thread title", placeholder: "Thread title", value: title, maxLength: 80, onChange: (event) => setTitle(event.target.value) }),
-    (0, import_react16.createElement)("textarea", { "aria-label": "Thread notes", placeholder: "Thread notes", value: notes, maxLength: 8e3, onChange: (event) => setNotes(event.target.value) }),
-    (0, import_react16.createElement)("button", { type: "button", disabled: busy !== null || selected.length === 0 || !title.trim(), onClick: () => {
+    (0, import_react19.createElement)("p", { className: "ot-picker-selected" }, selected.map((item) => item.name ?? item.chatId).join(", ")),
+    (0, import_react19.createElement)("input", { "aria-label": "Thread title", placeholder: "Thread title", value: title, maxLength: 80, onChange: (event) => setTitle(event.target.value) }),
+    (0, import_react19.createElement)("textarea", { "aria-label": "Thread notes", placeholder: "Thread notes", value: notes, maxLength: 8e3, onChange: (event) => setNotes(event.target.value) }),
+    (0, import_react19.createElement)("button", { type: "button", disabled: busy !== null || selected.length === 0 || !title.trim(), onClick: () => {
       void pick();
     } }, "Create thread")
   );
 }
 var addThread = (payload) => call("omni-thread-add", payload);
 function ChannelItem({ channel, state, roster, rowProps, actions, omni: omni2, plus, open, picking, onToggle, onPlus, onClosePicker }) {
-  const plusButton = (0, import_react16.useRef)(null);
+  const plusButton = (0, import_react19.useRef)(null);
   const threads = threadsOf(roster, channel.id);
   const hasChats = state.chats.some((chat) => chat.channelId === channel.id);
   const unread = unreadOf(state, channel.id);
@@ -16852,13 +17577,13 @@ function ChannelItem({ channel, state, roster, rowProps, actions, omni: omni2, p
     else openOnArrival.add(result.threadId);
     return result;
   });
-  return (0, import_react16.createElement)(
+  return (0, import_react19.createElement)(
     "div",
     { className: "ot-channel" },
-    (0, import_react16.createElement)(
+    (0, import_react19.createElement)(
       "div",
       { className: "ot-channel-head" },
-      (0, import_react16.createElement)(
+      (0, import_react19.createElement)(
         "button",
         {
           type: "button",
@@ -16868,12 +17593,12 @@ function ChannelItem({ channel, state, roster, rowProps, actions, omni: omni2, p
           title: `${type.label} · ${channel.name}`,
           onClick: onToggle
         },
-        (0, import_react16.createElement)("span", { className: "ot-chevron", "aria-hidden": true }, (0, import_react16.createElement)(ChevronRightIcon2)),
-        (0, import_react16.createElement)(Tile, { type: channel.type, size: 18 }),
-        (0, import_react16.createElement)("span", { className: "ot-channel-name" }, channel.name),
-        unread > 0 ? (0, import_react16.createElement)("span", { className: "ot-count", "aria-label": t("{n} unread", { n: unread }) }, unread) : (0, import_react16.createElement)(StatusDot, { status: channel.status })
+        (0, import_react19.createElement)("span", { className: "ot-chevron", "aria-hidden": true }, (0, import_react19.createElement)(ChevronRightIcon2)),
+        (0, import_react19.createElement)(Tile, { type: channel.type, size: 18 }),
+        (0, import_react19.createElement)("span", { className: "ot-channel-name" }, channel.name),
+        unread > 0 ? (0, import_react19.createElement)("span", { className: "ot-count", "aria-label": t("{n} unread", { n: unread }) }, unread) : (0, import_react19.createElement)(StatusDot, { status: channel.status })
       ),
-      plus.offered ? (0, import_react16.createElement)("button", {
+      plus.offered ? (0, import_react19.createElement)("button", {
         ref: plusButton,
         type: "button",
         className: "ot-plus",
@@ -16881,18 +17606,18 @@ function ChannelItem({ channel, state, roster, rowProps, actions, omni: omni2, p
         title: t("Add a chat"),
         "aria-expanded": picking,
         onClick: onPlus
-      }, (0, import_react16.createElement)(PlusIcon3)) : null
+      }, (0, import_react19.createElement)(PlusIcon3)) : null
     ),
-    (0, import_react16.createElement)(
+    (0, import_react19.createElement)(
       "div",
       { id: panelId, className: "ot-chats", "data-open": open || void 0 },
-      (0, import_react16.createElement)(
+      (0, import_react19.createElement)(
         "div",
         { className: "ot-chats-in" },
-        picking && plus.offered ? (0, import_react16.createElement)(ThreadPicker, { channel, channels: state.channels, onPick, onClose: closePicker }) : null,
-        !plus.offered && plus.reason ? (0, import_react16.createElement)("span", { className: "ot-empty" }, hostText(plus.reason)) : null,
-        threads.map((thread) => (0, import_react16.createElement)(ThreadRow, { key: rowKey(thread, rowProps), thread, actions, rowProps, shown: open })),
-        (0, import_react16.createElement)(
+        picking && plus.offered ? (0, import_react19.createElement)(ThreadPicker, { channel, channels: state.channels, onPick, onClose: closePicker }) : null,
+        !plus.offered && plus.reason ? (0, import_react19.createElement)("span", { className: "ot-empty" }, hostText(plus.reason)) : null,
+        threads.map((thread) => (0, import_react19.createElement)(ThreadRow, { key: rowKey(thread, rowProps), thread, actions, rowProps, shown: open })),
+        (0, import_react19.createElement)(
           "button",
           { type: "button", className: "ot-chat ot-all", tabIndex: open ? void 0 : -1, onClick: () => omni2.openChannels("channel", channel.id) },
           hasChats ? t("All chats") : t("Channel health")
@@ -16902,11 +17627,11 @@ function ChannelItem({ channel, state, roster, rowProps, actions, omni: omni2, p
   );
 }
 function ChannelBotForm({ channels: channels2, roster, onClose }) {
-  const [name, setName] = (0, import_react16.useState)("");
-  const [selected, setSelected] = (0, import_react16.useState)([]);
-  const [local, setLocal] = (0, import_react16.useState)(null);
-  const [busy, setBusy] = (0, import_react16.useState)(false);
-  const [problem, setProblem] = (0, import_react16.useState)(null);
+  const [name, setName] = (0, import_react19.useState)("");
+  const [selected, setSelected] = (0, import_react19.useState)([]);
+  const [local, setLocal] = (0, import_react19.useState)(null);
+  const [busy, setBusy] = (0, import_react19.useState)(false);
+  const [problem, setProblem] = (0, import_react19.useState)(null);
   const pending = local ? [local] : roster.omniBotProposals ?? [];
   const act = async (endpoint, body, after) => {
     setBusy(true);
@@ -16920,32 +17645,32 @@ function ChannelBotForm({ channels: channels2, roster, onClose }) {
       setBusy(false);
     }
   };
-  return (0, import_react16.createElement)(
+  return (0, import_react19.createElement)(
     "div",
     { className: "ot-picker", role: "group", "aria-label": "Dedicated channel bot" },
-    problem ? (0, import_react16.createElement)("p", { role: "alert" }, hostText(problem)) : null,
-    pending.map((proposal) => (0, import_react16.createElement)(
+    problem ? (0, import_react19.createElement)("p", { role: "alert" }, hostText(problem)) : null,
+    pending.map((proposal) => (0, import_react19.createElement)(
       "div",
       { key: proposal.proposalId },
-      (0, import_react16.createElement)("p", null, `Create ${proposal.name} and hand over: ${proposal.channelIds.map((id) => channels2.find((channel) => channel.id === id)?.name ?? id).join(", ")}? The default bot will only read these channels.`),
-      (0, import_react16.createElement)("button", { type: "button", disabled: busy, onClick: () => act("confirm_answer_bot", { proposalId: proposal.proposalId }, () => {
+      (0, import_react19.createElement)("p", null, `Create ${proposal.name} and hand over: ${proposal.channelIds.map((id) => channels2.find((channel) => channel.id === id)?.name ?? id).join(", ")}? The default bot will only read these channels.`),
+      (0, import_react19.createElement)("button", { type: "button", disabled: busy, onClick: () => act("confirm_answer_bot", { proposalId: proposal.proposalId }, () => {
         setLocal(null);
         onClose();
       }) }, "Confirm hand-over"),
-      (0, import_react16.createElement)("button", { type: "button", disabled: busy, onClick: () => act("cancel_answer_bot", { proposalId: proposal.proposalId }, () => {
+      (0, import_react19.createElement)("button", { type: "button", disabled: busy, onClick: () => act("cancel_answer_bot", { proposalId: proposal.proposalId }, () => {
         setLocal(null);
         onClose();
       }) }, "Cancel proposal")
     )),
-    (0, import_react16.createElement)("input", { "aria-label": "Bot name", value: name, maxLength: 40, onChange: (event) => setName(event.target.value) }),
-    channels2.map((channel) => (0, import_react16.createElement)(
+    (0, import_react19.createElement)("input", { "aria-label": "Bot name", value: name, maxLength: 40, onChange: (event) => setName(event.target.value) }),
+    channels2.map((channel) => (0, import_react19.createElement)(
       "label",
       { key: channel.id },
-      (0, import_react16.createElement)("input", { type: "checkbox", checked: selected.includes(channel.id), onChange: (event) => setSelected((before) => event.target.checked ? [...before, channel.id] : before.filter((id) => id !== channel.id)) }),
+      (0, import_react19.createElement)("input", { type: "checkbox", checked: selected.includes(channel.id), onChange: (event) => setSelected((before) => event.target.checked ? [...before, channel.id] : before.filter((id) => id !== channel.id)) }),
       channel.name
     )),
-    (0, import_react16.createElement)("button", { type: "button", disabled: busy || !name.trim() || !selected.length, onClick: () => act("propose_answer_bot", { name, channelIds: selected }, (value) => setLocal({ ...value, name, channelIds: selected })) }, "Review hand-over"),
-    (0, import_react16.createElement)("button", { type: "button", disabled: busy, onClick: onClose }, "Close")
+    (0, import_react19.createElement)("button", { type: "button", disabled: busy || !name.trim() || !selected.length, onClick: () => act("propose_answer_bot", { name, channelIds: selected }, (value) => setLocal({ ...value, name, channelIds: selected })) }, "Review hand-over"),
+    (0, import_react19.createElement)("button", { type: "button", disabled: busy, onClick: onClose }, "Close")
   );
 }
 var VISIBILITY = {
@@ -16961,24 +17686,26 @@ var RESUME_MINUTES_MAX = 24 * 60;
 var minutesOf = (ms2) => String(Number.isInteger(ms2) && ms2 >= 6e4 ? Math.round(ms2 / 6e4) : RESUME_MINUTES_DEFAULT);
 var ANSWER_TOOLS = [["read", "Read files"], ["read_image", "Read images"], ["glob", "Find files by name"], ["grep", "Search inside files"]];
 var SHARED_NOTES_MAX = 32e3;
+var STRANGER_REPLY_MAX = 1e3;
+var CODE_WELCOME_MAX = 1e3;
 function SwitchRow({ label, title, on: on2, onChange }) {
-  return (0, import_react16.createElement)(
+  return (0, import_react19.createElement)(
     "div",
     { className: "ot-answer-switch", title },
-    (0, import_react16.createElement)("span", null, label),
-    (0, import_react16.createElement)(
+    (0, import_react19.createElement)("span", null, label),
+    (0, import_react19.createElement)(
       "button",
       { type: "button", role: "switch", className: "bt-switch", "aria-checked": on2, "aria-label": label, onClick: () => onChange(!on2) },
-      (0, import_react16.createElement)("span", { className: "bt-switch-knob", "aria-hidden": true })
+      (0, import_react19.createElement)("span", { className: "bt-switch-knob", "aria-hidden": true })
     )
   );
 }
 function Field({ label, note, children }) {
-  return (0, import_react16.createElement)(
+  return (0, import_react19.createElement)(
     "div",
     { className: "bt-field ot-answer-field" },
-    (0, import_react16.createElement)("label", { className: "ot-answer-label" }, (0, import_react16.createElement)("span", { className: "bt-field-label" }, label), children),
-    note ? (0, import_react16.createElement)("span", { className: "bt-note" }, note) : null
+    (0, import_react19.createElement)("label", { className: "ot-answer-label" }, (0, import_react19.createElement)("span", { className: "bt-field-label" }, label), children),
+    note ? (0, import_react19.createElement)("span", { className: "bt-note" }, note) : null
   );
 }
 function staffChatOptions(chats, threads, chosen, several) {
@@ -16986,23 +17713,68 @@ function staffChatOptions(chats, threads, chosen, several) {
   const options = chats.filter((chat) => !answered.has(chat.id)).map((chat) => ({ id: chat.id, label: several ? `${chat.name ?? chat.id} · ${chat.channel}` : chat.name ?? chat.id }));
   return chosen && !options.some((option) => option.id === chosen) ? [{ id: chosen, label: "The chosen chat" }, ...options] : options;
 }
+function StrangerRequests({ botId, confirmedLabel }) {
+  const [shown, setShown] = (0, import_react19.useState)(false);
+  const [requests, setRequests] = (0, import_react19.useState)(null);
+  const [problem, setProblem] = (0, import_react19.useState)(null);
+  (0, import_react19.useEffect)(() => {
+    if (!shown) return void 0;
+    let alive = true;
+    setProblem(null);
+    call("omni-answer-requests", { botId }).then(
+      (reply) => {
+        if (alive) setRequests(Array.isArray(reply?.requests) ? reply.requests : []);
+      },
+      (error) => {
+        if (alive) setProblem(error.message);
+      }
+    );
+    return () => {
+      alive = false;
+    };
+  }, [shown, botId]);
+  const messages = (count) => `${count} ${count === 1 ? "message" : "messages"}`;
+  return (0, import_react19.createElement)(
+    "div",
+    { className: "ot-answer-requests", role: "group", "aria-label": "Requests" },
+    (0, import_react19.createElement)(
+      "div",
+      { className: "ot-answer-requests-head" },
+      (0, import_react19.createElement)("span", { className: "bt-field-label" }, shown && requests !== null ? `Requests (${requests.length})` : "Requests"),
+      (0, import_react19.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", "aria-expanded": shown, onClick: () => setShown((before) => !before) }, shown ? "Hide" : "Show")
+    ),
+    !shown ? null : problem ? (0, import_react19.createElement)("p", { className: "ot-picker-problem", role: "alert" }, hostText(problem)) : requests === null ? null : requests.length === 0 ? (0, import_react19.createElement)("span", { className: "bt-note" }, "Nobody yet.") : (0, import_react19.createElement)("ul", { className: "ot-requests" }, requests.map((request) => (0, import_react19.createElement)(
+      "li",
+      { key: request.chatUuid, className: "ot-request" },
+      (0, import_react19.createElement)("span", { className: "ot-request-who", title: (request.senders ?? []).join(", ") }, (request.senders ?? []).join(" · ")),
+      (0, import_react19.createElement)("span", { className: "ot-request-text", title: request.text }, request.text),
+      (0, import_react19.createElement)("span", { className: "ot-picker-at" }, `${relativeShort(request.lastAt)} · ${messages(request.count)}`),
+      // #1732: a chat a code from a staff list let in, so staff do not let them in again by hand.
+      request.admitted ? (0, import_react19.createElement)("span", { className: "ot-picker-tag" }, t("Admitted by code")) : null,
+      // #1742: a chat whose code the bot's outside check confirmed, with the label staff set for it.
+      request.confirmed && confirmedLabel ? (0, import_react19.createElement)("span", { className: "ot-picker-tag" }, confirmedLabel) : null
+    )))
+  );
+}
 function AnswerSettings({ bot, value = {}, channels: channels2 = [], threads = [] }) {
-  const [open, setOpen] = (0, import_react16.useState)(false);
-  const [enabled, setEnabled] = (0, import_react16.useState)(value.enabled === true);
-  const [visibility, setVisibility] = (0, import_react16.useState)(value.visibility ?? "isolated");
-  const [allowedTools, setAllowedTools] = (0, import_react16.useState)(value.allowedTools ?? []);
-  const [sharedNotes, setSharedNotes] = (0, import_react16.useState)(value.sharedNotes ?? "");
-  const [newChildMode, setNewChildMode] = (0, import_react16.useState)(value.newChildMode ?? "training");
-  const [graduates, setGraduates] = (0, import_react16.useState)(Number.isInteger(value.graduateAfter));
-  const [graduateAfter, setGraduateAfter] = (0, import_react16.useState)(String(value.graduateAfter ?? 5));
-  const [resumeMinutes, setResumeMinutes] = (0, import_react16.useState)(minutesOf(value.resumeAfterMs));
-  const [knowledgeFolder, setKnowledgeFolder] = (0, import_react16.useState)(value.knowledgeFolder ?? "");
-  const [personBinding, setPersonBinding] = (0, import_react16.useState)(value.personBinding === true);
-  const [staffChat, setStaffChat] = (0, import_react16.useState)(value.needsStaffChatId ?? "");
-  const [staffChats, setStaffChats] = (0, import_react16.useState)([]);
-  const [busy, setBusy] = (0, import_react16.useState)(false);
-  const [problem, setProblem] = (0, import_react16.useState)(null);
-  (0, import_react16.useEffect)(() => {
+  const [open, setOpen] = (0, import_react19.useState)(false);
+  const [enabled, setEnabled] = (0, import_react19.useState)(value.enabled === true);
+  const [visibility, setVisibility] = (0, import_react19.useState)(value.visibility ?? "isolated");
+  const [allowedTools, setAllowedTools] = (0, import_react19.useState)(value.allowedTools ?? []);
+  const [sharedNotes, setSharedNotes] = (0, import_react19.useState)(value.sharedNotes ?? "");
+  const [newChildMode, setNewChildMode] = (0, import_react19.useState)(value.newChildMode ?? "training");
+  const [graduates, setGraduates] = (0, import_react19.useState)(Number.isInteger(value.graduateAfter));
+  const [graduateAfter, setGraduateAfter] = (0, import_react19.useState)(String(value.graduateAfter ?? 5));
+  const [resumeMinutes, setResumeMinutes] = (0, import_react19.useState)(minutesOf(value.resumeAfterMs));
+  const [knowledgeFolder, setKnowledgeFolder] = (0, import_react19.useState)(value.knowledgeFolder ?? "");
+  const [personBinding, setPersonBinding] = (0, import_react19.useState)(value.personBinding === true);
+  const [staffChat, setStaffChat] = (0, import_react19.useState)(value.needsStaffChatId ?? "");
+  const [staffChats, setStaffChats] = (0, import_react19.useState)([]);
+  const [strangerReply, setStrangerReply] = (0, import_react19.useState)(value.strangerReply ?? "");
+  const [codeWelcome, setCodeWelcome] = (0, import_react19.useState)(value.codeWelcome ?? "");
+  const [busy, setBusy] = (0, import_react19.useState)(false);
+  const [problem, setProblem] = (0, import_react19.useState)(null);
+  (0, import_react19.useEffect)(() => {
     setEnabled(value.enabled === true);
     setVisibility(value.visibility ?? "isolated");
     setAllowedTools(value.allowedTools ?? []);
@@ -17014,9 +17786,11 @@ function AnswerSettings({ bot, value = {}, channels: channels2 = [], threads = [
     setKnowledgeFolder(value.knowledgeFolder ?? "");
     setPersonBinding(value.personBinding === true);
     setStaffChat(value.needsStaffChatId ?? "");
-  }, [value.enabled, value.visibility, JSON.stringify(value.allowedTools), value.sharedNotes, value.newChildMode, value.graduateAfter, value.resumeAfterMs, value.knowledgeFolder, value.personBinding, value.needsStaffChatId]);
+    setStrangerReply(value.strangerReply ?? "");
+    setCodeWelcome(value.codeWelcome ?? "");
+  }, [value.enabled, value.visibility, JSON.stringify(value.allowedTools), value.sharedNotes, value.newChildMode, value.graduateAfter, value.resumeAfterMs, value.knowledgeFolder, value.personBinding, value.needsStaffChatId, value.strangerReply, value.codeWelcome]);
   const channelIds = channels2.map((channel) => channel.id).join(",");
-  (0, import_react16.useEffect)(() => {
+  (0, import_react19.useEffect)(() => {
     if (!open || channels2.length === 0) return void 0;
     let alive = true;
     Promise.all(channels2.map((channel) => call("omni-thread-chats", { channelId: channel.id }).then(
@@ -17042,8 +17816,10 @@ function AnswerSettings({ bot, value = {}, channels: channels2 = [], threads = [
     setProblem(null);
     const person = personBinding || value.personBinding === true ? { personBinding } : {};
     const staff = staffChat || value.needsStaffChatId ? { needsStaffChatId: staffChat || null } : {};
+    const stranger = strangerReply.trim() || value.strangerReply ? { strangerReply: strangerReply.trim() || null } : {};
+    const welcome = codeWelcome.trim() || value.codeWelcome ? { codeWelcome: codeWelcome.trim() || null } : {};
     try {
-      await call("omni-answer-settings", { botId: bot.id, enabled, visibility, allowedTools, sharedNotes, newChildMode, graduateAfter: graduates ? count : null, resumeAfterMs: minutes * 6e4, knowledgeFolder: knowledgeFolder.trim() || null, ...person, ...staff });
+      await call("omni-answer-settings", { botId: bot.id, enabled, visibility, allowedTools, sharedNotes, newChildMode, graduateAfter: graduates ? count : null, resumeAfterMs: minutes * 6e4, knowledgeFolder: knowledgeFolder.trim() || null, ...person, ...staff, ...stranger, ...welcome });
       setOpen(false);
     } catch (error) {
       setProblem(error.message);
@@ -17052,38 +17828,38 @@ function AnswerSettings({ bot, value = {}, channels: channels2 = [], threads = [
     }
   };
   const tool = (name, on2) => setAllowedTools((before) => on2 ? [...before.filter((item) => item !== name), name] : before.filter((item) => item !== name));
-  return (0, import_react16.createElement)(
+  return (0, import_react19.createElement)(
     "div",
     null,
-    (0, import_react16.createElement)("button", { type: "button", className: "ot-channel-row", "aria-expanded": open, onClick: () => setOpen((before) => !before) }, "Answer mode"),
-    open ? (0, import_react16.createElement)(
+    (0, import_react19.createElement)("button", { type: "button", className: "ot-channel-row", "aria-expanded": open, onClick: () => setOpen((before) => !before) }, "Answer mode"),
+    open ? (0, import_react19.createElement)(
       "div",
       { className: "ot-picker ot-answer", role: "group", "aria-label": "Answer mode settings" },
-      (0, import_react16.createElement)(SwitchRow, { label: "Answer new messages", on: enabled, onChange: setEnabled }),
-      (0, import_react16.createElement)("p", { className: "bt-note" }, "Each child replies only in its own chat. Switch a child between training and sending from its menu in the list below."),
-      (0, import_react16.createElement)(
+      (0, import_react19.createElement)(SwitchRow, { label: "Answer new messages", on: enabled, onChange: setEnabled }),
+      (0, import_react19.createElement)("p", { className: "bt-note" }, "Each child replies only in its own chat. Switch a child between training and sending from its menu in the list below."),
+      (0, import_react19.createElement)(
         Field,
         { label: "Visibility", note: VISIBILITY[visibility]?.[1] },
-        (0, import_react16.createElement)(
+        (0, import_react19.createElement)(
           "select",
           { className: "bt-select", value: visibility, onChange: (event) => setVisibility(event.target.value) },
-          Object.entries(VISIBILITY).map(([value2, [label]]) => (0, import_react16.createElement)("option", { key: value2, value: value2 }, label))
+          Object.entries(VISIBILITY).map(([value2, [label]]) => (0, import_react19.createElement)("option", { key: value2, value: value2 }, label))
         )
       ),
-      (0, import_react16.createElement)(
+      (0, import_react19.createElement)(
         Field,
         { label: "New children start in", note: NEW_CHILD_MODES[newChildMode]?.[1] },
-        (0, import_react16.createElement)(
+        (0, import_react19.createElement)(
           "select",
           { className: "bt-select", value: newChildMode, onChange: (event) => setNewChildMode(event.target.value) },
-          Object.entries(NEW_CHILD_MODES).map(([value2, [label]]) => (0, import_react16.createElement)("option", { key: value2, value: value2 }, label))
+          Object.entries(NEW_CHILD_MODES).map(([value2, [label]]) => (0, import_react19.createElement)("option", { key: value2, value: value2 }, label))
         )
       ),
-      (0, import_react16.createElement)(SwitchRow, { label: "Switch a training child to sending by itself", on: graduates, onChange: setGraduates }),
-      graduates ? (0, import_react16.createElement)(
+      (0, import_react19.createElement)(SwitchRow, { label: "Switch a training child to sending by itself", on: graduates, onChange: setGraduates }),
+      graduates ? (0, import_react19.createElement)(
         Field,
         { label: "Approved drafts in a row", note: "Only drafts sent unchanged count. An edit or a rejection starts the count again." },
-        (0, import_react16.createElement)("input", {
+        (0, import_react19.createElement)("input", {
           className: "bt-input ot-answer-count",
           type: "number",
           min: 1,
@@ -17095,13 +17871,13 @@ function AnswerSettings({ bot, value = {}, channels: channels2 = [], threads = [
           onChange: (event) => setGraduateAfter(event.target.value)
         })
       ) : null,
-      (0, import_react16.createElement)(
+      (0, import_react19.createElement)(
         Field,
         { label: "Resume a paused child after", note: "A child pauses when staff write in its chat from their own phone. It answers again after this many minutes with no staff message there, or when you press Resume." },
-        (0, import_react16.createElement)(
+        (0, import_react19.createElement)(
           "span",
           { className: "ot-answer-minutes" },
-          (0, import_react16.createElement)("input", {
+          (0, import_react19.createElement)("input", {
             className: "bt-input ot-answer-count",
             type: "number",
             min: 1,
@@ -17112,50 +17888,65 @@ function AnswerSettings({ bot, value = {}, channels: channels2 = [], threads = [
             "aria-invalid": !minutesOk || void 0,
             onChange: (event) => setResumeMinutes(event.target.value)
           }),
-          (0, import_react16.createElement)("span", { "aria-hidden": true }, "minutes")
+          (0, import_react19.createElement)("span", { "aria-hidden": true }, "minutes")
         )
       ),
-      (0, import_react16.createElement)(
+      (0, import_react19.createElement)(
         Field,
         { label: "Staff chat when a person is needed", note: "When a child says its person needs someone from the team, the bot's own chat and the child's row here show it. Pick a chat only staff are in to get a message there too." },
-        (0, import_react16.createElement)(
+        (0, import_react19.createElement)(
           "select",
           { className: "bt-select ot-answer-staff", value: staffChat, onChange: (event) => setStaffChat(event.target.value) },
-          (0, import_react16.createElement)("option", { value: "" }, "None"),
-          staffOptions.map((option) => (0, import_react16.createElement)("option", { key: option.id, value: option.id }, option.label))
+          (0, import_react19.createElement)("option", { value: "" }, "None"),
+          staffOptions.map((option) => (0, import_react19.createElement)("option", { key: option.id, value: option.id }, option.label))
         )
       ),
-      (0, import_react16.createElement)(
+      (0, import_react19.createElement)(
+        Field,
+        { label: "Reply to people who are not let in", note: "Sent once a day to each person no rule lets in. Empty: no reply." },
+        (0, import_react19.createElement)("textarea", { className: "bt-input bt-input-area ot-answer-stranger", maxLength: STRANGER_REPLY_MAX, value: strangerReply, onChange: (event) => setStrangerReply(event.target.value) })
+      ),
+      (0, import_react19.createElement)(StrangerRequests, { botId: bot.id, confirmedLabel: value.outsideCheck?.label ?? null }),
+      (0, import_react19.createElement)(
         "div",
         { className: "ot-answer-tools", role: "group", "aria-label": "Children may also" },
-        (0, import_react16.createElement)("span", { className: "bt-field-label", "aria-hidden": true }, "Children may also"),
-        ANSWER_TOOLS.map(([name, label]) => (0, import_react16.createElement)(SwitchRow, { key: name, label, title: name, on: allowedTools.includes(name), onChange: (on2) => tool(name, on2) }))
+        (0, import_react19.createElement)("span", { className: "bt-field-label", "aria-hidden": true }, "Children may also"),
+        ANSWER_TOOLS.map(([name, label]) => (0, import_react19.createElement)(SwitchRow, { key: name, label, title: name, on: allowedTools.includes(name), onChange: (on2) => tool(name, on2) }))
       ),
       // #1689: the host checks the folder and keeps its real path; no model tool can set it.
-      (0, import_react16.createElement)(
+      (0, import_react19.createElement)(
         Field,
         { label: "Knowledge folder", note: "The business's own files, such as instructions and FAQ. While a folder is set, children read, find and search files there, and nowhere else. Full path; empty for none." },
-        (0, import_react16.createElement)("input", { className: "bt-input ot-answer-folder", type: "text", value: knowledgeFolder, title: knowledgeFolder || void 0, placeholder: "/path/to/folder", spellCheck: false, autoComplete: "off", onChange: (event) => setKnowledgeFolder(event.target.value) })
+        (0, import_react19.createElement)("input", { className: "bt-input ot-answer-folder", type: "text", value: knowledgeFolder, title: knowledgeFolder || void 0, placeholder: "/path/to/folder", spellCheck: false, autoComplete: "off", onChange: (event) => setKnowledgeFolder(event.target.value) })
       ),
-      (0, import_react16.createElement)(SwitchRow, { label: "Bind each child to its person", on: personBinding, onChange: setPersonBinding }),
-      (0, import_react16.createElement)("p", { className: "bt-note" }, "A child then takes the notes and the capability in its person's access rule, and answers only messages that rule lets in. Needs isolated visibility, and the file tools off or limited to a knowledge folder."),
-      (0, import_react16.createElement)(
+      (0, import_react19.createElement)(SwitchRow, { label: "Bind each child to its person", on: personBinding, onChange: setPersonBinding }),
+      (0, import_react19.createElement)("p", { className: "bt-note" }, "A child then takes the notes and the capability in its person's access rule, and answers only messages that rule lets in. Needs isolated visibility, and the file tools off or limited to a knowledge folder."),
+      // #1732: a person whose first message carries an open code from a staff list is let in (host answer-codes.js).
+      (0, import_react19.createElement)(
+        Field,
+        { label: t("Message when a code admits someone"), note: t("Sent to the person once a code from a list admits them; their child answers from their next message. Empty: no message, and the child answers the one with the code.") },
+        (0, import_react19.createElement)("textarea", { className: "bt-input bt-input-area ot-answer-welcome", maxLength: CODE_WELCOME_MAX, value: codeWelcome, onChange: (event) => setCodeWelcome(event.target.value) })
+      ),
+      (0, import_react19.createElement)(CodeLists),
+      // #1742: a code from a person not let in is checked with this outside service (host answer-outside-check.js).
+      (0, import_react19.createElement)(OutsideCheck, { botId: bot.id, value: value.outsideCheck }),
+      (0, import_react19.createElement)(
         Field,
         { label: "Shared notes for collective children" },
-        (0, import_react16.createElement)("textarea", { className: "bt-input bt-input-area", maxLength: SHARED_NOTES_MAX, value: sharedNotes, onChange: (event) => setSharedNotes(event.target.value) })
+        (0, import_react19.createElement)("textarea", { className: "bt-input bt-input-area", maxLength: SHARED_NOTES_MAX, value: sharedNotes, onChange: (event) => setSharedNotes(event.target.value) })
       ),
-      problem ? (0, import_react16.createElement)("p", { className: "ot-picker-problem", role: "alert" }, hostText(problem)) : null,
-      (0, import_react16.createElement)(
+      problem ? (0, import_react19.createElement)("p", { className: "ot-picker-problem", role: "alert" }, hostText(problem)) : null,
+      (0, import_react19.createElement)(
         "div",
         { className: "bt-actions" },
-        (0, import_react16.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: busy || graduates && !countOk || !minutesOk, onClick: save }, "Save answer settings")
+        (0, import_react19.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: busy || graduates && !countOk || !minutesOk, onClick: save }, "Save answer settings")
       )
     ) : null
   );
 }
 function RepairTools({ bot }) {
-  const [busy, setBusy] = (0, import_react16.useState)(false);
-  const [result, setResult] = (0, import_react16.useState)(null);
+  const [busy, setBusy] = (0, import_react19.useState)(false);
+  const [result, setResult] = (0, import_react19.useState)(null);
   const repair = async () => {
     setBusy(true);
     setResult(null);
@@ -17168,11 +17959,11 @@ function RepairTools({ bot }) {
       setBusy(false);
     }
   };
-  return (0, import_react16.createElement)(
+  return (0, import_react19.createElement)(
     "div",
     null,
-    (0, import_react16.createElement)("button", { type: "button", className: "ot-channel-row", disabled: busy, title: "For a bot whose every turn fails with a tool error", onClick: repair }, busy ? "Repairing tools…" : "Repair tools"),
-    result ? (0, import_react16.createElement)("p", { className: result.ok ? "ot-picker-note" : "ot-picker-problem", role: result.ok ? "status" : "alert" }, result.text) : null
+    (0, import_react19.createElement)("button", { type: "button", className: "ot-channel-row", disabled: busy, title: "For a bot whose every turn fails with a tool error", onClick: repair }, busy ? "Repairing tools…" : "Repair tools"),
+    result ? (0, import_react19.createElement)("p", { className: result.ok ? "ot-picker-note" : "ot-picker-problem", role: result.ok ? "status" : "alert" }, result.text) : null
   );
 }
 function waitingOf(roster, botId) {
@@ -17183,11 +17974,11 @@ function waitingOf(roster, botId) {
 function OmniTree(props) {
   const { bot, actions, roster } = props;
   const state = useOmni();
-  const omni2 = (0, import_react16.useMemo)(() => omniActions((id) => actions.selectPanel(id), call), [actions]);
-  const [open, setOpen] = (0, import_react16.useState)(readOpen);
-  const [picking, setPicking] = (0, import_react16.useState)(null);
-  const [creatingBot, setCreatingBot] = (0, import_react16.useState)(false);
-  (0, import_react16.useEffect)(() => {
+  const omni2 = (0, import_react19.useMemo)(() => omniActions((id) => actions.selectPanel(id), call), [actions]);
+  const [open, setOpen] = (0, import_react19.useState)(readOpen);
+  const [picking, setPicking] = (0, import_react19.useState)(null);
+  const [creatingBot, setCreatingBot] = (0, import_react19.useState)(false);
+  (0, import_react19.useEffect)(() => {
     startLive(call);
   }, []);
   if (!isOmniBot(bot)) return null;
@@ -17200,14 +17991,14 @@ function OmniTree(props) {
   const ownedChannels = state.channels.filter((channel) => ownerOf(channel.id) === bot.id);
   const ownedState = { ...state, channels: ownedChannels };
   const ownedView = { ...roster, omniThreads: threads };
-  const others = (list) => list.length === 0 ? null : (0, import_react16.createElement)(
+  const others = (list) => list.length === 0 ? null : (0, import_react19.createElement)(
     "div",
     { className: "ot-others", role: "group", "aria-label": t("Other chats") },
-    (0, import_react16.createElement)("span", { className: "ot-empty" }, t("Other chats")),
-    list.map((thread) => (0, import_react16.createElement)(ThreadRow, { key: rowKey(thread, rowProps), thread, actions, rowProps }))
+    (0, import_react19.createElement)("span", { className: "ot-empty" }, t("Other chats")),
+    list.map((thread) => (0, import_react19.createElement)(ThreadRow, { key: rowKey(thread, rowProps), thread, actions, rowProps }))
   );
   if (state.preview) {
-    return (0, import_react16.createElement)("div", { className: "ot-tree" }, (0, import_react16.createElement)("button", { type: "button", className: "ot-channel-row ot-link", onClick: openConnectWizard }, t("Connect Omni"), (0, import_react16.createElement)("span", { "aria-hidden": true }, " →")), others(threads));
+    return (0, import_react19.createElement)("div", { className: "ot-tree" }, (0, import_react19.createElement)("button", { type: "button", className: "ot-channel-row ot-link", onClick: openConnectWizard }, t("Connect Omni"), (0, import_react19.createElement)("span", { "aria-hidden": true }, " →")), others(threads));
   }
   const change = (id, show) => setOpen((before) => {
     const next = new Set(before);
@@ -17219,20 +18010,20 @@ function OmniTree(props) {
   const plus = plusOf(roster, state);
   const listed = new Set(ownedChannels.map((channel) => channel.id));
   const waiting = waitingOf(roster, bot.id);
-  return (0, import_react16.createElement)(
+  return (0, import_react19.createElement)(
     "div",
     { className: "ot-tree", role: "group", "aria-label": t("{name}'s channels", { name: bot.name }) },
-    waiting ? (0, import_react16.createElement)(
+    waiting ? (0, import_react19.createElement)(
       "div",
       { className: "ot-channel-row ot-waiting", role: "status", title: waiting.title, "aria-label": `${waiting.count} ${waiting.label}` },
-      (0, import_react16.createElement)("span", { className: "ot-count", "aria-hidden": true }, String(waiting.count)),
-      (0, import_react16.createElement)("span", { className: "ot-waiting-text", "aria-hidden": true }, waiting.label)
+      (0, import_react19.createElement)("span", { className: "ot-count", "aria-hidden": true }, String(waiting.count)),
+      (0, import_react19.createElement)("span", { className: "ot-waiting-text", "aria-hidden": true }, waiting.label)
     ) : null,
-    (0, import_react16.createElement)(AnswerSettings, { bot, value: roster?.omniAnswers?.[bot.id], channels: ownedChannels, threads }),
-    (0, import_react16.createElement)(RepairTools, { bot }),
-    bot.id === defaultBotId ? (0, import_react16.createElement)("button", { type: "button", className: "ot-channel-row", onClick: () => setCreatingBot((value) => !value) }, "Add channel bot") : null,
-    bot.id === defaultBotId && (creatingBot || roster?.omniBotProposals?.length > 0) ? (0, import_react16.createElement)(ChannelBotForm, { channels: state.channels, roster, onClose: () => setCreatingBot(false) }) : null,
-    ownedChannels.map((channel) => (0, import_react16.createElement)(ChannelItem, {
+    (0, import_react19.createElement)(AnswerSettings, { bot, value: roster?.omniAnswers?.[bot.id], channels: ownedChannels, threads }),
+    (0, import_react19.createElement)(RepairTools, { bot }),
+    bot.id === defaultBotId ? (0, import_react19.createElement)("button", { type: "button", className: "ot-channel-row", onClick: () => setCreatingBot((value) => !value) }, "Add channel bot") : null,
+    bot.id === defaultBotId && (creatingBot || roster?.omniBotProposals?.length > 0) ? (0, import_react19.createElement)(ChannelBotForm, { channels: state.channels, roster, onClose: () => setCreatingBot(false) }) : null,
+    ownedChannels.map((channel) => (0, import_react19.createElement)(ChannelItem, {
       key: channel.id,
       channel,
       state: ownedState,
@@ -17261,7 +18052,7 @@ function OmniTree(props) {
 var threadDocks = 0;
 function ThreadDock({ sessionId, useRoster }) {
   const thread = useRoster((roster) => isThreadSession(roster, sessionId));
-  (0, import_react16.useEffect)(() => {
+  (0, import_react19.useEffect)(() => {
     if (!thread || typeof document === "undefined") return void 0;
     threadDocks += 1;
     document.body.dataset.omniThread = "";
@@ -17369,6 +18160,13 @@ ${stackedRow(".ot-thread[data-answer]:has(.ot-thread-reason)")}
 .ot-answer .ot-answer-staff{box-sizing:border-box;width:100%;min-width:0}
 .ot-answer .bt-input[aria-invalid=true]{border-color:var(--bt-danger, #dc2626)}
 .ot-answer .bt-actions{justify-content:flex-end}
+.ot-answer-requests{display:grid;gap:6px;min-width:0}
+.ot-answer-requests-head{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}
+.ot-requests{display:grid;gap:6px;max-height:220px;margin:0;padding:0;overflow-y:auto;list-style:none}
+.ot-request{display:grid;gap:1px;min-width:0;padding:6px 8px;border:1px solid var(--bt-line, rgba(127,127,127,.2));border-radius:8px}
+.ot-request-who,.ot-request-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12.5px;line-height:17px}
+.ot-request-who{color:var(--bt-ink);font-variant-numeric:tabular-nums}
+.ot-request-text{color:var(--bt-ink-2)}
 .ot-thread-remove[data-confirm]{color:var(--bt-danger, #dc2626)}
 .ot-thread-problem{flex-basis:100%;padding:0 8px 3px 28px;font-size:11px;color:var(--bt-danger, #dc2626)}
 .ot-picker{display:grid;grid-template-columns:minmax(0,1fr);gap:4px;margin:2px 0 4px;padding:6px;border:1px solid var(--bt-line, rgba(127,127,127,.2));border-radius:10px;background:var(--bt-surface, transparent)}
@@ -17398,11 +18196,11 @@ ${stackedRow(".ot-thread[data-answer]:has(.ot-thread-reason)")}
 @keyframes ot-in{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion:reduce){.ot-chats{transition:none}.ot-chats .ot-thread{animation:none}.ot-chevron{transition:none}.ot-thread-acts{transition:none}}
 body[data-omni-thread] .bt-voice,body[data-omni-thread] .bt-plus,body[data-omni-thread] .bt-composer-model,body[data-omni-thread] .bt-mw-dock,body[data-omni-thread] .bt-btw-dock{display:none!important}
-`;
+${CODE_LISTS_CSS}${OUTSIDE_CHECK_CSS}`;
 
 // src/client/permissions.js
-var import_react17 = require("react");
-var NONE = {};
+var import_react20 = require("react");
+var NONE2 = {};
 var ASKING_TOOLS = ["omni_messages", "omni_send", "omni_react", "omni_media", "omni_delete", "omni_call"];
 var KIND_OF = { chat: "chat", group: "group", self: "your own chat", channel: "channel" };
 var kindText = (resource) => t(KIND_OF[resource?.type] ?? "chat");
@@ -17432,19 +18230,19 @@ function reachText(entry) {
 }
 var CONFIRM_LABEL = { send: "Send", delete: "Delete", disconnect: "Disconnect", react: "React" };
 function Preview({ entry }) {
-  const preview = entry.preview ?? NONE;
+  const preview = entry.preview ?? NONE2;
   const lines = [];
-  if (entry.resource?.type === "call") lines.push((0, import_react17.createElement)("code", { key: "op", className: "om-perm-op" }, `${preview.method ?? ""} ${preview.path ?? ""}${preview.query ? ` ?${preview.query}` : ""}`.trim()));
-  if (preview.channel) lines.push((0, import_react17.createElement)("div", { key: "channel", className: "om-perm-to" }, t("From {channel}", { channel: preview.channel })));
-  if (preview.to) lines.push((0, import_react17.createElement)("div", { key: "to", className: "om-perm-to" }, t("To {to}", { to: preview.to })));
-  if (preview.emoji) lines.push((0, import_react17.createElement)("div", { key: "emoji", className: "om-perm-emoji" }, preview.emoji));
-  if (preview.text) lines.push((0, import_react17.createElement)("blockquote", { key: "text", className: "om-perm-text" }, preview.text));
-  if (preview.body) lines.push((0, import_react17.createElement)("pre", { key: "body", className: "om-perm-body" }, preview.body));
-  return lines.length === 0 ? null : (0, import_react17.createElement)("div", { className: "om-perm-preview" }, lines);
+  if (entry.resource?.type === "call") lines.push((0, import_react20.createElement)("code", { key: "op", className: "om-perm-op" }, `${preview.method ?? ""} ${preview.path ?? ""}${preview.query ? ` ?${preview.query}` : ""}`.trim()));
+  if (preview.channel) lines.push((0, import_react20.createElement)("div", { key: "channel", className: "om-perm-to" }, t("From {channel}", { channel: preview.channel })));
+  if (preview.to) lines.push((0, import_react20.createElement)("div", { key: "to", className: "om-perm-to" }, t("To {to}", { to: preview.to })));
+  if (preview.emoji) lines.push((0, import_react20.createElement)("div", { key: "emoji", className: "om-perm-emoji" }, preview.emoji));
+  if (preview.text) lines.push((0, import_react20.createElement)("blockquote", { key: "text", className: "om-perm-text" }, preview.text));
+  if (preview.body) lines.push((0, import_react20.createElement)("pre", { key: "body", className: "om-perm-body" }, preview.body));
+  return lines.length === 0 ? null : (0, import_react20.createElement)("div", { className: "om-perm-preview" }, lines);
 }
 function ConsentCard({ bot, entry }) {
-  const [busy, setBusy] = (0, import_react17.useState)("");
-  const [error, setError] = (0, import_react17.useState)("");
+  const [busy, setBusy] = (0, import_react20.useState)("");
+  const [error, setError] = (0, import_react20.useState)("");
   const answer = (choice) => {
     if (busy) return;
     setBusy(choice);
@@ -17453,37 +18251,37 @@ function ConsentCard({ bot, entry }) {
   };
   const running = entry.status === "running";
   const confirm2 = entry.kind === "confirm";
-  const button = (choice, label, primary = false) => (0, import_react17.createElement)("button", {
+  const button = (choice, label, primary = false) => (0, import_react20.createElement)("button", {
     type: "button",
     className: primary ? "bt-q-submit" : "bt-q-btn",
     disabled: Boolean(busy) || running,
     onClick: () => answer(choice)
   }, busy === choice ? "…" : label);
-  return (0, import_react17.createElement)(
+  return (0, import_react20.createElement)(
     "div",
     { className: "bt-q om-perm", role: "group", "aria-label": askTitle(bot, entry), "data-kind": entry.kind },
-    (0, import_react17.createElement)(
+    (0, import_react20.createElement)(
       "div",
       { className: "bt-q-head" },
-      (0, import_react17.createElement)("span", { className: "om-perm-who" }, (0, import_react17.createElement)(BotMark, { bot, size: 28 })),
-      (0, import_react17.createElement)(
+      (0, import_react20.createElement)("span", { className: "om-perm-who" }, (0, import_react20.createElement)(BotMark, { bot, size: 28 })),
+      (0, import_react20.createElement)(
         "div",
         { className: "bt-q-text" },
-        (0, import_react17.createElement)("p", { className: "bt-q-title" }, askTitle(bot, entry)),
-        (0, import_react17.createElement)("div", { className: "bt-q-detail" }, reachText(entry))
+        (0, import_react20.createElement)("p", { className: "bt-q-title" }, askTitle(bot, entry)),
+        (0, import_react20.createElement)("div", { className: "bt-q-detail" }, reachText(entry))
       )
     ),
-    (0, import_react17.createElement)(Preview, { entry }),
-    error ? (0, import_react17.createElement)("div", { className: "om-perm-error", role: "alert" }, error) : null,
-    (0, import_react17.createElement)(
+    (0, import_react20.createElement)(Preview, { entry }),
+    error ? (0, import_react20.createElement)("div", { className: "om-perm-error", role: "alert" }, error) : null,
+    (0, import_react20.createElement)(
       "div",
       { className: "bt-q-foot" },
-      running ? (0, import_react17.createElement)("span", { className: "om-perm-running" }, t("Running…")) : null,
-      confirm2 ? [(0, import_react17.createElement)("span", { key: "deny" }, button("deny", t("Cancel"))), (0, import_react17.createElement)("span", { key: "once" }, button("once", t(CONFIRM_LABEL[entry.action] ?? "Allow"), true))] : [
-        (0, import_react17.createElement)("span", { key: "deny" }, button("deny", t("No"))),
-        (0, import_react17.createElement)("span", { key: "once" }, button("once", t("Once"))),
-        entry.resource?.channelId && entry.resource.channelName ? (0, import_react17.createElement)("span", { key: "channel" }, button("channel", t("Always, all of {channel}", { channel: entry.resource.channelName }))) : null,
-        (0, import_react17.createElement)("span", { key: "always" }, button("always", t("Always"), true))
+      running ? (0, import_react20.createElement)("span", { className: "om-perm-running" }, t("Running…")) : null,
+      confirm2 ? [(0, import_react20.createElement)("span", { key: "deny" }, button("deny", t("Cancel"))), (0, import_react20.createElement)("span", { key: "once" }, button("once", t(CONFIRM_LABEL[entry.action] ?? "Allow"), true))] : [
+        (0, import_react20.createElement)("span", { key: "deny" }, button("deny", t("No"))),
+        (0, import_react20.createElement)("span", { key: "once" }, button("once", t("Once"))),
+        entry.resource?.channelId && entry.resource.channelName ? (0, import_react20.createElement)("span", { key: "channel" }, button("channel", t("Always, all of {channel}", { channel: entry.resource.channelName }))) : null,
+        (0, import_react20.createElement)("span", { key: "always" }, button("always", t("Always"), true))
       ]
     )
   );
@@ -17498,10 +18296,10 @@ var SETTLED = {
   replaced: "Asked again"
 };
 function Settled({ bot, entry }) {
-  return (0, import_react17.createElement)(
+  return (0, import_react20.createElement)(
     "div",
     { className: "bt-event om-perm-done", "data-status": entry.status },
-    (0, import_react17.createElement)(BotMark, { bot, size: 16 }),
+    (0, import_react20.createElement)(BotMark, { bot, size: 16 }),
     ` ${askTitle(bot, entry)} · ${t(SETTLED[entry.status] ?? entry.status)}`
   );
 }
@@ -17512,21 +18310,21 @@ function withConsent(render) {
     const callId = props.call?.callId;
     const entry = bot && callId ? entryAt(props.roster, bot, props.sessionId, callId) : void 0;
     if (entry === void 0) {
-      if (props.done && /^(consent|confirmation)_required:/.test(props.content ?? "")) return (0, import_react17.createElement)("div", { className: "bt-event" }, t("Asked you for permission in its chat"));
+      if (props.done && /^(consent|confirmation)_required:/.test(props.content ?? "")) return (0, import_react20.createElement)("div", { className: "bt-event" }, t("Asked you for permission in its chat"));
       return render ? render(props) : null;
     }
-    return (0, import_react17.createElement)("div", { className: "bt-q-inline" }, entry.status === "pending" || entry.status === "running" ? (0, import_react17.createElement)(ConsentCard, { bot, entry }) : (0, import_react17.createElement)(Settled, { bot, entry }));
+    return (0, import_react20.createElement)("div", { className: "bt-q-inline" }, entry.status === "pending" || entry.status === "running" ? (0, import_react20.createElement)(ConsentCard, { bot, entry }) : (0, import_react20.createElement)(Settled, { bot, entry }));
   };
 }
 function ConsentDock({ sessionId, useRoster, useCards }) {
   const roster = useRoster((value) => value);
-  const shown = useCards?.((state) => state[sessionId]) ?? NONE;
+  const shown = useCards?.((state) => state[sessionId]) ?? NONE2;
   const bot = roster.byId?.[sessionId];
   if (!bot || (bot.sessionId ?? bot.id) !== sessionId) return null;
   const drawn = (entry) => entry.callId && entry.sessionId === sessionId && shown[entry.callId] > 0;
   const waiting = (roster.omniConsents?.[bot.id] ?? []).filter((entry) => (entry.status === "pending" || entry.status === "running") && !drawn(entry));
   if (waiting.length === 0) return null;
-  return (0, import_react17.createElement)("div", { className: "bt-q-dock om-perm-dock" }, waiting.map((entry) => (0, import_react17.createElement)(ConsentCard, { key: entry.id, bot, entry })));
+  return (0, import_react20.createElement)("div", { className: "bt-q-dock om-perm-dock" }, waiting.map((entry) => (0, import_react20.createElement)(ConsentCard, { key: entry.id, bot, entry })));
 }
 var ACTION_TEXT = { read: "read", media: "files", send: "send", react: "react", delete: "delete" };
 function PermissionsCard({ bot, roster, run, Card, SwitchRow: SwitchRow2 }) {
@@ -17535,35 +18333,35 @@ function PermissionsCard({ bot, roster, run, Card, SwitchRow: SwitchRow2 }) {
   const grants = (roster.omniGrants ?? []).filter((grant) => grant.botId === bot.id);
   const now = Date.now();
   if (main) {
-    return (0, import_react17.createElement)(
+    return (0, import_react20.createElement)(
       Card,
       { title: t("On Omni") },
-      (0, import_react17.createElement)("div", { className: "bt-set-row bt-bs-row" }, (0, import_react17.createElement)(
+      (0, import_react20.createElement)("div", { className: "bt-set-row bt-bs-row" }, (0, import_react20.createElement)(
         "span",
         { className: "bt-set-copy" },
-        (0, import_react17.createElement)("span", { className: "bt-bs-label" }, t("All of Omni")),
-        (0, import_react17.createElement)("span", { className: "bt-set-hint" }, t("Omni and Main Bots operate Omni. Messaging a person, deleting and disconnecting still ask you first."))
+        (0, import_react20.createElement)("span", { className: "bt-bs-label" }, t("All of Omni")),
+        (0, import_react20.createElement)("span", { className: "bt-set-hint" }, t("Omni and Main Bots operate Omni. Messaging a person, deleting and disconnecting still ask you first."))
       ))
     );
   }
-  return (0, import_react17.createElement)(
+  return (0, import_react20.createElement)(
     Card,
     { title: t("On Omni") },
-    grants.length === 0 ? (0, import_react17.createElement)("div", { className: "bt-set-row bt-bs-row" }, (0, import_react17.createElement)(
+    grants.length === 0 ? (0, import_react20.createElement)("div", { className: "bt-set-row bt-bs-row" }, (0, import_react20.createElement)(
       "span",
       { className: "bt-set-copy" },
-      (0, import_react17.createElement)("span", { className: "bt-bs-label" }, t("Nothing yet")),
-      (0, import_react17.createElement)("span", { className: "bt-set-hint" }, t("When {bot} needs a chat, it asks you there, on a card.", { bot: bot.name }))
-    )) : grants.map((grant) => (0, import_react17.createElement)(
+      (0, import_react20.createElement)("span", { className: "bt-bs-label" }, t("Nothing yet")),
+      (0, import_react20.createElement)("span", { className: "bt-set-hint" }, t("When {bot} needs a chat, it asks you there, on a card.", { bot: bot.name }))
+    )) : grants.map((grant) => (0, import_react20.createElement)(
       "div",
       { key: grant.id, className: "om-grant" },
-      (0, import_react17.createElement)(SwitchRow2, {
+      (0, import_react20.createElement)(SwitchRow2, {
         label: `${grant.resource?.name ?? t("a chat")} · ${grant.actions.map((action) => t(ACTION_TEXT[action] ?? action)).join(", ")}`,
         hint: [kindText(grant.resource), typeof grant.expiresAt === "number" && grant.expiresAt <= now ? t("expired") : "", t("Ask each time")].filter(Boolean).join(" · "),
         on: grant.approval === "confirm",
         onChange: (on2) => run(call("omni-grant-approval", { id: grant.id, approval: on2 ? "confirm" : "auto" }))
       }),
-      (0, import_react17.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm om-grant-revoke", onClick: () => run(call("omni-grant-revoke", { id: grant.id })) }, t("Revoke"))
+      (0, import_react20.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm om-grant-revoke", onClick: () => run(call("omni-grant-revoke", { id: grant.id })) }, t("Revoke"))
     ))
   );
 }
@@ -18303,15 +19101,22 @@ var STRINGS = {
   "Sticker": "贴纸",
   "not available": "无法显示",
   "Play video": "播放视频",
-  // The phone pane: a thread's chat in a drawn phone, in DSH's right column (omni-phone.js).
-  "Phone pane": "手机面板",
+  // The chat pane: a thread's chat in DSH's right column (omni-phone.js); its tab is the team's
+  // "Chat", its region the team's "Chat with {name}".
   "Phone": "手机",
   "Show {name} in the phone pane": "在手机面板中显示 {name}",
-  "{name} on the phone": "手机上的 {name}",
-  "The phone pane needs DSH's right column.": "手机面板需要 DSH 的右侧栏。",
-  "Open a conversation first; the phone pane opens beside it.": "请先打开一个对话；手机面板会在它旁边打开。",
+  "The chat needs DSH's right column.": "聊天需要 DSH 的右侧栏。",
+  "Open a conversation first; the chat opens beside it.": "请先打开一个对话；聊天会在它旁边打开。",
   "This chat is no longer in the sidebar.": "这个聊天已不在侧边栏中。",
-  "Open the phone pane from a chat in the sidebar.": "请从侧边栏中的聊天打开手机面板。",
+  "Open a chat from the sidebar to see it here.": "从侧边栏打开一个聊天，即可在这里查看。",
+  // The chat view (channels.js): delivery marks and the message bar's emoji picker.
+  "Waiting to send": "等待发送",
+  "Sent": "已发送",
+  "Delivered": "已送达",
+  "Seen": "已读",
+  "Not delivered": "未送达",
+  "Emoji": "表情",
+  "Pick an emoji": "选择表情",
   "Not configured": "未配置",
   "Meta webhook setup": "Meta Webhook 设置",
   "Show webhook setup": "显示 Webhook 设置",
@@ -18337,12 +19142,75 @@ var STRINGS = {
   "Always allow send": "始终允许发送",
   "Sends into this chat go without asking you": "发送到这个聊天的消息不再询问你",
   "Each send into this chat asks you first": "每次发送到这个聊天都会先询问你",
-  "The Verify token is not your Graph API access token. Connection alone does not verify the webhook; Meta must be able to reach this HTTPS URL.": "验证令牌不是 Graph API 访问令牌。连接成功不代表 Webhook 已验证；Meta 必须能够访问此 HTTPS URL。"
+  // #1715: staff's own composer in the chat pane, and the host's refusals for its sends.
+  "The bot's draft, waiting on its card": "机器人的草稿，正在等待审批卡片",
+  "Reject the bot's draft on its card": "请在审批卡片上拒绝机器人的草稿",
+  "Editing the bot's draft": "正在编辑机器人的草稿",
+  "Write your own message": "输入你自己的消息",
+  "Your message": "你的消息",
+  "Write a message of 1 to 4096 characters.": "请输入 1 到 4096 个字符的消息。",
+  "Pick a thread, and send only its message.": "请选择一个聊天线程，并只发送它的消息。",
+  "The message before this one is still being sent.": "上一条消息仍在发送中。",
+  "Could not reach Omni. Nothing was sent.": "无法连接 Omni。没有发送任何内容。",
+  "Omni did not answer, so this message may have gone out. Check the chat before sending it again.": "Omni 没有回应，这条消息可能已经发出。再次发送前请先查看聊天。",
+  "The Verify token is not your Graph API access token. Connection alone does not verify the webhook; Meta must be able to reach this HTTPS URL.": "验证令牌不是 Graph API 访问令牌。连接成功不代表 Webhook 已验证；Meta 必须能够访问此 HTTPS URL。",
+  // #1732: code lists that let a person in, and code patterns.
+  "Admitted by code": "已凭代码加入",
+  "Message when a code admits someone": "代码让某人加入时发送的消息",
+  "Sent to the person once a code from a list admits them; their child answers from their next message. Empty: no message, and the child answers the one with the code.": "列表中的代码让此人加入后发送给对方；其子代理从对方的下一条消息开始回复。留空：不发送消息，由子代理回复带代码的那条消息。",
+  "Code lists": "代码列表",
+  "Code lists ({n})": "代码列表（{n}）",
+  "A person whose first message carries an open code from a list is let in, once. Each code admits one person.": "首条消息带有列表中有效代码的人会被允许加入，仅一次。每个代码只让一个人加入。",
+  "List name": "列表名称",
+  "Rule details": "规则详情",
+  'Copied into the allow rule of each person a code from this list admits. One "key = value" a line, or a JSON object.': '会复制到此列表代码让其加入的每个人的允许规则中。每行一个 "key = value"，或一个 JSON 对象。',
+  "Codes to add": "要添加的代码",
+  "One code a line: code, expires YYYY-MM-DD. Or paste a JSON list.": "每行一个代码：代码, expires YYYY-MM-DD。或粘贴一个 JSON 列表。",
+  "Add codes": "添加代码",
+  "No codes yet.": "还没有代码。",
+  "Used": "已使用",
+  "{open} open of {count}": "{count} 个中 {open} 个可用",
+  "{list} · expires {day}": "{list} · {day} 到期",
+  "Added {added}, updated {updated}.": "已添加 {added} 个，已更新 {updated} 个。",
+  "{n} already used, left as they were.": "{n} 个已使用，保持不变。",
+  "Name the list.": "请为列表命名。",
+  "Paste at least one code.": "请至少粘贴一个代码。",
+  "The JSON could not be read.": "无法读取该 JSON。",
+  "The JSON must be a list of codes.": "该 JSON 必须是代码列表。",
+  "Line {n}: write code, expires YYYY-MM-DD.": "第 {n} 行：请写成 代码, expires YYYY-MM-DD。",
+  "The rule details JSON could not be read.": "无法读取规则详情 JSON。",
+  "The rule details JSON must be an object.": "规则详情 JSON 必须是一个对象。",
+  "Rule details line {n}: write key = value.": "规则详情第 {n} 行：请写成 key = value。",
+  "Code pattern": "代码格式",
+  "Prefix (optional)": "前缀（可选）",
+  "Prefix": "前缀",
+  "Length": "长度",
+  "Characters after the prefix": "前缀后的字符",
+  "Read look-alike characters as one (O and 0; I, L and 1)": "把形近字符视为同一个（O 和 0；I、L 和 1）",
+  "look-alikes read as one": "形近字符视为相同",
+  "{prefix} then {length} of {characters}": "{prefix} 后接 {length} 个 {characters} 中的字符",
+  "{length} of {characters}": "{length} 个 {characters} 中的字符",
+  "Type the characters a code may have: letters and digits.": "请输入代码可用的字符：字母和数字。",
+  "The length is a whole number from {min} to {max}.": "长度是 {min} 到 {max} 之间的整数。",
+  "This list's pattern is set; new codes must fit it.": "此列表的格式已确定；新代码必须符合它。",
+  "Case never matters. A code stands alone in the message, not inside a longer word or number.": "不区分大小写。代码在消息中单独出现，不在更长的单词或数字之中。",
+  // #1742: the outside code check.
+  "Outside code check": "外部代码核对",
+  "A code of this pattern in the message of someone not let in is sent to this HTTPS address, and its reply goes to them. On only when the address, the secret and the pattern are all set.": "未获准加入的人在消息中附带的符合此格式的代码会发送到这个 HTTPS 地址，其回复会发给对方。只有地址、密钥和格式都设置后才会启用。",
+  "Check URL": "核对地址",
+  "Secret": "密钥",
+  "New secret": "新密钥",
+  "The secret is cleared.": "密钥已清除。",
+  "Label on a confirmed row": "已确认行的标签",
+  "Staff see it on a request row the service confirmed. Empty: no label.": "员工会在服务已确认的请求行上看到它。留空：不显示标签。",
+  "Tier name": "级别名称",
+  "Written on a request row the service confirmed. Empty: none.": "写入服务已确认的请求行。留空：不写入。",
+  "Give the pattern a prefix, so that ordinary words never go to the outside check.": "请为格式设置前缀，这样普通词语永远不会发送到外部核对。"
 };
 
 // src/client/index.js
-var import_react18 = require("react");
-var { ClockIcon: ClockIcon2 } = icons;
+var import_react21 = require("react");
+var { ClockIcon: ClockIcon3 } = icons;
 var inject = ["slots"];
 var channels = Object.freeze({ Badge, KeyValue, LiveChannel, LiveChat, LiveQr, Table });
 var boardRight = null;
@@ -18356,10 +19224,10 @@ function toggleBoard(reportError, botId) {
     reportError?.(error, "board");
   }
 }
-function installBoard(ctx, face) {
+function installBoard(ctx, face2) {
   const fiber = ctx.inject(["sidebarRight", "sidebarRightTabs"], (scope) => {
     scope.effect(() => scope.sidebarRightTabs.register(boardTabDefinition()), "ds-bot: subscriptions tab type");
-    scope.effect(() => ctx.slots.inject("sidebar.right.pane.tab", () => ctx.slots.register({ name: "sidebar.right.pane.tab", key: BOARD_TAB_ID, inject: face }, BoardTab)), "ds-bot: subscriptions tab");
+    scope.effect(() => ctx.slots.inject("sidebar.right.pane.tab", () => ctx.slots.register({ name: "sidebar.right.pane.tab", key: BOARD_TAB_ID, inject: face2 }, BoardTab)), "ds-bot: subscriptions tab");
     scope.effect(() => {
       boardRight = scope.sidebarRight;
       return () => {
@@ -18383,8 +19251,8 @@ var PHRASES = {
   omni_media: () => ({ label: t("Opening a file"), state: "working" }),
   omni_delete: () => ({ label: t("Deleting a message"), state: "working" })
 };
-var callCard = ({ arg, content, done }) => (0, import_react18.createElement)(OmniCallCard, { ...parseCall(arg, content), done });
-var toolCard = ({ tool, arg, content, done }) => (0, import_react18.createElement)(OmniToolCard, { tool, arg, content, done });
+var callCard = ({ arg, content, done }) => (0, import_react21.createElement)(OmniCallCard, { ...parseCall(arg, content), done });
+var toolCard = ({ tool, arg, content, done }) => (0, import_react21.createElement)(OmniToolCard, { tool, arg, content, done });
 function apply(ctx) {
   ctx.effect(() => addStrings(STRINGS), "ds-bot: channels copy");
   registerConnectStep(ctx);
@@ -18402,33 +19270,34 @@ function apply(ctx) {
   }
   if (botSettings) ctx.effect(() => botSettings.register({ id: "omni-permissions", order: 0, Component: PermissionsCard }), "ds-bot: Omni permissions settings");
   for (const name of ["find_chats", "omni_endpoints"]) ctx.effect(() => toolCards.register(name, null, { phrase: PHRASES[name] }), `ds-bot: ${name} phrase`);
-  ctx.effect(() => toolCards.register("save_automation", (props) => (0, import_react18.createElement)(SavedAutomationCard, props), { phrase: PHRASES.save_automation }), "ds-bot: save_automation card");
-  ctx.effect(() => badges.register({ id: "omni-events", Component: ({ bot, roster, useWork }) => isEventsBot(roster, bot.id) ? (0, import_react18.createElement)(EventsBadge, { roster, useWork, botId: bot.id }) : null }), "ds-bot: automations badge");
+  ctx.effect(() => toolCards.register("save_automation", (props) => (0, import_react21.createElement)(SavedAutomationCard, props), { phrase: PHRASES.save_automation }), "ds-bot: save_automation card");
+  ctx.effect(() => badges.register({ id: "omni-events", Component: ({ bot, roster, useWork }) => isEventsBot(roster, bot.id) ? (0, import_react21.createElement)(EventsBadge, { roster, useWork, botId: bot.id }) : null }), "ds-bot: automations badge");
   if (botChildren) ctx.effect(() => botChildren.register({ id: "omni-channels", Component: OmniTree }), "ds-bot: Omni channels in the sidebar");
+  if (botChannels?.register) ctx.effect(() => registerBotChannels(botChannels), "omni-channels: channels in the left bar");
   ctx.effect(() => headerButtons.register({
     id: "omni-board",
-    Component: ({ bot, roster, actions, useWork }) => isEventsBot(roster, bot.id) ? (0, import_react18.createElement)(SubscriptionsButton, { roster, useWork, botId: bot.id, onToggle: () => toggleBoard(actions.reportError, bot.id) }) : null
+    Component: ({ bot, roster, actions, useWork }) => isEventsBot(roster, bot.id) ? (0, import_react21.createElement)(SubscriptionsButton, { roster, useWork, botId: bot.id, onToggle: () => toggleBoard(actions.reportError, bot.id) }) : null
   }), "ds-bot: automations button");
   if (chatSuggestions?.register) ctx.effect(() => chatSuggestions.register({ id: "omni-automations", order: -10, when: ({ bot, roster }) => Boolean(bot?.id) && bot.id === roster?.eventsBotId, items: automationExamples }), "ds-bot: automation suggestions");
-  ctx.effect(() => nav.register({ id: "automations", label: () => t("Automations"), icon: ClockIcon2, run: (actions) => actions.selectPanel(AUTOMATIONS_PANEL) }), "ds-bot: automations nav");
-  ctx.effect(() => onShell(({ face, shadow, installCompiledStyles }) => [
-    () => installCompiledStyles(CHANNELS_CSS + OMNI_TREE_CSS + SUBSCRIPTIONS_CSS + AUTOMATIONS_CSS + OMNI_LIVE_CSS + OMNI_PEEK_CSS + OMNI_CONNECT_CSS + PERMISSIONS_CSS + OMNI_PHONE_CSS, "channels"),
-    () => shadow("conversation.input.dock", { id: "omni-consent", order: -80, inject: face }, ConsentDock),
+  ctx.effect(() => nav.register({ id: "automations", label: () => t("Automations"), icon: ClockIcon3, run: (actions) => actions.selectPanel(AUTOMATIONS_PANEL) }), "ds-bot: automations nav");
+  ctx.effect(() => onShell(({ face: face2, shadow, installCompiledStyles }) => [
+    () => installCompiledStyles(CHANNELS_CSS + BOT_CHANNELS_CSS + OMNI_TREE_CSS + SUBSCRIPTIONS_CSS + AUTOMATIONS_CSS + OMNI_LIVE_CSS + OMNI_PEEK_CSS + OMNI_CONNECT_CSS + PERMISSIONS_CSS + OMNI_PHONE_CSS, "channels"),
+    () => shadow("conversation.input.dock", { id: "omni-consent", order: -80, inject: face2 }, ConsentDock),
     // A chat thread's Session is not a Bot's: it marks the page so the Bot controls stay hidden there.
-    () => shadow("conversation.input.dock", { id: "omni-thread", order: -200, inject: face }, ThreadDock),
+    () => shadow("conversation.input.dock", { id: "omni-thread", order: -200, inject: face2 }, ThreadDock),
     // In a thread's own Session, the opener of its phone pane: a click on the thread's row
     // asks for it and this mounts inside that Session, where DSH has the Session's store. The
     // team's header draws its buttons in a Bot's Session only, hence a dock of our own.
-    () => shadow("conversation.input.dock", { id: "omni-phone", order: -190, inject: face }, PhoneDock),
-    () => shadow("sidebar.footer.action", { id: "bot-connect", order: -100, inject: face }, ChannelsFooter),
+    () => shadow("conversation.input.dock", { id: "omni-phone", order: -190, inject: face2 }, PhoneDock),
+    () => shadow("sidebar.footer.action", { id: "bot-connect", order: -100, inject: face2 }, ChannelsFooter),
     // The Connect wizard opened on demand (settings, Channels, or once after install) mounts here.
-    () => shadow("sidebar.footer.action", { id: "omni-connect-wizard", order: 1e3, inject: face }, WizardHost),
-    () => shadow("main", { key: CHANNELS_PANEL, inject: face }, ChannelsPage),
-    () => shadow("main", { key: CHAT_PANEL, inject: face }, ChatPage),
-    () => shadow("main", { key: AUTOMATIONS_PANEL, inject: face }, AutomationsPage),
-    () => installBoard(ctx, face),
+    () => shadow("sidebar.footer.action", { id: "omni-connect-wizard", order: 1e3, inject: face2 }, WizardHost),
+    () => shadow("main", { key: CHANNELS_PANEL, inject: face2 }, ChannelsPage),
+    () => shadow("main", { key: CHAT_PANEL, inject: face2 }, ChatPage),
+    () => shadow("main", { key: AUTOMATIONS_PANEL, inject: face2 }, AutomationsPage),
+    () => installBoard(ctx, face2),
     // A thread's phone pane, a tab of the same column, opened only from the thread.
-    () => installPhone(ctx, face)
+    () => installPhone(ctx, face2)
   ]), "ds-bot: channels on the Bot surface");
 }
 /*! Bundled license information:

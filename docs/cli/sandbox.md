@@ -249,7 +249,7 @@ Do not manually stop or kill the unit during an update; forced stops, filesystem
 and interrupted installs can still require operator recovery.
 
 **One manual upgrade is required for supervisors predating this protocol**, including
-the lembr incident's `2.261104.23`. Stop the external unit, install a release containing
+an earlier incident's `2.261104.23`. Stop the external unit, install a release containing
 this fix as the service user with `--no-start`, then start the unit. The updated handoff
 refuses an older running supervisor with the fixed reason above. An entirely old runtime
 still runs its old handoff code; this change cannot retroactively add that refusal before

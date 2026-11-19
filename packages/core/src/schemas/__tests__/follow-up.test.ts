@@ -195,6 +195,7 @@ describe('follow-up schemas', () => {
   describe('event registration', () => {
     test('CORE_EVENT_TYPES includes every follow-up event', () => {
       const types = CORE_EVENT_TYPES as readonly string[];
+      for (const type of ['chat.created', 'chat.updated', 'chat.deleted']) expect(types).toContain(type);
       expect(types).toContain('chat.idle_timeout');
       expect(types).toContain('follow_up.armed');
       expect(types).toContain('follow_up.fired');

@@ -72,13 +72,13 @@ omni install              # bootstrap the local server/runtime with PM2
 ### Via install script
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/automagik-dev/omni/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/automagik-si/omni/main/install.sh | bash
 ```
 
 ### Full server from source
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/automagik-dev/omni/main/install.sh | bash -s -- --server
+curl -fsSL https://raw.githubusercontent.com/automagik-si/omni/main/install.sh | bash -s -- --server
 ```
 
 Supported script modes: **CLI only** (`--cli`) and **Full server** (`--server`).
@@ -88,10 +88,10 @@ Supported script modes: **CLI only** (`--cli`) and **Full server** (`--server`).
 
 ```bash
 # CLI only
-curl -fsSL https://raw.githubusercontent.com/automagik-dev/omni/main/install.sh | bash -s -- --cli
+curl -fsSL https://raw.githubusercontent.com/automagik-si/omni/main/install.sh | bash -s -- --cli
 
 # Full server
-curl -fsSL https://raw.githubusercontent.com/automagik-dev/omni/main/install.sh | bash -s -- --server
+curl -fsSL https://raw.githubusercontent.com/automagik-si/omni/main/install.sh | bash -s -- --server
 
 # Connect the CLI to a remote server after install
 omni auth login --api-url https://your-omni-server.example.com --api-key <your-api-key>
@@ -100,7 +100,7 @@ omni auth login --api-url https://your-omni-server.example.com --api-key <your-a
 **Manual:**
 
 ```bash
-git clone https://github.com/automagik-dev/omni.git && cd omni
+git clone https://github.com/automagik-si/omni.git && cd omni
 make setup    # install deps, create .env, start services
 ```
 
@@ -477,7 +477,7 @@ make sdk-generate
 
 ## Desktop app
 
-Omni's UI is the [Automagik desktop app](https://github.com/automagik-dev/automagik/tree/dev/apps/desktop) (`omni desktop` opens it with Omni preloaded): it runs Omni on your machine or connects to a remote one. The API serves no web pages of its own.
+Omni's UI is the [Automagik desktop app](https://github.com/automagik-si/automagik/tree/dev/apps/desktop) (`omni desktop` opens it with Omni preloaded): it runs Omni on your machine or connects to a remote one. The API serves no web pages of its own.
 
 <details>
 <summary>🔐 API Keys & Security</summary>

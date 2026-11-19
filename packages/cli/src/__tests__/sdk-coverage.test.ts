@@ -106,6 +106,9 @@ const CLI_COMMANDS: Record<string, string> = {
   // ============================================================================
   // CHATS
   // ============================================================================
+  'chats.backfill': 'chats backfill <id> --from <date> --to <date>',
+  'chats.backfillStatus': 'chats backfill-status <id> <job-id>',
+  'chats.cancelBackfill': 'chats backfill-cancel <id> <job-id>',
   'chats.list': 'chats list',
   'chats.get': 'chats get',
   'chats.create': 'chats create',
@@ -114,6 +117,8 @@ const CLI_COMMANDS: Record<string, string> = {
   'chats.archive': 'chats archive',
   'chats.unarchive': 'chats unarchive',
   'chats.getMessages': 'chats messages',
+  'chats.pageMessages': 'chats messages --cursor',
+  'chats.getCoverage': 'chats coverage',
   'chats.listParticipants': 'chats participants',
   'chats.addParticipant': 'chats participants --add',
   'chats.removeParticipant': 'chats participants --remove',
@@ -346,6 +351,7 @@ const CLI_COMMANDS: Record<string, string> = {
   // SYSTEM
   // ============================================================================
   'system.health': 'status',
+  'system.twoResponders': 'doctor',
 };
 
 /**

@@ -115,7 +115,7 @@ Always HTTP `200`, always JSON. Three states, keyed by `codAtendimento`:
 | nobody answered the turn within 60s | `{"pronto":1,"resposta":"","hand_off":"nao","bolhas":[]}` |
 
 The `pronto:1` body may also carry `fila_vq` / `motivo_transf_vq` /
-`codigo_operadora_vq` (handoff only). Interactive options never ride the body — they leave through their own
+`codigo_operadora_vq` / `protocolo_vq` (handoff only). Interactive options never ride the body — they leave through their own
 endpoint, and repeating them here would build a second menu. Reading
 the answer **clears the turn**: the same text on the next call is a new turn.
 
@@ -207,14 +207,14 @@ other channel leaves the field undefined and still pauses.
 
 | Endpoint | When |
 |---|---|
-| `POST /sendIndicador` | typing, on inbound arrival and after each pushed bubble |
+| `POST /sendIndicador` | typing, ONCE per beneficiary message: when the turn is published (never for a dropped re-send), not awaited, 2s deadline |
 | `POST /callbackFlowMsg` | every bubble EXCEPT the last one (plain text turns) |
 | `POST /mensagem` | media, location, contact card, and the interactive last bubble |
 | `POST /transferirHumano` | `metadata.isHandoff === true` **and** `ascFlowHandoffMode: 'service'` |
 
 One `sendMessage` is one flow turn. Blank-line-separated paragraphs become
-separate bubbles. The bubbles before the last are **pushed** (best-effort, with
-typing between them, which is what gives the turn its rhythm); the **last** one
+separate bubbles. The bubbles before the last are **pushed** (best-effort, back
+to back, with no typing between them); the **last** one
 rides back in `resposta`, the single slot the flow's `message` node renders. A
 refused push degrades to `resposta` rather than costing the beneficiary the
 answer.
@@ -329,6 +329,7 @@ in `service` mode `sendMessage` also wraps the call itself:
 | `fila_vq` **absent** | both | allowed | nothing — see below |
 | `motivo_transf_vq` | both | whitespace collapsed, trimmed, ≤255 chars | omitted when empty |
 | `codigo_operadora_vq` (→ `u_codigoOperadora`) | both | `^\d{1,3}$`; always present on a handoff turn | forwarded as `""`, `warn` logged; handoff **not** refused |
+| `protocolo_vq` (→ `u_protocolo`) | both | the protocol numbers the agent issued, free text; whitespace collapsed, trimmed, ≤200 chars; always present on a handoff turn | not text: forwarded as `""`; handoff **not** refused |
 | subject (`metadata.handoffSubject` / `handoffFields.assunto`) | `flow` only | whitespace collapsed, trimmed, transliterated to latin-1 (`encodeAscEmoji`), ≤255 chars; answered in `resposta` on the handoff turn (the Genesys node reads `session.subject = {#resposta}`). Never its own key in the poll body | empty: `resposta` unchanged. Ignored on a refused handoff and in `service` mode |
 | `POST /transferirHumano` | `service` only | must succeed | `warn` logged, turn answers with `hand_off:"nao"` |
 

@@ -7,6 +7,7 @@
  * Flow:
  * - message.received (realtime)     → find/create chat → create message (source: 'realtime')
  * - message.received (history-sync) → find/create chat → create message (source: 'sync')
+ * - message.received (delete) → update the original message
  * - message.sent → find/create chat → create message (source: 'realtime', isFromMe: true)
  * - message.delivered/read → update message delivery status
  * - message.pinned/unpinned → update per-message pin state (#889)
@@ -62,6 +63,7 @@ import type { ChannelType, ChatType, Database, MessageType } from '@omni/db';
 import { omniEvents } from '@omni/db';
 import * as Sentry from '@sentry/bun';
 import { eq, sql } from 'drizzle-orm';
+import { z } from 'zod';
 import { sentryEnabled } from '../lib/sentry-scrub';
 import type { Services } from '../services';
 import { scopedHandle } from '../tenancy/tenant-scope';
@@ -789,6 +791,41 @@ function maybeUpdateRecency(
 /** Chat/person linkage message-persistence resolved for an inbound event. */
 type JournalLink = { chatUuid: string; canonicalChatId: string | null; personId: string | null };
 
+const deletePayloadSchema = z.object({
+  deletedMessageId: z.string().min(1),
+  deletedAt: z.number().int().nonnegative().max(8_640_000_000_000_000).optional().catch(undefined),
+});
+
+/** Apply a platform deletion to a stored message in its existing chat. */
+async function handleMessageDeletion(
+  services: Services,
+  event: TypedOmniEvent<'message.received'>,
+  instanceId: string,
+): Promise<JournalLink | undefined> {
+  const { payload } = event;
+  const parsed = deletePayloadSchema.safeParse(payload.rawPayload);
+  if (!parsed.success) return;
+
+  const targetExternalId = truncate(parsed.data.deletedMessageId, 255);
+  if (!targetExternalId) return;
+
+  const chatExternalId = truncate(payload.chatId, 255) ?? payload.chatId;
+  const chat = await services.chats.findByExternalIdSmart(instanceId, chatExternalId);
+  if (!chat) return;
+
+  const target = await services.messages.getByExternalId(chat.id, targetExternalId);
+  if (!target) return;
+  if (!target.deletedAt) {
+    await services.messages.markDeleted(
+      target.id,
+      isValidUuid(event.id) ? event.id : undefined,
+      new Date(parsed.data.deletedAt ?? event.timestamp),
+    );
+  }
+
+  return { chatUuid: chat.id, canonicalChatId: chat.canonicalId ?? null, personId: null };
+}
+
 /**
  * Backfill chatUuid/canonicalChatId/personId onto the omni_events row for
  * `eventId`. Idempotent; a no-op when the journal row does not exist yet
@@ -1301,15 +1338,20 @@ export async function setupMessagePersistence(eventBus: EventBus, services: Serv
           const workMetadata = { ...metadata, instanceId };
           // Resolved BEFORE the persistence transaction opens — its own work
           // item, its own scope, G6-gated (see the function's header).
-          const identity = await resolveSenderIdentityForWorkItem(
-            services,
-            payload,
-            workMetadata,
-            (metadata.channelType ?? 'whatsapp') as ChannelType,
-            trustedTenantId,
-          );
+          const identity =
+            payload.content.type === 'delete'
+              ? null
+              : await resolveSenderIdentityForWorkItem(
+                  services,
+                  payload,
+                  workMetadata,
+                  (metadata.channelType ?? 'whatsapp') as ChannelType,
+                  trustedTenantId,
+                );
           const journalLink = await runConsumerInTenantContext(services.db, event, () =>
-            handleMessageReceived(services, payload, workMetadata, event.timestamp, trustedTenantId, identity),
+            identity === null
+              ? handleMessageDeletion(services, event, instanceId)
+              : handleMessageReceived(services, payload, workMetadata, event.timestamp, trustedTenantId, identity),
           );
           // After commit: the event-persistence consumer races this one, so its
           // journal row may have been written before the chat/person existed

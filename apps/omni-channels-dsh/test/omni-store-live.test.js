@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { canSend, canWrite, loadMessages, omniActions, omniStore, refreshLive } from '../src/client/omni-store.js'
+import { canSend, canWrite, loadMessages, omniActions, omniStore, refreshLive, sentAnswered, sentMessage, withSent } from '../src/client/omni-store.js'
+import { chatBench, theirRow } from './omni-chat-bench.js'
+import { until } from './until.js'
 
 const fresh = omniStore.getSnapshot()
 const CHANNEL = { id: 'ch-1', type: 'whatsapp-baileys', name: 'Sales', detail: '+55', status: 'connected', answeredBy: 'You', health: { lastEventAt: null } }
@@ -317,4 +319,102 @@ test('the preview still changes only its sample, without the host', () => {
   omni.sendText('c-marina', 'Oi')
   assert.deepEqual(calls, [])
   omniStore.set(fresh)
+})
+
+// #1773: the chat page (channels.js ChatPage) sends through the store, the host's omni-send and
+// Omni's POST /messages/send, on a stand-in Omni shaped as its routes answer (omni-chat-bench.js).
+// Omni stores the sent row only when its message.sent consumer runs, after the send answered.
+const benchPage = (chatId, options) => {
+  const bench = chatBench({ chatId, ...options })
+  omniStore.set({ ...fresh, preview: false, source: { kind: 'live', origin: 'omni.bench' }, abilities: { changeChannels: true, send: true },
+    channels: [CHANNEL], chats: [{ ...CHAT, id: chatId }], messages: {}, chatId, sendError: null })
+  // The chat's reads Omni answered so far.
+  const read = { count: 0 }
+  const call = async (endpoint, body) => {
+    const reply = await bench.call(endpoint, body)
+    if (endpoint === 'omni-messages') read.count += 1
+    return reply
+  }
+  const texts = () => (omniStore.getSnapshot().messages[chatId] ?? []).map(message => message.text)
+  return { bench, call, read, texts }
+}
+
+test('a message sent from the chat page stays shown until Omni stores its row, then shows once (#1773)', async () => {
+  const chatId = '44444444-4444-4444-8444-444444444444'
+  const { bench, call, read, texts } = benchPage(chatId, { rows: [theirRow(chatId, 'Is the order on its way?', '2026-11-15T11:59:00.000Z')] })
+  await loadMessages(call, chatId)
+  assert.deepEqual(texts(), ['Is the order on its way?'])
+  omniActions(() => {}, call).sendText(chatId, 'On my way')
+  // Omni accepted it, and the page read the chat again before Omni stored its row.
+  await until(() => read.count === 2)
+  await settle()
+  assert.equal(bench.queued.length, 1)
+  assert.deepEqual(texts(), ['Is the order on its way?', 'On my way'])
+  // The next poll still finds no row: the message stays.
+  await loadMessages(call, chatId)
+  assert.deepEqual(texts(), ['Is the order on its way?', 'On my way'])
+  // Omni stores it: the next poll shows Omni's own row, once.
+  bench.persist()
+  await loadMessages(call, chatId)
+  assert.deepEqual(texts(), ['Is the order on its way?', 'On my way'])
+  assert.equal(omniStore.getSnapshot().messages[chatId].at(-1).id, bench.stored.at(-1).id, 'the row shown is Omni\'s own')
+  await loadMessages(call, chatId)
+  assert.deepEqual(texts(), ['Is the order on its way?', 'On my way'])
+})
+
+test('a send whose answer names no message id is matched to Omni\'s row by its text, never to an older row with the same text (#1773)', async () => {
+  const chatId = '55555555-5555-4555-8555-555555555555'
+  const { bench, call, read, texts } = benchPage(chatId, { messageIds: false })
+  const omni = omniActions(() => {}, call)
+  omni.sendText(chatId, 'Thanks')
+  await until(() => read.count === 1)
+  bench.persist()
+  await loadMessages(call, chatId)
+  assert.deepEqual(texts(), ['Thanks'])
+  // The same words again: the older row is not this one, so it stays until its own row comes.
+  omni.sendText(chatId, 'Thanks')
+  await until(() => read.count === 3)
+  await settle()
+  assert.deepEqual(texts(), ['Thanks', 'Thanks'])
+  bench.persist()
+  await loadMessages(call, chatId)
+  assert.deepEqual(texts(), ['Thanks', 'Thanks'])
+  assert.deepEqual(omniStore.getSnapshot().messages[chatId].map(message => message.id), bench.stored.map(row => row.id))
+})
+
+test('one stored row stands for one send: the same words sent twice stay two until each row comes, across reads (#1773)', async () => {
+  const chatId = '66666666-6666-4666-8666-666666666666'
+  const { bench, call, read, texts } = benchPage(chatId)
+  const omni = omniActions(() => {}, call)
+  // Both sends answer, with ids A and B, before Omni stores either row.
+  omni.sendText(chatId, 'Thanks')
+  await until(() => read.count === 1)
+  omni.sendText(chatId, 'Thanks')
+  await until(() => read.count === 2)
+  await settle()
+  assert.deepEqual(texts(), ['Thanks', 'Thanks'])
+  // Only row A comes: it stands for send A, and send B stays through every read until row B.
+  bench.persist(1)
+  for (let poll = 0; poll < 3; poll += 1) {
+    await loadMessages(call, chatId)
+    assert.deepEqual(texts(), ['Thanks', 'Thanks'], `read ${poll + 1} after row A`)
+  }
+  bench.persist()
+  await loadMessages(call, chatId)
+  assert.deepEqual(omniStore.getSnapshot().messages[chatId].map(message => message.id), bench.stored.map(row => row.id))
+})
+
+test('a send still waiting on its answer is never retired by the row of an earlier send with the same words (#1773)', () => {
+  const row = { id: 'row-a', from: 'you', fromMe: true, externalId: 'A', text: 'Thanks', at: 10 }
+  const sendA = sentAnswered(sentMessage('Thanks', [], 5), 'A')
+  const sendB = sentMessage('Thanks', [], 20)
+  const first = withSent([row], [sendA, sendB])
+  assert.deepEqual(first.left.map(message => message.id), [sendB.id])
+  // Later reads still hold only row A: it stood for send A, so it never stands for send B.
+  const second = withSent([row], first.left)
+  assert.deepEqual(second.left.map(message => message.id), [sendB.id])
+  assert.deepEqual(second.messages.map(message => message.id), ['row-a', sendB.id])
+  // A send that named its id is matched by that id alone.
+  const named = sentAnswered(sentMessage('Thanks', [], 3), 'C')
+  assert.deepEqual(withSent([{ ...row, id: 'row-x', externalId: 'X' }], [named]).left.map(message => message.id), [named.id])
 })

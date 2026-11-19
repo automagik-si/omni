@@ -10,7 +10,7 @@ import { createRuntime as createTeam } from '@automagik/bots-dsh'
 import { createRuntime } from '../index.js'
 import { LINK_FILE } from '../src/host/omni-link.js'
 import { KEYS_FILE } from '../src/host/thread-keys.js'
-import { fakeContext } from './team.js'
+import { fakeContext, PRESET_TOOLS } from './team.js'
 import { until } from './until.js'
 
 export { until } from './until.js'
@@ -205,7 +205,8 @@ export async function boot(t, home, { mask = false, services = {}, resumesDone, 
   // Each DSH Session title set, [sessionId, title]: the team's when it makes a Session, and
   // this plugin's when it names a thread again.
   const titled = []
-  const fake = { archiveError, renameError, createError: null, restrictError: null }
+  // `preset`: the tools each Session's agent preset adds to what it can be restricted to.
+  const fake = { archiveError, renameError, createError: null, restrictError: null, preset: PRESET_TOOLS }
   const emit = (id, type, data, time) => {
     for (const listener of ctx.listeners.get('session/event') ?? []) if (listener.length >= 2) listener({ id }, { type, data, ...(time === undefined ? {} : { time }) })
   }
@@ -219,13 +220,23 @@ export async function boot(t, home, { mask = false, services = {}, resumesDone, 
       options: { provider: 'deepseek', model: 'flash' },
       status: 'idle', calls, inbox: { nextStep: [], nextTurn: [], remove: () => false }, followup: keep, steer: keep, cancel() {},
     }
-    // Its own scope: effects it owns, its tool restrictions and its tool executor.
+    // Its own scope: effects it owns, its tool restrictions and its tool executor. As DSH's
+    // view(agent): what it can be restricted to is the global registry plus its preset,
+    // whatever restrictions say (another scope key sees the global registry only); what it
+    // sees (schemas) is that, narrowed by its last restriction. restrict() refuses any other name.
+    const restrictable = scope => new Set([...ctx.tools.schemas().map(schema => schema.name), ...(scope === agent ? fake.preset : [])])
+    let visible
     agent.ctx = {
       effect: () => {},
       tools: {
+        view: scope => ({ restrictableNames: restrictable(scope) }),
+        schemas: () => [...restrictable(agent)].filter(name => visible?.has(name) ?? true).map(name => ({ name })),
         restrict: (filter) => {
           if (fake.restrictError) throw fake.restrictError
+          const unknown = [...filter.allow ?? [], ...filter.deny ?? []].filter(name => !restrictable(agent).has(name))
+          if (unknown.length > 0) throw new Error(`tools.restrict() names unknown global tool ${unknown.map(name => `"${name}"`).join(', ')}`)
           restricts.push({ agent, sessionId, filter })
+          if (filter.allow) visible = new Set(filter.allow)
           return () => {}
         },
         setExecutor: (executor) => {

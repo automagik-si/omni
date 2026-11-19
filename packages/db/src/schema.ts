@@ -10,7 +10,12 @@
  */
 
 import type { AgentEventManifest, ProviderSchema as CoreProviderSchema, FollowUpSequenceConfig } from '@omni/core';
-import { CORE_EVENT_TYPES, type CoreEventType, type SyncJobConfig as CoreSyncJobConfig } from '@omni/core/events';
+import {
+  CORE_EVENT_TYPES,
+  type CoreEventType,
+  type SyncJobConfig as CoreSyncJobConfig,
+  type SyncJobProgress as CoreSyncJobProgress,
+} from '@omni/core/events';
 import { CONTENT_TYPES, type ContentType as CoreContentType } from '@omni/core/types';
 import { relations, sql } from 'drizzle-orm';
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
@@ -2456,19 +2461,8 @@ export type SyncJobConfig = CoreSyncJobConfig;
 /**
  * Sync job progress tracking.
  */
-export interface SyncJobProgress {
-  fetched: number;
-  stored: number;
-  duplicates: number;
-  mediaDownloaded: number;
-  totalEstimated?: number;
-  /**
-   * ISO-8601 timestamp of the last `updateProgress` call. Lets clients
-   * distinguish "running slowly" from "stuck" when `progressPercent` cannot
-   * be computed (e.g. Baileys never reports a denominator). See issue #398.
-   */
-  lastProgressAt?: string;
-}
+// no-migration-needed: progress remains JSONB; share its TypeScript shape with core events only.
+export type SyncJobProgress = CoreSyncJobProgress;
 
 /**
  * Sync jobs track async sync operations.

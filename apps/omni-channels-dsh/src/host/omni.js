@@ -16,6 +16,12 @@ const MESSAGES_LIMIT = 80
 // The routes of a channel, kept a minute: the page asks for the overview every 15 s.
 const ROUTES_TTL_MS = 60_000
 const ROUTES_CACHE_MAX = 500
+// The photos of the people who wrote in a chat (#1775), from their person's identities in
+// Omni, kept ten minutes; at most PHOTO_READS new people read per messages read.
+const PHOTO_TTL_MS = 10 * 60_000
+const PHOTO_CACHE_MAX = 500
+const PHOTO_READS = 8
+const PHOTO_URL = /^https?:\/\//i
 const ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 // The media endpoint's cache: the files the chat view showed last, so its 15 s poll asks
 // Omni nothing for a file it has.
@@ -34,6 +40,9 @@ const DRAWN = new Set(['image', 'audio', 'video', 'document', 'sticker'])
 // picture or video. A document's extracted text stays out: the whole file's text would ride
 // every poll.
 const OMNI_TEXT = ['transcription', 'imageDescription', 'videoDescription']
+// Omni's delivery status of a message (its deliveryStatus), as the chat view draws it on the
+// messages staff and Omni sent; any other value draws nothing.
+const STATUSES = new Set(['pending', 'sent', 'delivered', 'read', 'failed'])
 const MediaPayload = z.object({ messageId: z.string().min(1) })
 const MediaMessage = z.object({ data: z.object({
   hasMedia: z.boolean(),
@@ -144,11 +153,21 @@ const omniTextOf = (message) => {
   return null
 }
 
+// The photo of who wrote a message, from `photos` (a person's id: the photos of their
+// identities, { user, url }): the identity the message came from first, else any of theirs.
+function authorPhotoOf(message, photos) {
+  const kept = photos.get(message.senderPersonId) ?? []
+  return (kept.find(photo => photo.user === message.senderPlatformUserId) ?? kept[0])?.url ?? null
+}
+
 // From-me messages sent through the API are Omni's (an agent or an integration); the rest
 // of the from-me ones were typed on the phone. A drawn media message's text is its caption
-// alone: the view draws the file, and Omni's text for it apart.
-export function messageOf(message) {
+// alone: the view draws the file, and Omni's text for it apart. `photos` gives the photo of
+// who wrote a message from the other side (#1775).
+export function messageOf(message, photos = new Map()) {
   const mine = message.isFromMe === true
+  // A plain `.map(messageOf)` hands it an index here: only a Map is photos.
+  const photo = mine || !(photos instanceof Map) ? null : authorPhotoOf(message, photos)
   const hasMedia = message.hasMedia === true
   const type = typeof message.messageType === 'string' && message.messageType !== '' ? message.messageType : 'text'
   const drawn = hasMedia && DRAWN.has(type)
@@ -158,6 +177,7 @@ export function messageOf(message) {
     from: mine ? (message.source === 'api' ? 'omni' : 'you') : 'them',
     fromMe: mine,
     ...(mine || !message.senderDisplayName ? {} : { author: message.senderDisplayName }),
+    ...(photo === null ? {} : { authorPhoto: photo }),
     text: drawn ? message.textContent || '' : message.textContent || message.transcription || (hasMedia ? `[${message.messageType || 'media'}]` : ''),
     caption: hasMedia && message.textContent ? message.textContent : null,
     type,
@@ -166,6 +186,9 @@ export function messageOf(message) {
     mediaText: hasMedia ? omniTextOf(message) : null,
     fileName: hasMedia && typeof fileName === 'string' && fileName !== '' ? fileName : null,
     at: time(message.platformTimestamp) ?? time(message.createdAt) ?? 0,
+    ...(STATUSES.has(message.deliveryStatus) ? { status: message.deliveryStatus } : {}),
+    // The channel's id for it: a chat view knows its own sent message's row by it (#1773).
+    ...(typeof message.externalId === 'string' && message.externalId !== '' ? { externalId: message.externalId } : {}),
   }
 }
 
@@ -267,6 +290,53 @@ export function install(rt) {
   }
   routesFor.cache = new Map()
 
+  // #1775: the photos of the people who wrote these messages, by person: each person's
+  // identities from GET /persons/{id}/presence, through a ten-minute cache, so the 15 s poll
+  // asks Omni nothing new for people it read. A read that fails is no photo, never a chat
+  // without its messages.
+  const photosFor = async (url, apiKey, messages) => photosOfPeople(url, apiKey, messages.filter(message => message.isFromMe !== true).map(message => message.senderPersonId))
+  // The same photos for any people, by their person ids (the left bar's chats, bot-channels.js).
+  const photosOfPeople = async (url, apiKey, ids) => {
+    const owner = createHash('sha256').update(`${url}\n${apiKey}`).digest('hex')
+    const people = [...new Set(ids.filter(person => typeof person === 'string' && ID.test(person)))]
+    const fresh = person => { const kept = photosFor.cache.get(`${owner}|${person}`); return kept !== undefined && Date.now() - kept.at < PHOTO_TTL_MS ? kept : undefined }
+    await Promise.all(people.filter(person => fresh(person) === undefined).slice(0, PHOTO_READS).map(async (person) => {
+      const photos = await get(url, apiKey, `/persons/${person}/presence`).then(reply => (Array.isArray(reply?.data?.identities) ? reply.data.identities : [])
+        .filter(identity => typeof identity?.profilePicUrl === 'string' && PHOTO_URL.test(identity.profilePicUrl))
+        .map(identity => ({ user: identity.platformUserId, url: identity.profilePicUrl })), () => [])
+      photosFor.cache.delete(`${owner}|${person}`)
+      photosFor.cache.set(`${owner}|${person}`, { at: Date.now(), photos })
+      if (photosFor.cache.size > PHOTO_CACHE_MAX) photosFor.cache.delete(photosFor.cache.keys().next().value)
+    }))
+    return new Map(people.map(person => [person, fresh(person)?.photos ?? []]))
+  }
+  photosFor.cache = new Map()
+  rt.omniPeoplePhotos = async (ids) => {
+    const url = base()
+    const apiKey = await key()
+    return url === null || !apiKey ? new Map() : photosOfPeople(url, apiKey, ids)
+  }
+
+  // The channels and how each one is now: GET /instances, then each one's status (null when
+  // that read failed), with the Omni they were read on. The overview reads them so, and so does
+  // the left bar's channel list (bot-channels.js), which hears every read (omniInstancesSeen).
+  const statusesOf = (url, apiKey, items) => Promise.all(items.map(instance => get(url, apiKey, `/instances/${instance.id}/status`).then(reply => reply.data, () => null)))
+  const seenRead = (url, items, statuses) => {
+    const read = { url, at: Date.now(), instances: items, statuses }
+    rt.omniInstancesSeen?.(read)
+    return read
+  }
+  const instancesOn = async (url, apiKey) => {
+    const instances = await get(url, apiKey, '/instances?limit=100')
+    return seenRead(url, instances.items, await statusesOf(url, apiKey, instances.items))
+  }
+  rt.omniBaseUrl = () => base()
+  rt.omniInstances = async () => {
+    const url = base()
+    const apiKey = await key()
+    return url === null || !apiKey ? null : instancesOn(url, apiKey)
+  }
+
   rt.omniEndpoint = async (endpoint, body) => {
     const url = base()
     const apiKey = await key()
@@ -280,7 +350,13 @@ export function install(rt) {
       ])
       const names = new Map(agents.filter(agent => typeof agent?.id === 'string' && typeof agent?.name === 'string').map(agent => [agent.id, agent.name]))
       // A failed status read leaves that one channel in "needs attention", not the page empty.
-      const statuses = await Promise.all(instances.items.map(instance => get(url, apiKey, `/instances/${instance.id}/status`).then(reply => reply.data, () => null)))
+      const { statuses } = seenRead(url, instances.items, await statusesOf(url, apiKey, instances.items))
+      // The chat open in the chat view stays listed while it is open, though the newest chats
+      // do not hold it (one opened from a channel's own chats in the left bar, bot-channels.js).
+      const open = typeof body?.chatId === 'string' && ID.test(body.chatId) && !chats.items.some(chat => chat.id === body.chatId)
+        ? await get(url, apiKey, `/chats/${body.chatId}`).then(reply => reply?.data ?? null, () => null)
+        : null
+      const listed = open !== null && instances.items.some(instance => instance.id === open.instanceId) ? [...chats.items, open] : chats.items
       // Routes say which chats answer through an agent of their own; the rest inherit the
       // channel's agent.
       const routes = await Promise.all(instances.items.map(instance => routesFor(url, apiKey, instance.id)))
@@ -289,13 +365,14 @@ export function install(rt) {
         configured: true,
         origin: new URL(url).host,
         channels: instances.items.map((instance, index) => channelOf(instance, statuses[index], { routes: routes[index], names })),
-        chats: chats.items.map(chat => chatOf(chat, agentOfChat(chat, channelOfChat.get(chat.instanceId) ?? { names }))),
+        chats: listed.map(chat => chatOf(chat, agentOfChat(chat, channelOfChat.get(chat.instanceId) ?? { names }))),
       }
     }
     if (endpoint === 'omni-messages') {
       if (typeof body?.chatId !== 'string' || !ID.test(body.chatId)) throw invalid('Unknown chat')
       const reply = await get(url, apiKey, `/chats/${body.chatId}/messages?limit=${MESSAGES_LIMIT}`)
-      return { messages: reply.items.map(messageOf).sort((a, b) => a.at - b.at) }
+      const photos = await photosFor(url, apiKey, reply.items)
+      return { messages: reply.items.map(message => messageOf(message, photos)).sort((a, b) => a.at - b.at) }
     }
     throw invalid(`Unknown omni endpoint ${endpoint}`)
   }

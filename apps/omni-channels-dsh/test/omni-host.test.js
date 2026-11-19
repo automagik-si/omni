@@ -79,6 +79,9 @@ test('messages say who wrote them: the contact, Omni through the API, or the use
   assert.equal(messageOf({ id: 'm', isFromMe: true, source: 'api', textContent: 'hi' }).from, 'omni')
   assert.equal(messageOf({ id: 'm', isFromMe: true, source: 'realtime', textContent: 'hi' }).from, 'you')
   assert.equal(messageOf({ id: 'm', isFromMe: true, source: 'api', textContent: 'hi' }).fromMe, true)
+  // The channel's id for it, when Omni has one: a chat view knows its sent message's row by it (#1773).
+  assert.equal(messageOf({ id: 'm', isFromMe: true, externalId: 'CHANNEL-MSG-1', textContent: 'hi' }).externalId, 'CHANNEL-MSG-1')
+  assert.equal(Object.hasOwn(messageOf({ id: 'm', isFromMe: true, externalId: '', textContent: 'hi' }), 'externalId'), false)
   assert.equal(messageOf({ id: 'm', isFromMe: false, hasMedia: true, messageType: 'location' }).text, '[location]')
 })
 
@@ -99,6 +102,15 @@ test('a media row carries its type, mime and Omni\'s text apart from the caption
   assert.deepEqual([pdf.fileName, pdf.mediaText], ['invoice.pdf', null])
   const plain = messageOf({ id: 't', isFromMe: false, messageType: 'text', textContent: 'hi', transcription: null })
   assert.deepEqual([plain.type, plain.hasMedia, plain.mime, plain.caption, plain.mediaText, plain.text], ['text', false, null, null, null, 'hi'])
+})
+
+test('a message carries Omni\'s delivery status as its status, and none for a value Omni does not use', () => {
+  for (const status of ['pending', 'sent', 'delivered', 'read', 'failed']) {
+    assert.equal(messageOf({ id: 'm', isFromMe: true, source: 'api', textContent: 'hi', deliveryStatus: status }).status, status)
+  }
+  for (const deliveryStatus of [undefined, null, '', 'seen', 'READ', 3]) {
+    assert.equal(Object.hasOwn(messageOf({ id: 'm', isFromMe: true, textContent: 'hi', deliveryStatus }), 'status'), false, String(deliveryStatus))
+  }
 })
 
 const runtime = ({ url, key, answers = {} }) => {
@@ -175,6 +187,28 @@ test('messages need a chat id shaped like omni ids, and a refused key says which
   const { rt } = runtime({ url: 'https://omni.test', key: 'omni_sk_test', answers: { '/instances': 401 } })
   await assert.rejects(rt.omniEndpoint('omni-messages', { chatId: '../keys' }), /Unknown chat/)
   await assert.rejects(rt.omniEndpoint('omni-overview', {}), new RegExp(`did not accept the key in ${KEY}`))
+})
+
+// #1775: who wrote each message from the other side, with their photo from their person's
+// identities in Omni (GET /persons/{id}/presence).
+test('a chat\'s messages carry the photo of who wrote them, read once per person in ten minutes; a failed read or an odd address is no photo (#1775)', async () => {
+  const CHAT = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
+  const [ONE, TWO, THREE, ME] = ['11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222', '33333333-3333-4333-8333-333333333333', '44444444-4444-4444-8444-444444444444']
+  const row = (id, person, user, extra = {}) => ({ id, isFromMe: false, senderPersonId: person, senderPlatformUserId: user, senderDisplayName: 'Person', textContent: id, platformTimestamp: `2026-11-15T12:0${id.slice(1)}:00.000Z`, ...extra })
+  const identities = list => () => new Response(JSON.stringify({ data: { identities: list } }), { status: 200 })
+  const { rt, asked } = runtime({ url: 'https://omni.test', key: 'omni_sk_test', answers: {
+    [`/chats/${CHAT}/messages`]: { items: [row('m1', ONE, 'one@chat'), row('m2', TWO, 'two@chat'), row('m3', THREE, 'three@chat'), row('m4', ME, 'me@chat', { isFromMe: true })] },
+    // The identity the message came from first, else any of theirs.
+    [`/persons/${ONE}/presence`]: identities([{ platformUserId: 'one@elsewhere', profilePicUrl: 'https://photos.example/elsewhere.png' }, { platformUserId: 'one@chat', profilePicUrl: 'https://photos.example/one.png' }]),
+    [`/persons/${TWO}/presence`]: identities([{ platformUserId: 'two@chat', profilePicUrl: 'javascript:alert(1)' }, { platformUserId: 'two@chat', profilePicUrl: null }]),
+    [`/persons/${THREE}/presence`]: 403,
+  } })
+  const first = await rt.omniEndpoint('omni-messages', { chatId: CHAT })
+  assert.deepEqual(first.messages.map(message => message.authorPhoto ?? null), ['https://photos.example/one.png', null, null, null])
+  const read = await rt.omniEndpoint('omni-messages', { chatId: CHAT })
+  assert.deepEqual(read.messages.map(message => message.authorPhoto ?? null), ['https://photos.example/one.png', null, null, null])
+  // Each person once, a refused one too; staff's own messages ask nothing.
+  assert.deepEqual(asked.filter(call => call.address.includes('/persons/')).map(call => call.address.replace('https://omni.test/api/v2', '')).sort(), [`/persons/${ONE}/presence`, `/persons/${THREE}/presence`, `/persons/${TWO}/presence`].sort())
 })
 
 const MESSAGE = '0b6f3c1e-5a2d-4c8e-9f10-2a3b4c5d6e7f'
