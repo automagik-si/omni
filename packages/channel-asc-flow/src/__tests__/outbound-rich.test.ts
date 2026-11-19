@@ -433,6 +433,54 @@ describe('outbound WhatsApp Flow through /sendMsgInterativaAvancado', () => {
   });
 });
 
+describe('a send nothing accepted is a failure, even with a poll waiting when it started', () => {
+  const refused = () => jsonResponse({ cod_error: 1, msg: 'nao' }, 400);
+  /** A new inbound turn takes the cod while the send is on the network. */
+  const swapTurn = () => {
+    const state = (
+      plugin as unknown as { ascFlowInstances: Map<string, { inFlight: Map<string, { text: string; at: number }> }> }
+    ).ascFlowInstances.get(instanceId);
+    state?.inFlight.set('42', { text: 'outra mensagem', at: Date.now() });
+  };
+
+  it('fails a Flow whose component and text fallback were both refused while the turn changed', async () => {
+    await boot({
+      '/sendMsgInterativaAvancado': () => {
+        swapTurn();
+        return refused();
+      },
+      '/callbackFlowMsg': refused,
+    });
+    const result = await send(
+      { type: 'flow', text: 'Escolha:' },
+      { metadata: { flow: { flowId: '1', cta: 'Abrir' } } },
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.degradedTo).toBeUndefined();
+  });
+
+  it('fails a text whose push was refused while the turn changed', async () => {
+    await boot({
+      '/callbackFlowMsg': () => {
+        swapTurn();
+        return refused();
+      },
+    });
+    const result = await send({ type: 'text', text: 'Oi' });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('still succeeds when the push is refused but the poll that is waiting takes the text', async () => {
+    await boot({ '/callbackFlowMsg': refused });
+    const result = await send({ type: 'text', text: 'Oi' });
+
+    expect(result.success).toBe(true);
+    expect(ready('42')).toMatchObject({ resposta: 'Oi' });
+  });
+});
+
 describe('outbound buttons keep their bubbles and report no degradation', () => {
   it('splits the lead-up from the question and leaves degradedTo unset', async () => {
     await boot();

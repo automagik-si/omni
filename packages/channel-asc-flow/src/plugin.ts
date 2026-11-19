@@ -705,12 +705,16 @@ export class AscFlowPlugin extends BaseChannelPlugin {
       // happened, and disarm the follow-ups that would have revisited the chat.
       const handoffRefused = meta.isHandoff === true && handoff === null;
 
-      this.answerOrStage(
+      const answered = this.answerOrStage(
         state,
         to,
         buildReadyBody({ delivered, lastBubble, bubbles, handoff, mode: state.config.ascFlowHandoffMode }),
         { held, answering, correlationId, delivered, meta },
       );
+      // `polling` was read when the send started. When every push failed, the
+      // text rode only on the poll body, and a newer turn that took the cod
+      // meanwhile made `resolveTurn` discard it: nothing reached anyone.
+      if (!(delivered || answered)) return this.refuseUndeliverable(instanceId, to, content.type);
 
       if (handoffRefused) return this.refuseSend(instanceId, to, HANDOFF_REFUSED_ERROR);
 
@@ -783,7 +787,7 @@ export class AscFlowPlugin extends BaseChannelPlugin {
   /**
    * Answer the turn with this send's body, or park the body on it when the send is a direct one the turn's reply still
    * follows (`stageTurn`). A handoff ends the turn, and an undelivered send needs `resposta` to carry its text, so both
-   * answer at once.
+   * answer at once. Returns whether the turn took the body (see `resolveTurn`).
    */
   private answerOrStage(
     state: AscFlowInstanceState,
@@ -796,13 +800,13 @@ export class AscFlowPlugin extends BaseChannelPlugin {
       delivered: boolean;
       meta: Record<string, unknown>;
     },
-  ): void {
+  ): boolean {
     const { held, delivered, meta } = send;
     if (held && delivered && meta.isHandoff !== true && isDirectSend(meta)) {
       this.stageTurn(to, held, body);
-      return;
+      return true;
     }
-    this.resolveTurn(state, to, body, send.answering, send.correlationId);
+    return this.resolveTurn(state, to, body, send.answering, send.correlationId);
   }
 
   /** `message.sent` for a turn that was delivered or parked for the poll. */
@@ -956,6 +960,10 @@ export class AscFlowPlugin extends BaseChannelPlugin {
    * happens to occupy the cod now: that delivered turn A's answer as the reply
    * to message B, and left B's own answer parked where no poll could ever
    * collect it.
+   *
+   * Returns whether the answer was taken: `false` only when it was discarded as
+   * belonging to a turn that already closed, so a send whose pushes all failed
+   * can tell it reached no one.
    */
   private resolveTurn(
     state: AscFlowInstanceState,
@@ -963,7 +971,7 @@ export class AscFlowPlugin extends BaseChannelPlugin {
     ready: AscFlowTurnReady,
     answering?: AscFlowTurnState,
     correlationId?: string,
-  ): void {
+  ): boolean {
     const cod = chatId.trim();
     const entry = state.inFlight.get(cod);
 
@@ -974,48 +982,49 @@ export class AscFlowPlugin extends BaseChannelPlugin {
     if (entry?.correlationId && correlationId && entry.correlationId !== correlationId) {
       if (ready.hand_off === 'sim') {
         this.carryLateHandoff(state, cod, entry, ready, 'correlationId of a closed turn');
-        return;
+        return true;
       }
       this.logger.warn('[asc-flow] discarding an answer from a different turn', {
         cod,
         reason: 'correlationId does not match the turn now in flight',
       });
-      return;
+      return false;
     }
 
     if (entry && answering && entry !== answering) {
       if (ready.hand_off === 'sim') {
         this.carryLateHandoff(state, cod, entry, ready, 'the window now holds a newer turn');
-        return;
+        return true;
       }
       this.logger.warn('[asc-flow] discarding an answer whose turn already closed', {
         cod,
         reason: 'the window now holds a newer turn — delivering this would answer the wrong message',
       });
-      return;
+      return false;
     }
     // A proactive send (no turn of its own) must not resolve someone else's
     // turn: its content already left through `/mensagem`, and writing an empty
     // `resposta` here would close a turn the agent is still answering.
     if (entry && !answering) {
       this.logger.debug('[asc-flow] proactive send leaves the in-flight turn alone', { cod });
-      return;
+      return true;
     }
 
     if (entry) {
       if (entry.ready?.hand_off === 'sim' && ready.hand_off !== 'sim') {
         this.logger.debug('[asc-flow] keeping the parked handoff over a later ordinary answer', { cod });
         this.pushDisplacedBubble(state, cod, ready.resposta);
-        return;
+        return true;
       }
       entry.ready = ready;
       entry.staged = undefined;
       entry.at = Date.now();
-      return;
+      return true;
     }
     // An outbound with no inbound turn in flight (a proactive send): still park
     // it, so a poll that arrives for this cod collects it.
     state.inFlight.set(cod, { text: '', at: Date.now(), ready });
+    return true;
   }
 
   /**
