@@ -55,6 +55,7 @@ import {
   type MetaMediaSource,
   type SendTemplateButton,
   type SendTemplateHeaderMedia,
+  formatFlowBody,
   sendContact,
   sendFlow,
   sendInteractive,
@@ -1327,7 +1328,8 @@ async function dispatchOutboundFlow(
       error: `content.type=flow requires a valid metadata.flow descriptor: ${parsed.error.issues[0]?.message ?? 'invalid'}`,
     };
   }
-  const { response } = await sendFlow(client, message.to, parsed.data, message.replyTo);
+  const flow = formatFlowBody(parsed.data, message.metadata?.messageFormatMode);
+  const { response } = await sendFlow(client, message.to, flow, message.replyTo);
   return { ok: true, response };
 }
 
