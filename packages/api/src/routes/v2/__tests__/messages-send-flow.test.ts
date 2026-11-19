@@ -23,7 +23,11 @@ type SentMessage = {
   metadata?: Record<string, unknown> & { flow?: Record<string, unknown> };
 };
 
-function mountMessagesRoutes(channel = 'whatsapp-business', sendResult: Record<string, unknown> = {}) {
+function mountMessagesRoutes(
+  channel = 'whatsapp-business',
+  sendResult: Record<string, unknown> = {},
+  instanceFields: Record<string, unknown> = {},
+) {
   const sendMessage = mock(async (_instanceId: string, _message: unknown) => ({
     success: true,
     messageId: 'SENT-MSG-ID',
@@ -35,7 +39,7 @@ function mountMessagesRoutes(channel = 'whatsapp-business', sendResult: Record<s
   app.use('*', async (c, next) => {
     c.set('services', {
       instances: {
-        getById: mock(async (id: string) => ({ id, channel })),
+        getById: mock(async (id: string) => ({ id, channel, ...instanceFields })),
       },
       persons: {
         getIdentityForChannel: mock(async () => null),
@@ -511,5 +515,31 @@ describe('POST /messages/send with flow — markdown follows the instance format
 
     expect(res.status).toBe(201);
     expect(sentMessage(sendMessage).metadata?.messageFormatMode).toBe('convert');
+  });
+});
+
+describe('POST /messages/send with flow — the body limit counts the markdown conversion', () => {
+  // 1024 characters as written; the WhatsApp conversion turns the heading into
+  // bold and the body grows to 1026, past Meta's limit.
+  const growing = `# a*b${'x'.repeat(1019)}`;
+
+  test('whatsapp-business refuses a body that conversion pushes past 1024 characters', async () => {
+    const { app, sendMessage } = mountMessagesRoutes();
+
+    const res = await postSend(app, { text: growing, flow: FLOW });
+
+    expect(res.status).toBe(400);
+    const error = await errorOf(res);
+    expect(error.code).toBe('VALIDATION_ERROR');
+    expect(error.message).toContain('markdown');
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  test('the same body passes on an instance in passthrough mode, where nothing is converted', async () => {
+    const { app } = mountMessagesRoutes('whatsapp-business', {}, { messageFormatMode: 'passthrough' });
+
+    const res = await postSend(app, { text: growing, flow: FLOW });
+
+    expect(res.status).toBe(201);
   });
 });

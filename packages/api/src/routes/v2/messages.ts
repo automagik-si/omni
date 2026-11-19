@@ -41,7 +41,15 @@ import { zValidator } from '@hono/zod-validator';
 import { sanitizeOutboundText } from '@omni/channel-sdk';
 import type { ChannelRegistry, OutgoingContent, OutgoingMessage } from '@omni/channel-sdk';
 import { buildFlowToken } from '@omni/channel-whatsapp-business';
-import { ERROR_CODES, JOURNEY_STAGES, NotFoundError, OmniError, createLogger, getJourneyTracker } from '@omni/core';
+import {
+  ERROR_CODES,
+  JOURNEY_STAGES,
+  NotFoundError,
+  OmniError,
+  createLogger,
+  getJourneyTracker,
+  markdownToWhatsApp,
+} from '@omni/core';
 import type { ChatClosedPayload, CloseContactOutcome } from '@omni/core/events';
 import { WhatsAppFlowInMessageSchema, type WhatsAppFlowSend } from '@omni/core/schemas';
 import type { ChannelType } from '@omni/core/types';
@@ -840,7 +848,11 @@ function ascFlowUnsupported(flow: FlowDraft): string[] {
  *    as on that route;
  *  - asc-flow carries none of `ascFlowUnsupported`, and no token.
  */
-function buildFlowSend(flow: FlowDraft | undefined, channel: string): FlowSendResult {
+function buildFlowSend(
+  flow: FlowDraft | undefined,
+  channel: string,
+  formatMode: string | null | undefined,
+): FlowSendResult {
   if (!flow) return { ok: true, flow: undefined };
   if (!FLOW_CHANNELS.has(channel)) {
     return {
@@ -868,6 +880,14 @@ function buildFlowSend(flow: FlowDraft | undefined, channel: string): FlowSendRe
   const hasData = flow.data !== undefined && Object.keys(flow.data).length > 0;
   if (hasData && !flow.screen) {
     return flowValidationError('flow.data reaches the flow only with flow.screen, on a navigate flow');
+  }
+  // The sender converts the body's markdown in `convert` mode (`formatFlowBody`),
+  // which can lengthen it: Meta's limit applies to what it receives.
+  const sent = (formatMode ?? 'convert') === 'convert' ? markdownToWhatsApp(flow.bodyText) : flow.bodyText;
+  if (sent.length > FLOW_BODY_MAX) {
+    return flowValidationError(
+      `The flow body exceeds ${FLOW_BODY_MAX} characters once its markdown is converted for WhatsApp; shorten it`,
+    );
   }
   const flowToken = flow.flowToken ?? buildFlowToken(flow.flowId ?? flow.flowName ?? 'unknown');
   return { ok: true, flow: { ...flow, flowToken } };
@@ -1593,7 +1613,7 @@ messagesRoutes.post('/send', async (c) => {
     instanceId,
     'canSendText',
   );
-  const flowSend = buildFlowSend(prepared.flow, instance.channel);
+  const flowSend = buildFlowSend(prepared.flow, instance.channel, instance.messageFormatMode);
   if (!flowSend.ok) return c.json({ error: flowSend.error }, 400);
   const flowDescriptor = flowSend.flow;
   const effectivePacing = resolveOutboundPacing(pacing, instance);
