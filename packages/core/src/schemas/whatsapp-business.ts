@@ -553,6 +553,15 @@ export const WhatsAppFlowSendSchema = WhatsAppFlowFieldsSchema.refine(hasOneFlow
  */
 export const WhatsAppFlowInMessageSchema = WhatsAppFlowFieldsSchema.extend({
   bodyText: WhatsAppFlowFieldsSchema.shape.bodyText.optional().describe('Message body; defaults to the message text'),
+  flowToken: z
+    .string()
+    .min(1)
+    .optional()
+    .describe('Correlates the nfm_reply back to this send (whatsapp-business); generated when omitted, never empty'),
+  draft: z
+    .boolean()
+    .optional()
+    .describe('Not sent here: true is refused, since draft flows go through POST /instances/{id}/whatsapp-flows/send'),
 }).refine(hasOneFlowRef, FLOW_REF_ISSUE);
 
 export const WhatsAppBusinessRegisterRequestSchema = z.object({

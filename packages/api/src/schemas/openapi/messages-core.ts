@@ -41,6 +41,10 @@ const SentTextSchema = MessageResponseSchema.extend({
     description:
       "Present on a whatsapp-business flow send: the caller's flowToken, or the one generated; the nfm_reply echoes it. Absent on asc-flow, which cannot carry a token",
   }),
+  deliveredAs: z.enum(['flow', 'text']).optional().openapi({
+    description:
+      "Present on a flow send: 'flow' when the Flow went out, 'text' when the channel delivered its body as plain text instead (asc-flow, when the platform refuses the Flow or cannot carry its body). With 'text' no nfm_reply will come",
+  }),
 });
 const FilteredTextSchema = z.object({
   messageId: z.literal('').openapi({ description: 'Empty: nothing was sent' }),

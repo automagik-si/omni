@@ -2188,7 +2188,7 @@ export interface paths {
                         };
                         /** @description Ask the user to share their location (WhatsApp Cloud: native "Send location" button under the text) */
                         requestLocation?: boolean;
-                        /** @description Send a WhatsApp Flow (whatsapp-business and asc-flow only). bodyText defaults to text. Not combinable with buttons, list or requestLocation. whatsapp-business takes data only with screen on a navigate flow. asc-flow takes flowId, cta, body, header, footer and data, and no flowName, screen, data_exchange, draft or flowToken */
+                        /** @description Send a WhatsApp Flow (whatsapp-business and asc-flow only) as one message. bodyText defaults to text; body, cta, header and footer go through the outbound filter, and the body follows the instance markdown mode. Not combinable with buttons, list or requestLocation; draft is not accepted here. whatsapp-business takes screen and data only on a navigate flow, and data only with screen. asc-flow takes flowId, cta, body, header, footer and data, and no flowName, screen, data_exchange or flowToken */
                         flow?: {
                             /** @description Flow id (exactly one of flowId/flowName) */
                             flowId?: string;
@@ -2208,9 +2208,9 @@ export interface paths {
                             data?: {
                                 [key: string]: unknown;
                             };
-                            /** @description Correlates the nfm_reply back to this send; generated when omitted */
+                            /** @description Correlates the nfm_reply back to this send (whatsapp-business); generated when omitted, never empty */
                             flowToken?: string;
-                            /** @description Send the unpublished draft (testing) */
+                            /** @description Not sent here: true is refused, since draft flows go through POST /instances/{id}/whatsapp-flows/send */
                             draft?: boolean;
                             /**
                              * @description 'navigate' (default, static flow) or 'data_exchange' (endpoint-backed flow)
@@ -2293,6 +2293,11 @@ export interface paths {
                                 timestamp?: number;
                                 /** @description Present on a whatsapp-business flow send: the caller's flowToken, or the one generated; the nfm_reply echoes it. Absent on asc-flow, which cannot carry a token */
                                 flowToken?: string;
+                                /**
+                                 * @description Present on a flow send: 'flow' when the Flow went out, 'text' when the channel delivered its body as plain text instead (asc-flow, when the platform refuses the Flow or cannot carry its body). With 'text' no nfm_reply will come
+                                 * @enum {string}
+                                 */
+                                deliveredAs?: "flow" | "text";
                             };
                         };
                     };

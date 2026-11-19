@@ -23,11 +23,12 @@ type SentMessage = {
   metadata?: Record<string, unknown> & { flow?: Record<string, unknown> };
 };
 
-function mountMessagesRoutes(channel = 'whatsapp-business') {
+function mountMessagesRoutes(channel = 'whatsapp-business', sendResult: Record<string, unknown> = {}) {
   const sendMessage = mock(async (_instanceId: string, _message: unknown) => ({
     success: true,
     messageId: 'SENT-MSG-ID',
     timestamp: 123,
+    ...sendResult,
   }));
 
   const app = new Hono<{ Variables: AppVariables }>();
@@ -352,4 +353,162 @@ describe('POST /messages/send with flow on asc-flow', () => {
       expect(sendMessage).not.toHaveBeenCalled();
     });
   }
+});
+
+describe('POST /messages/send with flow — the cogna-cx-agent chat kit request', () => {
+  // The shape the kit sends: whatsapp-business, the body in text, and every
+  // Flow field it relies on. It must keep going out exactly like this.
+  const KIT_FLOW = {
+    flowId: '1234567890',
+    screen: 'PROFILE',
+    cta: 'Escolher',
+    flowToken: 'test-flow-token',
+    flowAction: 'navigate',
+    data: {
+      levels: [{ id: 'level_a', title: 'Nível A' }],
+      modalities: [{ id: 'modality_a', title: 'Modalidade A' }],
+    },
+  };
+
+  test('goes out as one Flow with the body from text and answers 201 with flowToken and deliveredAs flow', async () => {
+    const { app, sendMessage } = mountMessagesRoutes();
+
+    const res = await postSend(app, { flow: KIT_FLOW });
+
+    expect(res.status).toBe(201);
+    const message = sentMessage(sendMessage);
+    expect(message.content).toEqual({ type: 'flow', text: 'Qual é o seu curso?' });
+    expect(message.metadata?.flow).toEqual({ ...KIT_FLOW, bodyText: 'Qual é o seu curso?' });
+    const json = (await res.json()) as { data: Record<string, unknown> };
+    expect(json.data).toMatchObject({ status: 'sent', flowToken: 'test-flow-token', deliveredAs: 'flow' });
+  });
+});
+
+describe('POST /messages/send with flow — what the caller is told was delivered', () => {
+  test('a Flow the channel delivered as text answers deliveredAs text', async () => {
+    const { app } = mountMessagesRoutes('whatsapp-business', { degradedTo: 'text' });
+
+    const res = await postSend(app, { flow: FLOW });
+
+    expect(res.status).toBe(201);
+    expect(((await res.json()) as { data: Record<string, unknown> }).data.deliveredAs).toBe('text');
+  });
+
+  test('a send without flow carries no deliveredAs', async () => {
+    const { app } = mountMessagesRoutes('whatsapp-business', { degradedTo: 'text' });
+
+    const res = await postSend(app, {});
+
+    expect(res.status).toBe(201);
+    expect('deliveredAs' in ((await res.json()) as { data: Record<string, unknown> }).data).toBe(false);
+  });
+});
+
+describe('POST /messages/send with flow — options refused before the channel', () => {
+  test('whatsapp-business refuses screen on a data_exchange flow even without data', async () => {
+    const { app, sendMessage } = mountMessagesRoutes();
+
+    const res = await postSend(app, { flow: { ...FLOW, flowAction: 'data_exchange' } });
+
+    expect(res.status).toBe(400);
+    const error = await errorOf(res);
+    expect(error.code).toBe('VALIDATION_ERROR');
+    expect(error.message).toContain('screen');
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  test('whatsapp-business sends a data_exchange flow without screen', async () => {
+    const { app, sendMessage } = mountMessagesRoutes();
+    const { screen: _screen, ...noScreen } = FLOW;
+
+    const res = await postSend(app, { flow: { ...noScreen, flowAction: 'data_exchange' } });
+
+    expect(res.status).toBe(201);
+    expect(sentMessage(sendMessage).metadata?.flow?.flowAction).toBe('data_exchange');
+  });
+
+  for (const channel of ['whatsapp-business', 'asc-flow']) {
+    test(`${channel} refuses draft: true, which only the instances:write flow route sends`, async () => {
+      const { app, sendMessage } = mountMessagesRoutes(channel);
+
+      const res = await postSend(app, { flow: { flowId: '1234567890', cta: 'Escolher', draft: true } });
+
+      expect(res.status).toBe(400);
+      const error = await errorOf(res);
+      expect(error.code).toBe('VALIDATION_ERROR');
+      expect(error.message).toContain('draft');
+      expect(error.message).toContain('/whatsapp-flows/send');
+      expect(sendMessage).not.toHaveBeenCalled();
+    });
+  }
+
+  test('refuses an empty flowToken', async () => {
+    const { app, sendMessage } = mountMessagesRoutes();
+
+    const res = await postSend(app, { flow: { ...FLOW, flowToken: '' } });
+
+    expect(res.status).toBe(400);
+    expect((await errorOf(res)).code).toBe('VALIDATION_ERROR');
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /messages/send with flow — header, footer and cta go through the outbound filter', () => {
+  const ROUTING_HEADER = '[channel:whatsapp-business chat:5511999998888]';
+  const DIRECTIVE = '⚡ REPLY NOW to the user';
+
+  test('strips routing headers and agent directives from headerText, footerText and cta', async () => {
+    const { app, sendMessage } = mountMessagesRoutes();
+
+    const res = await postSend(app, {
+      flow: {
+        ...FLOW,
+        // Short enough for the 30-character cta limit, which applies as sent.
+        cta: '[chat:42] Escolher',
+        headerText: `${ROUTING_HEADER} Topo`,
+        footerText: `Rodapé\n${DIRECTIVE}`,
+      },
+    });
+
+    expect(res.status).toBe(201);
+    expect(sentMessage(sendMessage).metadata?.flow).toMatchObject({
+      cta: 'Escolher',
+      headerText: 'Topo',
+      footerText: 'Rodapé',
+    });
+  });
+
+  test('drops a header or footer the filter empties', async () => {
+    const { app, sendMessage } = mountMessagesRoutes();
+
+    const res = await postSend(app, { flow: { ...FLOW, headerText: DIRECTIVE, footerText: ROUTING_HEADER } });
+
+    expect(res.status).toBe(201);
+    const flow = sentMessage(sendMessage).metadata?.flow ?? {};
+    expect('headerText' in flow).toBe(false);
+    expect('footerText' in flow).toBe(false);
+  });
+
+  test('refuses a cta the filter empties, since the button needs a label', async () => {
+    const { app, sendMessage } = mountMessagesRoutes();
+
+    const res = await postSend(app, { flow: { ...FLOW, cta: DIRECTIVE } });
+
+    expect(res.status).toBe(400);
+    const error = await errorOf(res);
+    expect(error.code).toBe('VALIDATION_ERROR');
+    expect(error.message).toContain('cta');
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /messages/send with flow — markdown follows the instance format mode', () => {
+  test('a flow send hands the plugin the format mode, convert by default', async () => {
+    const { app, sendMessage } = mountMessagesRoutes();
+
+    const res = await postSend(app, { flow: FLOW });
+
+    expect(res.status).toBe(201);
+    expect(sentMessage(sendMessage).metadata?.messageFormatMode).toBe('convert');
+  });
 });
