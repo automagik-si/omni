@@ -380,14 +380,66 @@ describe('outbound WhatsApp Flow through /sendMsgInterativaAvancado', () => {
     expect(result.success).toBe(true);
     expect(of('/sendMsgInterativaAvancado')).toHaveLength(0);
     expect(of('/callbackFlowMsg')[0]?.body.msg_usuario).toBe('Escolha 3 horários:');
+    expect(result.degradedTo).toBe('text');
   });
 
-  it('falls back to the text when the platform refuses the flow', async () => {
+  it('falls back to the text when the platform refuses the flow, and says so', async () => {
     await boot({ '/sendMsgInterativaAvancado': () => jsonResponse({ cod_error: 1, msg: 'nao' }, 400) });
     const result = await sendFlow(flow);
 
     expect(result.success).toBe(true);
     expect(of('/callbackFlowMsg')[0]?.body.msg_usuario).toBe('Escolha 3 horários:');
+    expect(result.degradedTo).toBe('text');
+  });
+
+  it('reports nothing degraded when the platform takes the flow', async () => {
+    await boot();
+    const result = await sendFlow(flow);
+
+    expect(result.success).toBe(true);
+    expect(result.degradedTo).toBeUndefined();
+  });
+
+  it('keeps a body with paragraphs in the one flow message instead of splitting it into bubbles', async () => {
+    await boot();
+    const text = 'Ola, tudo bem?\n\nToque abaixo para escolher';
+    const result = await sendFlow(flow, text);
+
+    expect(result.success).toBe(true);
+    expect(of('/callbackFlowMsg')).toHaveLength(0);
+    expect(of('/sendMsgInterativaAvancado')).toHaveLength(1);
+    expect(of('/sendMsgInterativaAvancado')[0]?.body).toMatchObject({
+      msg_interativa_parametros: { tipo: '5', mensagem: text },
+    });
+    expect(result.degradedTo).toBeUndefined();
+  });
+
+  it('sends a refused flow with paragraphs as one text message', async () => {
+    await boot({ '/sendMsgInterativaAvancado': () => jsonResponse({ cod_error: 1, msg: 'nao' }, 400) });
+    const text = 'Ola, tudo bem?\n\nToque abaixo para escolher';
+    const result = await sendFlow(flow, text);
+
+    expect(of('/callbackFlowMsg').map((c) => c.body.msg_usuario)).toEqual([text]);
+    expect(result.degradedTo).toBe('text');
+  });
+
+  it('degrades to text a body that the platform encoding pushes past the limit', async () => {
+    await boot();
+    // 1023 characters as written; the ellipsis rides as "..." and makes it 1025.
+    const result = await sendFlow(flow, `${'x'.repeat(1022)}…`);
+
+    expect(of('/sendMsgInterativaAvancado')).toHaveLength(0);
+    expect(result.degradedTo).toBe('text');
+  });
+});
+
+describe('outbound buttons keep their bubbles and report no degradation', () => {
+  it('splits the lead-up from the question and leaves degradedTo unset', async () => {
+    await boot();
+    const result = await send({ type: 'text', text: 'Oi.\n\nEscolha:', buttons: [{ text: 'Sim', data: 's' }] });
+
+    expect(of('/callbackFlowMsg').map((c) => c.body.msg_usuario)).toEqual(['Oi.']);
+    expect(result.degradedTo).toBeUndefined();
   });
 });
 
