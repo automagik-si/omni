@@ -253,7 +253,7 @@ export class ImageProcessor extends BaseProcessor {
                 ],
               },
             ],
-            max_tokens: 1024,
+            max_completion_tokens: 1024,
           });
 
           return {
