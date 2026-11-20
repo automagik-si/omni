@@ -32,7 +32,8 @@ jobs:
     # Run on every PR, including plugins/omni/** and changes to its CLI dependencies.
     # Merge queues must prove the same plugin contract on the combined tree.
     if: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    # First job on the org's own runner pool (4 vCPU, 16 GiB, ubuntu-24.04 toolset, fresh environment per job); not a required check, so a slow pool blocks no merge.
+    runs-on: automagik-4vcpu-ubuntu-2404
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
