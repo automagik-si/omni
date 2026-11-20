@@ -40,8 +40,18 @@ import { extname, join } from 'node:path';
 import { zValidator } from '@hono/zod-validator';
 import { sanitizeOutboundText } from '@omni/channel-sdk';
 import type { ChannelRegistry, OutgoingContent, OutgoingMessage } from '@omni/channel-sdk';
-import { ERROR_CODES, JOURNEY_STAGES, NotFoundError, OmniError, createLogger, getJourneyTracker } from '@omni/core';
+import { buildFlowToken } from '@omni/channel-whatsapp-business';
+import {
+  ERROR_CODES,
+  JOURNEY_STAGES,
+  NotFoundError,
+  OmniError,
+  createLogger,
+  getJourneyTracker,
+  markdownToWhatsApp,
+} from '@omni/core';
 import type { ChatClosedPayload, CloseContactOutcome } from '@omni/core/events';
+import { WhatsAppFlowInMessageSchema, type WhatsAppFlowSend } from '@omni/core/schemas';
 import type { ChannelType } from '@omni/core/types';
 import type { Database } from '@omni/db';
 import { closeContactLogs, handoffLogs } from '@omni/db';
@@ -711,10 +721,222 @@ export const sendTextSchema = z.object({
     .boolean()
     .optional()
     .describe('Ask the user to share their location (WhatsApp Cloud: native "Send location" button under the text)'),
+  flow: WhatsAppFlowInMessageSchema.optional().describe(
+    'Send a WhatsApp Flow (whatsapp-business and asc-flow only) as one message. bodyText defaults to text; body, cta, header and footer go through the outbound filter, and the body follows the instance markdown mode. Not combinable with buttons, list or requestLocation; draft is not accepted here. whatsapp-business takes screen and data only on a navigate flow, and data only with screen. asc-flow takes flowId, cta, body, header, footer and data, and no flowName, screen, data_exchange or flowToken',
+  ),
   sentBy: sentByField,
   pacing: pacingField,
   replyToKey: replyToKeyField,
 });
+
+/**
+ * Channels with a Flow sender: whatsapp-business (Meta Cloud API) and asc-flow,
+ * a BSP on Meta that renders the same message (see routes/v2/whatsapp-flows.ts).
+ */
+const FLOW_CHANNELS: ReadonlySet<string> = new Set(['whatsapp-business', 'asc-flow']);
+
+/** Meta's limit on a Flow message body (`WhatsAppFlowSendSchema.bodyText`). */
+const FLOW_BODY_MAX = 1024;
+
+/** `metadata.flow`; `flowToken` is absent on asc-flow, which cannot carry it. */
+type FlowDescriptor = WhatsAppFlowSend & { flowToken?: string };
+
+/** A `flow` from the request, its body resolved and filtered. */
+type FlowDraft = z.infer<typeof WhatsAppFlowInMessageSchema> & { bodyText: string };
+
+type SendTextError = { code: string; message?: string; issues?: z.ZodIssue[] };
+
+type PreparedSendText = { ok: true; text: string; flow?: FlowDraft } | { ok: false; error: SendTextError };
+
+/**
+ * The body a `POST /messages/send` delivers, through the outbound filter that
+ * strips internal routing headers and agent directives (GH #300): the text, or
+ * with a `flow` the Flow body (`flow.bodyText`, or the text when it is missing).
+ *
+ * An empty `text` means the filter removed everything from a plain send, which
+ * answers `filtered`. A Flow cannot go out without a body, so a Flow body the
+ * filter empties is refused instead; and a text the filter empties does not
+ * stop a Flow whose `bodyText` carries the body. A Flow is the message's only
+ * interactive part: it cannot ride with buttons, a list or a location request.
+ */
+function prepareSendText(body: z.infer<typeof sendTextSchema>): PreparedSendText {
+  const text = sanitizeOutboundText(body.text);
+  if (!body.flow) return { ok: true, text };
+  const combined = {
+    buttons: Boolean(body.buttons?.length),
+    list: body.list !== undefined,
+    requestLocation: body.requestLocation === true,
+  };
+  const issues: z.ZodIssue[] = Object.entries(combined)
+    .filter(([, present]) => present)
+    .map(([field]) => ({
+      code: z.ZodIssueCode.custom,
+      path: [field],
+      message: `flow cannot be combined with ${field}`,
+    }));
+  if (issues.length > 0) return { ok: false, error: { code: 'VALIDATION_ERROR', issues } };
+  const flow = prepareFlow(body.flow, text);
+  if ('error' in flow) return { ok: false, error: { code: 'VALIDATION_ERROR', message: flow.error } };
+  return { ok: true, text: flow.bodyText, flow };
+}
+
+/**
+ * The request's `flow` with every text the person reads through the same
+ * outbound filter as `text`: the body (`bodyText`, or the text when it is
+ * missing), the button label, the header and the footer. A body or label the
+ * filter empties is refused, since the message needs both; an emptied header
+ * or footer is left out. A draft flow is not sent here at all.
+ */
+function prepareFlow(flow: z.infer<typeof WhatsAppFlowInMessageSchema>, text: string): FlowDraft | { error: string } {
+  if (flow.draft === true) {
+    return {
+      error:
+        'flow.draft is not sent through POST /messages/send: a draft flow goes through POST /instances/:id/whatsapp-flows/send, which needs instances:write',
+    };
+  }
+  const bodyText = flow.bodyText === undefined ? text : sanitizeOutboundText(flow.bodyText);
+  if (!bodyText)
+    return { error: 'The flow body (flow.bodyText, or text when it is missing) is empty after the outbound filter' };
+  if (bodyText.length > FLOW_BODY_MAX) {
+    return {
+      error: `The flow body (flow.bodyText, or text when it is missing) allows at most ${FLOW_BODY_MAX} characters`,
+    };
+  }
+  const cta = sanitizeOutboundText(flow.cta);
+  if (!cta) return { error: 'flow.cta is empty after the outbound filter' };
+  const { headerText: rawHeader, footerText: rawFooter, ...rest } = flow;
+  const headerText = rawHeader === undefined ? '' : sanitizeOutboundText(rawHeader);
+  const footerText = rawFooter === undefined ? '' : sanitizeOutboundText(rawFooter);
+  return { ...rest, bodyText, cta, ...(headerText ? { headerText } : {}), ...(footerText ? { footerText } : {}) };
+}
+
+type FlowSendResult =
+  | { ok: true; flow: FlowDescriptor | undefined }
+  | { ok: false; error: { code: string; message: string } };
+
+const flowValidationError = (message: string): FlowSendResult => ({
+  ok: false,
+  error: { code: 'VALIDATION_ERROR', message },
+});
+
+/**
+ * The options asc-flow cannot carry. Its flow message (`buildFlowInteractive`
+ * in channel-asc-flow) holds the flow id, the button label, the body, header
+ * and footer, and `data` as the payload: no flow name, first screen, action
+ * or token, so the nfm_reply cannot be correlated by token there. (A draft is
+ * refused on every channel, in `prepareFlow`.)
+ */
+function ascFlowUnsupported(flow: FlowDraft): string[] {
+  const set = {
+    flowName: flow.flowName !== undefined,
+    screen: flow.screen !== undefined,
+    flowAction: flow.flowAction === 'data_exchange',
+    flowToken: flow.flowToken !== undefined,
+  };
+  return Object.entries(set)
+    .filter(([, present]) => present)
+    .map(([field]) => field);
+}
+
+/**
+ * The `metadata.flow` descriptor for a Flow sent through `POST /messages/send`
+ * (none when the body carries no `flow`): the same one
+ * `POST /instances/:id/whatsapp-flows/send` hands the plugin. An option the
+ * channel would drop is refused rather than lost:
+ *  - whatsapp-business sends `data` only with the first `screen` of a navigate
+ *    flow (`sendFlow`); the caller's `flowToken` is kept, or one is generated,
+ *    as on that route;
+ *  - asc-flow carries none of `ascFlowUnsupported`, and no token.
+ */
+function buildFlowSend(
+  flow: FlowDraft | undefined,
+  channel: string,
+  formatMode: string | null | undefined,
+): FlowSendResult {
+  if (!flow) return { ok: true, flow: undefined };
+  if (!FLOW_CHANNELS.has(channel)) {
+    return {
+      ok: false,
+      error: {
+        code: 'WRONG_CHANNEL',
+        message: `Instance channel is "${channel}"; a flow is sent only on whatsapp-business or asc-flow`,
+      },
+    };
+  }
+  if (channel === 'asc-flow') {
+    const unsupported = ascFlowUnsupported(flow);
+    if (unsupported.length > 0) {
+      return flowValidationError(
+        `asc-flow cannot carry ${unsupported.join(', ')}: it sends a flow by flowId, with cta, body, header, footer and data`,
+      );
+    }
+    return { ok: true, flow };
+  }
+  if (flow.screen !== undefined && flow.flowAction === 'data_exchange') {
+    return flowValidationError(
+      'flow.screen is not sent on a data_exchange flow: its endpoint picks the first screen; leave screen and data out',
+    );
+  }
+  const hasData = flow.data !== undefined && Object.keys(flow.data).length > 0;
+  if (hasData && !flow.screen) {
+    return flowValidationError('flow.data reaches the flow only with flow.screen, on a navigate flow');
+  }
+  // The sender converts the body's markdown in `convert` mode (`formatFlowBody`),
+  // which can lengthen it: Meta's limit applies to what it receives.
+  const sent = (formatMode ?? 'convert') === 'convert' ? markdownToWhatsApp(flow.bodyText) : flow.bodyText;
+  if (sent.length > FLOW_BODY_MAX) {
+    return flowValidationError(
+      `The flow body exceeds ${FLOW_BODY_MAX} characters once its markdown is converted for WhatsApp; shorten it`,
+    );
+  }
+  const flowToken = flow.flowToken ?? buildFlowToken(flow.flowId ?? flow.flowName ?? 'unknown');
+  return { ok: true, flow: { ...flow, flowToken } };
+}
+
+/**
+ * `metadata.flow`, plus the format mode spelled out: the whatsapp-business
+ * flow sender converts the body's markdown only when it is told to, so a send
+ * through the older flow route (which sets no mode) keeps its body as given,
+ * while this one converts by default, like its text path.
+ */
+function flowMetadata(
+  flow: FlowDescriptor | undefined,
+  formatMode: string | null | undefined,
+): Record<string, unknown> {
+  if (!flow) return {};
+  return { flow, messageFormatMode: formatMode ?? 'convert' };
+}
+
+/**
+ * What a flow send's 201 adds: the `flowToken` to correlate the nfm_reply (none
+ * on asc-flow, which cannot carry one) and `deliveredAs`, which says whether the
+ * Flow went out or the channel delivered its body as text instead.
+ */
+function flowResponseFields(
+  flow: FlowDescriptor | undefined,
+  degradedTo: string | undefined,
+): { flowToken?: string; deliveredAs?: 'flow' | 'text' } {
+  if (!flow) return {};
+  return {
+    ...(flow.flowToken ? { flowToken: flow.flowToken } : {}),
+    deliveredAs: degradedTo === 'text' ? 'text' : 'flow',
+  };
+}
+
+/** The content of a `POST /messages/send`: a Flow, or the text with its buttons, list or location request. */
+function sendTextContent(
+  body: Pick<z.infer<typeof sendTextSchema>, 'buttons' | 'list' | 'requestLocation'>,
+  text: string,
+  flow: FlowDescriptor | undefined,
+): OutgoingContent {
+  if (flow) return { type: 'flow', text: flow.bodyText };
+  return {
+    type: body.requestLocation ? 'location_request' : 'text',
+    text,
+    ...(body.buttons?.length ? { buttons: body.buttons } : {}),
+    ...(body.list ? { list: body.list } : {}),
+  } as OutgoingContent;
+}
 
 // Send media schema
 const sendMediaSchema = z.object({
@@ -1367,10 +1589,11 @@ messagesRoutes.post('/send', async (c) => {
     return c.json({ error: { code: 'VALIDATION_ERROR', issues: parsed.error.issues } }, 400);
   }
 
-  const { instanceId, to, replyTo, threadId, mentions, buttons, list, requestLocation, sentBy, pacing, replyToKey } =
-    parsed.data;
+  const { instanceId, to, replyTo, threadId, mentions, sentBy, pacing, replyToKey } = parsed.data;
   // Strip internal routing headers and agent directives before sending (GH #300)
-  const text = sanitizeOutboundText(parsed.data.text);
+  const prepared = prepareSendText(parsed.data);
+  if (!prepared.ok) return c.json({ error: prepared.error }, 400);
+  const { text } = prepared;
   if (!text) {
     return c.json({ data: { messageId: '', status: 'filtered', instanceId, to } }, 200);
   }
@@ -1390,6 +1613,9 @@ messagesRoutes.post('/send', async (c) => {
     instanceId,
     'canSendText',
   );
+  const flowSend = buildFlowSend(prepared.flow, instance.channel, instance.messageFormatMode);
+  if (!flowSend.ok) return c.json({ error: flowSend.error }, 400);
+  const flowDescriptor = flowSend.flow;
   const effectivePacing = resolveOutboundPacing(pacing, instance);
   const resolvedTo = await resolveRecipient(to, instance.channel, services);
 
@@ -1401,12 +1627,7 @@ messagesRoutes.post('/send', async (c) => {
   const outgoingMessage: OutgoingMessage = {
     to: resolvedTo,
     threadId,
-    content: {
-      type: requestLocation ? 'location_request' : 'text',
-      text,
-      ...(buttons?.length ? { buttons } : {}),
-      ...(list ? { list } : {}),
-    } as OutgoingContent,
+    content: sendTextContent(parsed.data, text, flowDescriptor),
     replyTo,
     metadata: {
       ...(mentions ? { mentions } : {}),
@@ -1416,6 +1637,7 @@ messagesRoutes.post('/send', async (c) => {
       // way it governs agent-dispatched replies — plugins default to 'convert'
       // when the key is absent (#894).
       ...(instance.messageFormatMode ? { messageFormatMode: instance.messageFormatMode } : {}),
+      ...flowMetadata(flowDescriptor, instance.messageFormatMode),
       ...outboundPacingMetadata(effectivePacing),
     },
   };
@@ -1447,6 +1669,7 @@ messagesRoutes.post('/send', async (c) => {
         instanceId: instance.id,
         to,
         timestamp: result.timestamp,
+        ...flowResponseFields(flowDescriptor, result.degradedTo),
         ...sentByResponseFields(sentBy, senderAgentId),
       },
     },

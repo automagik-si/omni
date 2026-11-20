@@ -365,6 +365,64 @@ describe('outputRedactorMiddleware (HTTP)', () => {
     }
   });
 
+  describe('a WhatsApp Flow body (flow.data carries option ids and labels)', () => {
+    // A form Flow with two option groups, each a list of {id, title}, filled per
+    // send through `data`. Ids and labels are neutral placeholders.
+    const flowBody = {
+      instanceId: 'i-1',
+      to: 'j@s',
+      text: 'Escolha uma opção',
+      flow: {
+        flowId: '1234567890',
+        screen: 'FORM',
+        cta: 'Escolher',
+        flowToken: 'test-flow-token',
+        data: {
+          options: [
+            { id: 'option_a', title: 'Opção A' },
+            { id: 'option_b', title: 'Opção B' },
+          ],
+          extras: [
+            { id: 'extra_a', title: 'Extra A' },
+            { id: 'extra_b', title: 'Extra B detalhado' },
+          ],
+        },
+      },
+    };
+
+    async function send(apiKey: ApiKeyData) {
+      const { calls, bus } = mkEventBusMock();
+      const res = await mkApp(apiKey, bus).request('/api/v2/messages/send', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(flowBody),
+      });
+      return { received: ((await res.json()) as { received: unknown }).received, calls };
+    }
+
+    const profiles: Array<[string, Partial<ApiKeyData>]> = [
+      ['a send-only key without a profile', { scopes: ['messages:send'] }],
+      ['a scout key', { profile: 'scout', scopes: ['messages:send'] }],
+      ['a coworker key on its default preset', { profile: 'coworker' }],
+    ];
+    for (const [name, overrides] of profiles) {
+      test(`${name}: flow.data reaches the route untouched`, async () => {
+        const { received, calls } = await send(mkKey(overrides));
+        expect(received).toEqual(flowBody);
+        expect(calls.length).toBe(0);
+      });
+    }
+
+    test('the redactor does walk flow.data: a denylisted label is replaced and reported', async () => {
+      const { received, calls } = await send(
+        mkKey({ profile: 'coworker', profileOverrides: { denylistExtras: ['detalhado'] } }),
+      );
+      const extras = (received as typeof flowBody).flow.data.extras;
+      expect(extras[1]).toEqual({ id: 'extra_b', title: `Extra B ${REDACTION_MARKER}` });
+      expect(calls.map((c) => c.payload.field)).toEqual(['flow.data.extras.1.title']);
+    });
+  });
+
   test('non-JSON body: middleware passes through unchanged', async () => {
     const { bus } = mkEventBusMock();
     const apiKey = mkKey({ profile: 'coworker' });

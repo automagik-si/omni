@@ -178,6 +178,13 @@ export interface SendResult {
   timestamp: number;
 
   /**
+   * Set when the channel could not deliver the content as asked and delivered
+   * it as this other content type instead, e.g. asc-flow sending a WhatsApp
+   * Flow the platform refused as its body text. Undefined: delivered as asked.
+   */
+  degradedTo?: string;
+
+  /**
    * Handoff sends only. `false` means this channel's handoff does NOT take the
    * conversation away from the agent, so the caller must NOT set
    * `agentPaused: true` on the chat.

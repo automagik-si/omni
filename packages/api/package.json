@@ -57,6 +57,7 @@
   },
   "devDependencies": {
     "@omni/channel-a2a": "workspace:*",
+    "@omni/channel-asc-flow": "workspace:*",
     "@omni/channel-harness": "workspace:*",
     "@asteasolutions/zod-to-openapi": "7.3.4",
     "@types/qrcode-terminal": "^0.12.2",

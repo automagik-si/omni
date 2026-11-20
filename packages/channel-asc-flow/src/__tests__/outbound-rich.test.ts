@@ -361,6 +361,18 @@ describe('outbound WhatsApp Flow through /sendMsgInterativaAvancado', () => {
     expect(ready('42')).toMatchObject({ resposta: '' });
   });
 
+  it('keeps the flow when the emoji markers push a body within the limit past 1024 characters', async () => {
+    await boot();
+    // 1022 characters on the handset, 1029 once the emoji rides as `##1f600##`.
+    const result = await sendFlow(flow, `${'x'.repeat(1020)}😀`);
+
+    expect(result.success).toBe(true);
+    expect(of('/sendMsgInterativaAvancado')[0]?.body).toMatchObject({
+      msg_interativa_parametros: { tipo: '5', mensagem: `${'x'.repeat(1020)}##1f600##` },
+    });
+    expect(of('/callbackFlowMsg')).toHaveLength(0);
+  });
+
   it('sends the body as text when the descriptor has no flowId', async () => {
     await boot();
     const result = await sendFlow({ cta: 'Abrir' });
@@ -368,14 +380,114 @@ describe('outbound WhatsApp Flow through /sendMsgInterativaAvancado', () => {
     expect(result.success).toBe(true);
     expect(of('/sendMsgInterativaAvancado')).toHaveLength(0);
     expect(of('/callbackFlowMsg')[0]?.body.msg_usuario).toBe('Escolha 3 horários:');
+    expect(result.degradedTo).toBe('text');
   });
 
-  it('falls back to the text when the platform refuses the flow', async () => {
+  it('falls back to the text when the platform refuses the flow, and says so', async () => {
     await boot({ '/sendMsgInterativaAvancado': () => jsonResponse({ cod_error: 1, msg: 'nao' }, 400) });
     const result = await sendFlow(flow);
 
     expect(result.success).toBe(true);
     expect(of('/callbackFlowMsg')[0]?.body.msg_usuario).toBe('Escolha 3 horários:');
+    expect(result.degradedTo).toBe('text');
+  });
+
+  it('reports nothing degraded when the platform takes the flow', async () => {
+    await boot();
+    const result = await sendFlow(flow);
+
+    expect(result.success).toBe(true);
+    expect(result.degradedTo).toBeUndefined();
+  });
+
+  it('keeps a body with paragraphs in the one flow message instead of splitting it into bubbles', async () => {
+    await boot();
+    const text = 'Ola, tudo bem?\n\nToque abaixo para escolher';
+    const result = await sendFlow(flow, text);
+
+    expect(result.success).toBe(true);
+    expect(of('/callbackFlowMsg')).toHaveLength(0);
+    expect(of('/sendMsgInterativaAvancado')).toHaveLength(1);
+    expect(of('/sendMsgInterativaAvancado')[0]?.body).toMatchObject({
+      msg_interativa_parametros: { tipo: '5', mensagem: text },
+    });
+    expect(result.degradedTo).toBeUndefined();
+  });
+
+  it('sends a refused flow with paragraphs as one text message', async () => {
+    await boot({ '/sendMsgInterativaAvancado': () => jsonResponse({ cod_error: 1, msg: 'nao' }, 400) });
+    const text = 'Ola, tudo bem?\n\nToque abaixo para escolher';
+    const result = await sendFlow(flow, text);
+
+    expect(of('/callbackFlowMsg').map((c) => c.body.msg_usuario)).toEqual([text]);
+    expect(result.degradedTo).toBe('text');
+  });
+
+  it('degrades to text a body that the platform encoding pushes past the limit', async () => {
+    await boot();
+    // 1023 characters as written; the ellipsis rides as "..." and makes it 1025.
+    const result = await sendFlow(flow, `${'x'.repeat(1022)}…`);
+
+    expect(of('/sendMsgInterativaAvancado')).toHaveLength(0);
+    expect(result.degradedTo).toBe('text');
+  });
+});
+
+describe('a send nothing accepted is a failure, even with a poll waiting when it started', () => {
+  const refused = () => jsonResponse({ cod_error: 1, msg: 'nao' }, 400);
+  /** A new inbound turn takes the cod while the send is on the network. */
+  const swapTurn = () => {
+    const state = (
+      plugin as unknown as { ascFlowInstances: Map<string, { inFlight: Map<string, { text: string; at: number }> }> }
+    ).ascFlowInstances.get(instanceId);
+    state?.inFlight.set('42', { text: 'outra mensagem', at: Date.now() });
+  };
+
+  it('fails a Flow whose component and text fallback were both refused while the turn changed', async () => {
+    await boot({
+      '/sendMsgInterativaAvancado': () => {
+        swapTurn();
+        return refused();
+      },
+      '/callbackFlowMsg': refused,
+    });
+    const result = await send(
+      { type: 'flow', text: 'Escolha:' },
+      { metadata: { flow: { flowId: '1', cta: 'Abrir' } } },
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.degradedTo).toBeUndefined();
+  });
+
+  it('fails a text whose push was refused while the turn changed', async () => {
+    await boot({
+      '/callbackFlowMsg': () => {
+        swapTurn();
+        return refused();
+      },
+    });
+    const result = await send({ type: 'text', text: 'Oi' });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('still succeeds when the push is refused but the poll that is waiting takes the text', async () => {
+    await boot({ '/callbackFlowMsg': refused });
+    const result = await send({ type: 'text', text: 'Oi' });
+
+    expect(result.success).toBe(true);
+    expect(ready('42')).toMatchObject({ resposta: 'Oi' });
+  });
+});
+
+describe('outbound buttons keep their bubbles and report no degradation', () => {
+  it('splits the lead-up from the question and leaves degradedTo unset', async () => {
+    await boot();
+    const result = await send({ type: 'text', text: 'Oi.\n\nEscolha:', buttons: [{ text: 'Sim', data: 's' }] });
+
+    expect(of('/callbackFlowMsg').map((c) => c.body.msg_usuario)).toEqual(['Oi.']);
+    expect(result.degradedTo).toBeUndefined();
   });
 });
 
