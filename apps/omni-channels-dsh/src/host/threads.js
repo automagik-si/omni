@@ -103,7 +103,7 @@ const CreatePayload = z.object({
 })
 const AddPayload = z.union([CreatePayload, Member])
 const RemovePayload = z.object({ threadId: id, automations: z.enum(['keep', 'pause', 'delete']).optional() })
-const TrainingPayload = z.object({ chats: z.array(id).min(1).max(50), selected: z.boolean() }).strict()
+const TrainingPayload = z.object({ chats: z.array(id).min(1).max(50), selected: z.boolean(), link: z.url().optional() }).strict()
 // A thread's own choice for each, or null to follow the global default again; a field left
 // out stays as it is.
 const PermissionsPayload = z.object({
@@ -539,7 +539,7 @@ export function install(rt) {
     const link = rt.omniLink?.() ?? null
     const threadId = randomUUID()
     if (trainingOnly) check()
-    const minted = await rt.threadKeys.mint(threadId, chatIds.length === 1 ? chatId : chatIds)
+    const minted = await rt.threadKeys.mint(threadId, chatIds.length === 1 ? chatId : chatIds, { check })
     if (!minted.ok) return minted
     const name = title ?? chatNameOf(chat)
     const kind = chat.chatType === 'dm' ? 'direct' : 'group'
@@ -605,6 +605,10 @@ export function install(rt) {
     selected: isSelected(thread), threadId: thread?.id ?? null, sendingMode: thread ? sendingModeOf(thread) : null,
   })
   const trainingRefusal = error => error?.message ?? 'The training selection could not be saved.'
+  const trainingLinkChanged = () => refused('The Omni link changed while selecting this chat.')
+  function checkExpectedTrainingLink(expected, current) {
+    if (expected !== undefined && current?.url !== expected) throw trainingLinkChanged()
+  }
   function trainingOf(chat) {
     const thread = byChat(chat.id)
     return trainingState(matchesTrainingThread(thread, chat.id, chat.channelId, explicitOwnerOf(chat.channelId), rt.omniLink?.()) ? thread : undefined)
@@ -620,7 +624,7 @@ export function install(rt) {
     const readOnly = rt.readOnly?.()
     if (readOnly !== undefined) throw refused(readOnly)
     const current = rt.omniLink?.()
-    if (current?.url !== link.url || current?.key !== link.key) throw refused('The Omni link changed while selecting this chat.')
+    if (current?.url !== link.url || current?.key !== link.key) throw trainingLinkChanged()
     if (!ownsExplicitly(owner, chat.instanceId)) throw refused('This chat needs a channel with the same explicit Bot owner.')
     const answer = answerSettingsOf(rt.botOf(owner))
     if (!answer.enabled) throw refused('Answer Mode is off on the owning Bot.')
@@ -628,10 +632,11 @@ export function install(rt) {
     if (answer.needsStaffChatId === chat.id) throw refused(NEEDS_STAFF_CHAT_REFUSAL)
   }
 
-  async function selectTrainingNow(chatId, selected) {
+  async function selectTrainingNow(chatId, selected, expectedLink) {
     const readOnly = rt.readOnly?.()
     if (readOnly !== undefined) throw refused(readOnly)
     const link = rt.omniLink?.()
+    checkExpectedTrainingLink(expectedLink, link)
     if (!link) throw refused(NOT_LINKED)
     const answer = ChatAnswer.safeParse(await ask(`/chats/${chatId}`, link))
     if (!answer.success || answer.data.data.id !== chatId) throw refused('Omni answered something else for that chat.')
@@ -675,10 +680,10 @@ export function install(rt) {
     return { thread }
   }
 
-  function provisionTraining(chatId, selected = true) {
+  function provisionTraining(chatId, selected = true, expectedLink) {
     return serial(async () => {
       try {
-        const { thread, refusal = null } = await selectTrainingNow(chatId, selected)
+        const { thread, refusal = null } = await selectTrainingNow(chatId, selected, expectedLink)
         return { chatId, ...trainingState(thread), refusal }
       } catch (error) {
         return { chatId, ...trainingState(), refusal: trainingRefusal(error) }
@@ -1322,10 +1327,11 @@ export function install(rt) {
   ctx.effect(() => rt.hooks.endpoint('omni-thread-chats', chats, { read: true }), 'omni-channels: omni-thread-chats')
   for (const [name, run] of Object.entries(ENDPOINTS)) ctx.effect(() => rt.hooks.endpoint(name, run), `omni-channels: ${name}`)
   ctx.effect(() => rt.hooks.endpoint('select_conversation_training', async (body) => {
-    const { chats: chatIds, selected } = parse(TrainingPayload, body, 'Pick 1–50 chats and whether to select them for training.')
+    const { chats: chatIds, selected, link } = parse(TrainingPayload, body, 'Pick 1–50 chats and whether to select them for training.')
     await rt.load()
+    if (link !== undefined) checkExpectedTrainingLink(link, rt.omniLink?.())
     const results = []
-    for (const chatId of new Set(chatIds)) results.push(await provisionTraining(chatId, selected))
+    for (const chatId of new Set(chatIds)) results.push(await provisionTraining(chatId, selected, link))
     return { results }
   }), 'omni-channels: select_conversation_training')
 

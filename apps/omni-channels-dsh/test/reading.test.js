@@ -398,7 +398,8 @@ test('summaries stay in a private sidecar and the old strict note entries still 
   assert.match(await dsh.run('save_reading_note', { ...note, summary: `  ${marker}  ` }), /^Reading note saved/)
   const first = JSON.parse(readFileSync(sidecar, 'utf8'))
   assert.equal(first.version, 1)
-  assert.equal(first.chats[CHAT].summary, marker)
+  const key = JSON.stringify([OMNI, INSTANCE, CHAT])
+  assert.equal(first.chats[key].summary, marker)
   assert.equal(statSync(sidecar).mode & 0o777, 0o600)
   const oldNotes = z.object({
     version: z.literal(1),
@@ -410,7 +411,7 @@ test('summaries stay in a private sidecar and the old strict note entries still 
   assert.ok((await dsh.run('read_history', { chat: CHAT })).includes(`Conversation summary: ${marker}`))
   assert.equal((await dsh.endpoint('omni-reading-note', { chat: CHAT })).note.summary, marker)
   assert.equal((await dsh.endpoint('select_conversation_training', { chats: [CHAT], selected: true })).results[0].selected, true)
-  const { updatedAt } = first.chats[CHAT]
+  const { updatedAt } = first.chats[key]
   const stateText = readFileSync(join(home, 'state.json'), 'utf8')
   const views = JSON.stringify([dsh.team.extended.view(), dsh.team.extended.live(), rt.threads.list()])
   assert.equal(stateText.includes(marker), false)
@@ -431,7 +432,8 @@ for (const failure of ['rename failure', 'authority refusal']) {
     const omni = omniO1()
     const home = homeWith(t)
     const path = join(home, SUMMARIES_FILE)
-    const previous = { version: 1, chats: { [CHAT]: { summary: 'Previous summary', updatedAt: SAME } } }
+    const key = JSON.stringify([OMNI, INSTANCE, CHAT])
+    const previous = { version: 1, chats: { [key]: { summary: 'Previous summary', updatedAt: SAME } } }
     writeFileSync(path, JSON.stringify(previous), { mode: 0o600 })
     const dsh = await start(t, home)
     const rt = dsh.root.get('omniChannels')
@@ -581,7 +583,7 @@ test('the kit\'s endpoint gives a note and coverage only for a chat Omni finds a
   const unavailable = await dsh.endpoint('omni-reading-note', { chat: SCOPED_OUT })
   assert.equal(unavailable.coverage, null)
   assert.equal(unavailable.note.text, marker)
-  assert.equal(unavailable.note.summary, marker)
+  assert.equal(unavailable.note.summary, null)
 })
 
 test('the reading note never reaches state.json, a log, the team view or any other file', async (t) => {

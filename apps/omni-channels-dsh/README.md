@@ -403,6 +403,26 @@ sync.cancelled or sync.failed, or the job route's status). `state` can read
 `coverage` is what Omni holds of the chat once its job ends, and null before then and on a
 failure. `not-started` means Omni refused to queue that chat's job at Start.
 
+## Cards
+
+On the team owner surface, a successful `propose_backfill` call opens a picker for
+that proposal when the team client supplies one. Older team clients show the proposal text.
+A `backfill_status` call with a review section opens the conversation
+card for the newest run named in the result. Tick the chats to use for Answer Mode
+training, then choose Apply. The card shows any chats the host refused and reloads
+the saved selection. Opening either card starts no jobs or training.
+
+`list_commitments` opens a review card using the call's chat, status and verified
+filters. Verify confirms a candidate or a previously unverified closed commitment.
+Dismiss removes a candidate from the default list. To see dismissed items, request
+the `dismissed` status. The card displays commitment details and UTC dates. The
+display response excludes source evidence and link metadata.
+
+The conversation and commitment cards refresh when the team roster revision
+changes and after you act. Summaries are scoped to the Omni link origin, channel
+and chat. In a read-only window, the cards show the data and explain where to make
+changes. Members and guests see the tool result text.
+
 ## Existing channel settings
 
 Open an existing channel to read its configuration groups, derived provider and assigned

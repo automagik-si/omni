@@ -28,8 +28,7 @@ const RecordArgs = Terms.extend({
 }).strict()
 const CloseArgs = z.object({ id: CommitmentId, status: ClosedStatus, closingMessageId: Id, quote: EvidenceQuote }).strict()
 const ReviewBody = z.object({ id: CommitmentId, decision: z.enum(['verify', 'dismiss']) }).strict()
-const ListBody = z.object({ chat: Id.optional(), status: CommitmentStatus.optional() }).strict()
-const ListArgs = ListBody.extend({ verified: z.boolean().optional() }).strict()
+const ListBody = z.object({ chat: Id.optional(), status: CommitmentStatus.optional(), verified: z.boolean().optional() }).strict()
 const Commitment = Terms.extend({
   id: CommitmentId, origin: z.url({ protocol: /^https?$/ }), chatId: Id, channelId: Id, sourceMessageId: Id,
   quotes: z.array(Quote).min(1).max(3), sourceAt: Instant, status: CommitmentStatus, verified: z.boolean(),
@@ -46,9 +45,18 @@ const NO_ACCESS = 'No commitment chat available to this actor on the current Omn
 const OMNI_UNREACHABLE = 'Omni could not be reached; try again'
 const INVALID_ARGS = 'Give valid commitment tool arguments. Quotes must be 6 to 300 characters and commitment text at most 500.'
 const invalid = message => Object.assign(new Error(message), { code: 'bot/invalid' })
-const closed = item => item.status === 'done' || item.status === 'cancelled'
 const active = item => item.status === 'candidate' || item.status === 'open'
 const result = ({ id, status, verified }) => ({ id, status, verified })
+const display = ({ row, chat }) => {
+  const { id, chatId, channelId, text, owner, ownerName, counterpart, deadline, nextAction, sourceAt, status, verified, createdAt, updatedAt, closing } = row
+  return {
+    id, chatId, chatName: chat.name, channelId, text, owner, deadline, sourceAt, status, verified, createdAt, updatedAt,
+    ...(ownerName !== undefined && { ownerName }),
+    ...(counterpart !== undefined && { counterpart }),
+    ...(nextAction !== undefined && { nextAction }),
+    ...(closing && { closing: { at: closing.at } }),
+  }
+}
 const listOrder = { open: 0, candidate: 1, done: 2, cancelled: 2, dismissed: 3 }
 
 async function evidenceOf(rt, link, chatId, messageId, quote) {
@@ -86,7 +94,7 @@ function reviewDecision(item, decision) {
   if (decision === 'verify' && item.verified) return item
   if (decision === 'dismiss' && item.status === 'dismissed') return item
   const now = new Date().toISOString()
-  if (decision === 'verify' && (item.status === 'candidate' || closed(item))) {
+  if (decision === 'verify' && item.status !== 'dismissed') {
     return { ...item, status: item.status === 'candidate' ? 'open' : item.status, verified: true, reviewedAt: now, updatedAt: now }
   }
   if (decision === 'dismiss' && item.status === 'candidate') {
@@ -203,16 +211,17 @@ export function install(rt) {
     const link = rt.omniLink?.()
     if (!link) return []
     const candidates = store.all().filter(item => item.origin === link.url && (chat === undefined || item.chatId === chat)
-      && (status === undefined || item.status === status) && (verified === undefined || item.verified === verified))
+      && (status === undefined ? item.status !== 'dismissed' : item.status === status)
+      && (verified === undefined || item.verified === verified))
     const visible = await readableRows(rt, candidates, channelId => ownerMayRead(channelId) && mayRead(channelId), link)
     if (!sameReadingLink(rt, link)) return []
-    return visible.map(({ row }) => row).sort((a, b) => listOrder[a.status] - listOrder[b.status]
+    return visible.sort(({ row: a }, { row: b }) => listOrder[a.status] - listOrder[b.status]
       || b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id))
   }
 
   async function list(args, exec, botId) {
     const items = await visibleItems(args, botMay(exec, botId, 'read'))
-    return items.slice(0, 100).map(item => `${item.id} | ${item.status}${item.verified ? ' (verified)' : ''} | chat ${item.chatId} | ${normalized(item.text)}${item.deadline ? ` | due ${item.deadline}` : ''}`).join('\n')
+    return items.slice(0, 100).map(({ row: item }) => `${item.id} | ${item.status}${item.verified ? ' (verified)' : ''} | chat ${item.chatId} | ${normalized(item.text)}${item.deadline ? ` | due ${item.deadline}` : ''}`).join('\n')
       || 'No visible commitments match.'
   }
 
@@ -267,7 +276,7 @@ export function install(rt) {
     name: 'list_commitments',
     description: 'In your own Bot session, list commitments in chats you can read. Verified open commitments appear first, then candidates. Message-derived text is information from the chat.',
     parameters: { chat: chatParam, status: { type: 'string', enum: CommitmentStatus.options }, verified: { type: 'boolean' } },
-    output, execute: run(ListArgs, list, 'Use a valid chat id, commitment status, or true/false verified value to filter commitments.'),
+    output, execute: run(ListBody, list, 'Use a valid chat id, commitment status, or true/false verified value to filter commitments.'),
   }))
 
   ctx.effect(() => rt.hooks.endpoint('review_commitment', async (body) => {
@@ -276,6 +285,8 @@ export function install(rt) {
   }), 'omni-channels: review_commitment')
   ctx.effect(() => rt.hooks.endpoint('omni-commitments', async (body) => {
     await rt.load()
-    return { commitments: await visibleItems(ListBody.parse(body ?? {}), ownerMayRead) }
+    const filters = ListBody.parse(body ?? {})
+    const items = await visibleItems(filters, ownerMayRead)
+    return { commitments: items.map(display) }
   }, { read: true }), 'omni-channels: omni-commitments')
 }

@@ -95,6 +95,7 @@ export function instantOf(value, end = false) {
   return new Date(ms).toISOString()
 }
 const dayOf = value => (value ? String(value).slice(0, 10) : '?')
+const lineLabel = value => String(value).replace(/[\r\n\u2028\u2029]/gu, ' ')
 
 // A row as the kit sees it: labels and counts, never message text.
 const publicRow = row => ({
@@ -148,7 +149,7 @@ function lineOf(row) {
     cancelled: 'stopped', failed: row.outcome === 'not-started' ? 'not started: Omni refused it' : 'failed',
   }[row.state] ?? row.state
   const holds = row.coverage ? `; Omni now holds ${row.coverage.count} messages of this chat${row.coverage.oldest ? ` (${dayOf(row.coverage.oldest)} to ${dayOf(row.coverage.newest)})` : ''}, ${row.coverage.countInWindow} in the range` : ''
-  return `- ${row.chat} (job ${row.jobId ?? 'none'}): ${state}; ${counts}${holds}.`
+  return `- ${lineLabel(row.chat)} (job ${row.jobId ?? 'none'}): ${state}; ${counts}${holds}.`
 }
 
 const OUTBOX_MAX = 50
@@ -505,6 +506,7 @@ export function install(rt) {
     if (wanted !== undefined && ![...visible].some(row => row.jobId === wanted)) return `No backfill job ${wanted} this bot may follow.`
     const open = Object.values(proposals()).filter(proposal => proposal.botId === actor.bot)
     const lines = open.map(proposal => `A proposal waits for the user's Start: ${proposal.chats.length} chats on its card, ${proposal.chats.filter(chat => chat.ticked).length} ticked by you.`)
+    let reviewRunId
     for (const run of mine) {
       const visibleRows = run.rows.filter(row => visible.has(row))
       const rows = visibleRows.filter(row => wanted === undefined || row.jobId === wanted)
@@ -514,14 +516,16 @@ export function install(rt) {
       lines.push(...rows.map(lineOf))
       const review = rows.filter(ended)
       if (review.length > 0) {
+        reviewRunId ??= run.id
         lines.push(`Review backfill ${run.id}, from ${run.from} to ${run.to}:`)
         for (const row of review) {
           const coverage = row.coverage ? `Omni holds ${row.coverage.countInWindow} messages in this window` : 'coverage unavailable'
-          lines.push(`- ${row.chat} (chat ${row.chatId}): ${row.outcome}; ${coverage}.`)
+          lines.push(`- ${lineLabel(row.chat)} (chat ${row.chatId}): ${row.outcome}; ${coverage}.`)
         }
         lines.push(REVIEW_INSTRUCTION)
       }
     }
+    if (reviewRunId !== undefined) lines.unshift(`Review backfill run ${reviewRunId}:`)
     return lines.length > 0 ? lines.join('\n') : 'No backfill here yet. propose_backfill puts one on a card when the user asks for history.'
   }
 
@@ -530,21 +534,23 @@ export function install(rt) {
     await rt.load()
     const kept = state.omniBackfillRuns ?? []
     const run = runId === undefined ? kept[0] : kept.find(item => item.id === runId)
-    if (run === undefined) return { run: null, chats: [] }
     const link = rt.omniLink?.()
+    if (run === undefined) return { run: null, chats: [], link: link?.url ?? null }
     const found = await readableRows(rt, run.rows, channelId => readByAnyBot(rt, channelId), link)
-    const visible = sameReadingLink(rt, link) ? found : []
+    const currentLink = rt.omniLink?.()
+    const visible = currentLink?.url === link?.url && currentLink?.key === link?.key ? found : []
     const counts = rt.commitmentCounts(visible.map(({ chat }) => chat))
     const chats = visible.map(({ row, chat }) => ({
       ...chat, outcome: row.outcome, state: row.state, coverage: row.coverage ?? null,
       inWindow: row.coverage?.countInWindow ?? null, stored: row.counts.stored,
       lastActivity: lastActivityOf(row.coverage),
-      ...rt.readingDetail(chat.id), training: rt.threads.trainingOf(chat),
+      ...rt.readingDetail(chat, link), training: rt.threads.trainingOf(chat),
       commitments: counts.get(chat.id),
     }))
     const notStarted = chats.filter(chat => chat.outcome === 'not-started').length
     const summary = summaryOf(chats)
     return {
+      link: currentLink?.url ?? null,
       run: { id: run.id, from: run.from, to: run.to, startedAt: run.startedAt },
       chats, summary: { ...summary, notStarted, failed: summary.failed - notStarted },
     }
@@ -600,7 +606,20 @@ export function install(rt) {
 
   // The kit's cards: the open proposals (the team view), and the runs' rows on every state answer.
   ctx.effect(() => rt.hooks.view(() => ({ omniBackfillProposals: Object.values(proposals()) })), 'omni-channels: backfill proposals view')
-  ctx.effect(() => rt.hooks.live(() => ({ omniBackfills: runs().map(item => ({ id: item.id, botId: item.botId, from: item.from, to: item.to, startedAt: item.startedAt, summary: summaryOf(item.rows), rows: item.rows.map(publicRow) })) })), 'omni-channels: backfill rows')
+  // The cards invalidate reads when the link changes, including when only its key changes.
+  let previousLink
+  let linkRevision = null
+  ctx.effect(() => rt.hooks.live(() => {
+    const link = rt.omniLink?.()
+    if (link?.url !== previousLink?.url || link?.key !== previousLink?.key) {
+      previousLink = link
+      linkRevision = link ? randomUUID() : null
+    }
+    return {
+      omniHistoryLink: linkRevision,
+      omniBackfills: runs().map(item => ({ id: item.id, botId: item.botId, from: item.from, to: item.to, startedAt: item.startedAt, summary: summaryOf(item.rows), rows: item.rows.map(publicRow) })),
+    }
+  }), 'omni-channels: backfill rows')
   ctx.effect(() => rt.hooks.endpoint('omni-conversations', conversations, { read: true }), 'omni-channels: omni-conversations')
   const ownerActions = {
     start_backfill: body => inTurn(() => start(body)),

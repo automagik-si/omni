@@ -1,4 +1,6 @@
 import { createElement as h } from 'react'
+import { omni } from '@automagik/bots-dsh/client'
+import { CommitmentsCard, ConversationsCard, HISTORY_CARD_CSS, isReadOnlyRefusal, readOnlyNote } from './history-cards.js'
 import { registerConnectStep } from './connect-step.js'
 import { registerSettings } from './omni-settings.js'
 import { WizardHost } from './wizard.js'
@@ -73,6 +75,40 @@ const PHRASES = {
 const callCard = ({ arg, content, done }) => h(OmniCallCard, { ...parseCall(arg, content), done })
 const toolCard = ({ tool, arg, content, done }) => h(OmniToolCard, { tool, arg, content, done })
 
+const backfillId = '[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}'
+const proposed = new RegExp(`^Proposed a backfill \\(proposal (${backfillId})\\):`, 'i')
+const reviewed = new RegExp(`^Review backfill run (${backfillId}):(?:\\n|$)`)
+const listed = /^[0-9a-f]{16} \| (?:candidate|open|done|cancelled|dismissed)(?: \(verified\))? \| chat /u
+const historyCards = {
+  propose_backfill: ({ roster, content }) => {
+    const Card = omni.genui?.BackfillCard
+    const id = proposed.exec(content)?.[1]
+    return Card?.binds === true && id ? h(Card, { roster, proposalId: id }) : null
+  },
+  backfill_status: ({ roster, content }) => {
+    // Only the host's leading marker binds a saved result to its newest reviewed run.
+    const runId = reviewed.exec(content)?.[1]
+    return runId ? h(ConversationsCard, { roster, runId }) : null
+  },
+  list_commitments: ({ roster, content, arg, argValue }) => {
+    if (!listed.test(content) && content !== 'No visible commitments match.') return null
+    return h(CommitmentsCard, { roster, chat: arg('chat'), status: arg('status'), verified: argValue('verified') })
+  },
+}
+
+function historyRenderer(render) {
+  return props => {
+    if (!props.done) return null
+    // The team's ungated client is the local owner surface. Gated member and guest views
+    // retain the transcript text and never mount these owner-only reads.
+    const viewer = globalThis.__AUTOMAGIK_VIEW__
+    const owner = viewer === undefined || (viewer?.version === 1 && viewer.role === 'owner')
+    const card = owner && !props.call?.isError ? render(props) : null
+    return card ?? h('p', { className: 'bt-event bt-genui-text', role: 'status' },
+      isReadOnlyRefusal(props.content, props.roster?.readOnly) ? readOnlyNote() : props.content)
+  }
+}
+
 export function apply(ctx) {
   ctx.effect(() => addStrings(STRINGS), 'ds-bot: channels copy')
   // Onboarding: Connect Omni, between omni-ai's welcome and Connect AI when it is installed.
@@ -97,6 +133,9 @@ export function apply(ctx) {
   for (const name of ['find_chats', 'omni_endpoints']) ctx.effect(() => toolCards.register(name, null, { phrase: PHRASES[name] }), `ds-bot: ${name} phrase`)
   // Saving an automation confirms in the chat, with the steering warning the board carries.
   ctx.effect(() => toolCards.register('save_automation', props => h(SavedAutomationCard, props), { phrase: PHRASES.save_automation }), 'ds-bot: save_automation card')
+  for (const [name, render] of Object.entries(historyCards)) {
+    ctx.effect(() => toolCards.register(name, historyRenderer(render)), `ds-bot: ${name} card`)
+  }
   // Omni's row counts the automation runs waiting for you; its header opens their board.
   ctx.effect(() => badges.register({ id: 'omni-events', Component: ({ bot, roster, useWork }) => (isEventsBot(roster, bot.id) ? h(EventsBadge, { roster, useWork, botId: bot.id }) : null) }), 'ds-bot: automations badge')
   // The Omni Bot's channels hang under its sidebar row, each with its + and the chats added
@@ -117,6 +156,7 @@ export function apply(ctx) {
   // replace the conversation in the center, and opening a Bot brings it back.
   ctx.effect(() => onShell(({ face, shadow, installCompiledStyles }) => [
     () => installCompiledStyles(CHANNELS_CSS + BOT_CHANNELS_CSS + OMNI_TREE_CSS + SUBSCRIPTIONS_CSS + AUTOMATIONS_CSS + OMNI_LIVE_CSS + OMNI_PEEK_CSS + OMNI_CONNECT_CSS + PERMISSIONS_CSS + OMNI_PHONE_CSS, 'channels'),
+    ...(!omni.genui ? [() => installCompiledStyles(HISTORY_CARD_CSS, 'omni-history-cards')] : []),
     () => shadow('conversation.input.dock', { id: 'omni-consent', order: -80, inject: face }, ConsentDock),
     // A chat thread's Session is not a Bot's: it marks the page so the Bot controls stay hidden there.
     () => shadow('conversation.input.dock', { id: 'omni-thread', order: -200, inject: face }, ThreadDock),
