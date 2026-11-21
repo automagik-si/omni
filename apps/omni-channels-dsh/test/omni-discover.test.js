@@ -85,7 +85,7 @@ test('the CLI\'s Omni, the servers it knows and a sandboxed Omni are found once 
   })
   t.after(stop)
   const asked = []
-  const omnis = await discover({ env: {}, home, fetchImpl: loopback({ 8882: 'pairable', 47123: 'pairable' }, { asked }) })
+  const omnis = await discover({ env: {}, home, fetchImpl: loopback({ 8882: 'pairable', 47123: 'pairable' }, { asked }), release: async () => ({ version: '9.9.9' }), atLogin: false })
 
   const text = JSON.stringify(omnis)
   for (const key of [LOCAL_KEY, REMOTE_KEY, SANDBOX_KEY]) assert.equal(text.includes(key), false, 'a key reached the page')
@@ -240,7 +240,7 @@ test('under Unfold the planted ~/.omni and CLI config are never opened, whatever
   // Control: off Unfold the same spy sees the planted files read.
   const plain = { OMNI_HOME: own, OMNI_CONFIG_DIR: planted }
   const read = await fsTouches(async () => {
-    await discover({ env: plain, home, fetchImpl, release: async () => ({ version: '9.9.9' }) })
+    await discover({ env: plain, home, fetchImpl, release: async () => ({ version: '9.9.9' }), atLogin: false })
   })
   assert.ok(read.some(outside), 'control: off Unfold the planted configs are read')
 })
@@ -309,9 +309,18 @@ function host(t, validate, { mint } = {}) {
   t.after(() => rmSync(rt.home, { recursive: true, force: true }))
   installHooks(rt)
   installLink(rt)
-  install(rt)
+  install(rt, { platform: 'linux', spawn: () => { throw new Error('No user manager in this fixture') } })
   return { rt, asked }
 }
+
+test('under Unfold discovery reports no at-login support without probing the user manager', async (t) => {
+  const spawn = t.mock.fn(() => { throw new Error('Unexpected login probe') })
+  const rt = { ctx: { effect() {} } }
+  install(rt, { env: { AUTOMAGIK_HOST: 'unfold' }, platform: 'linux', spawn })
+  const { sandbox } = await rt.omniDiscoverEndpoint('omni-discover')
+  assert.equal(sandbox.atLogin, false)
+  assert.equal(spawn.mock.callCount(), 0)
+})
 
 test('Use it checks the key with that Omni and links it, and the key stays on the host', async (t) => {
   const { rt, asked } = host(t, json => json(200, { data: { valid: true, keyName: 'ui', scopes: ['instances:*', 'chats:*'], credential: { expiresAt: null } } }))

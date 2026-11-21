@@ -16,6 +16,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { cleanOmniUrl, deviceNameOf } from './omni-link.js'
+import { atLoginUsable, installCommand } from './omni-local.js'
 import { installRelease } from './omni-release.js'
 import { newer, OMNI_MINIMUM } from './version.js'
 
@@ -63,6 +64,7 @@ const idOf = url => createHash('sha256').update(sameOmni(url)).digest('hex').sli
 export const unfoldHost = (env = process.env) => env.AUTOMAGIK_HOST === 'unfold'
 // Why an install or an update from this host is refused there: Unfold installs and updates it.
 export const UNFOLD_RUNS_OMNI = 'Unfold runs its own Omni, so none is installed or updated from here.'
+export const SERVER_IMAGE_INSTALL = 'This server image runs Omni through its own supervisor: install it from the Omni card the app shows when it starts.'
 
 export function readConfig(path) {
   try {
@@ -210,18 +212,20 @@ export async function probe(url, fetchImpl = fetch, timeoutMs = PROBE_TIMEOUT_MS
 // reinstalled at the release a new one would get (`updateTo`, omni-release.js), one the Omni
 // CLI runs is updated with it, and any other says so. Under Unfold no release is looked up:
 // Unfold updates its own Omni.
-export async function discover({ env = process.env, home = homedir(), read = readConfig, port = DEFAULT_PORT, fetchImpl = fetch, manager = url => managerOf(url, { env, home, read }), release = () => installRelease({ env }), minimum = OMNI_MINIMUM } = {}) {
+export async function discover({ env = process.env, home = homedir(), read = readConfig, port = DEFAULT_PORT, fetchImpl = fetch, manager = url => managerOf(url, { env, home, read }), release = () => installRelease({ env }), minimum = OMNI_MINIMUM, atLogin } = {}) {
   const omnis = merge(candidates({ env, home, read, port }))
   const answers = await Promise.all(omnis.map(omni => (isLoopback(omni.url) ? probe(omni.url, fetchImpl) : null)))
   const outdated = answers.map(answer => newer(minimum, answer?.version))
   // Asked only when a sandbox needs it, so discovery stays off the network otherwise.
   const looksUp = !unfoldHost(env) && omnis.some((omni, index) => omni.source === 'sandbox' && outdated[index])
   const updateTo = looksUp ? (await release()).version : null
+  const command = updateTo === null ? null : installCommand(updateTo, { atLogin: await (atLogin ?? atLoginUsable({ env })) })
   return omnis
     .map((omni, index) => {
       const local = isLoopback(omni.url)
       const answer = answers[index] ?? { reachable: null, version: null, canPair: null, pairing: 'unknown' }
-      return { id: omni.id, url: omni.url, source: omni.source, name: omni.name ?? null, local, hasKey: Boolean(omni.key), outdated: outdated[index], updateTo: omni.source === 'sandbox' && outdated[index] ? updateTo : null, manager: local ? manager(omni.url) : null, ...answer }
+      const reinstall = omni.source === 'sandbox' && outdated[index]
+      return { id: omni.id, url: omni.url, source: omni.source, name: omni.name ?? null, local, hasKey: Boolean(omni.key), outdated: outdated[index], updateTo: reinstall ? updateTo : null, installCommand: reinstall ? command : null, manager: local ? manager(omni.url) : null, ...answer }
     })
     .filter(omni => omni.source !== 'running' || omni.reachable)
     .sort((a, b) => Number(b.local) - Number(a.local))
@@ -305,7 +309,7 @@ export async function widenOwnKey(rt, { find = candidates } = {}) {
   return scopes
 }
 
-export function install(rt) {
+export function install(rt, options = {}) {
   // An Omni that cannot approve this app (one from before device sign-in, or with it off)
   // takes its API key instead, pasted by the person: checked with that Omni and kept like
   // "Use it" keeps one. The key goes no further than this host.
@@ -348,7 +352,13 @@ export function install(rt) {
 
   const endpoints = {
     // Where a sandboxed Omni would go, so the page can say before setting one up.
-    'omni-discover': async () => ({ omnis: await discover(), sandbox: { home: sandboxHome(), minimum: OMNI_MINIMUM } }),
+    'omni-discover': async () => {
+      const atLogin = unfoldHost(options.env) ? false : atLoginUsable(options)
+      return {
+        omnis: await discover({ ...options, atLogin }),
+        sandbox: { home: sandboxHome(options), minimum: options.minimum ?? OMNI_MINIMUM, atLogin: await atLogin },
+      }
+    },
     'omni-link-info': linkInfo,
     'omni-discover-use': use,
     'omni-discover-key': useKey,

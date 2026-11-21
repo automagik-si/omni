@@ -6,7 +6,8 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, test } from 'node:test'
 import { deflateRawSync } from 'node:zlib'
-import { BUN_VERSION, downloadBun, findBun, install, installArgs, runInstall, sandboxKey, unzipEntry } from '../src/host/omni-local.js'
+import { discover, install as installDiscover, SERVER_IMAGE_INSTALL } from '../src/host/omni-discover.js'
+import { atLoginUsable, BUN_VERSION, downloadBun, findBun, install, installArgs, installCommand, runInstall, sandboxKey, unzipEntry } from '../src/host/omni-local.js'
 import { install as installLink, LINK_FILE } from '../src/host/omni-link.js'
 import { forgetReleases } from '../src/host/omni-release.js'
 import { OMNI_MINIMUM, PLUGIN_VERSION } from '../src/host/version.js'
@@ -144,14 +145,68 @@ function fakeSpawn({ stdout = '', stderr = '', code = 0 } = {}) {
   return { spawn, calls }
 }
 
+test('the login probe preserves the caller environment and discards the manager output', async () => {
+  const session = { XDG_RUNTIME_DIR: '/run/custom', DBUS_SESSION_BUS_ADDRESS: 'unix:path=/run/custom/bus' }
+  for (const [env, code, expectedDir] of [[session, 0, '/run/custom'], [{}, 1, '/run/user/501']]) {
+    const { spawn, calls } = fakeSpawn({ code })
+    assert.equal(await atLoginUsable({ env, platform: 'linux', uid: 501, spawn }), code === 0)
+    assert.deepEqual(calls, [{
+      command: 'systemctl',
+      args: ['--user', 'show-environment'],
+      options: { env: { ...env, XDG_RUNTIME_DIR: expectedDir }, stdio: 'ignore' },
+    }])
+  }
+})
+
+test('the login probe kills a hung child after two seconds and removes its listeners', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const child = new EventEmitter()
+  const kill = t.mock.fn()
+  child.kill = kill
+  const usable = atLoginUsable({ env: {}, platform: 'linux', spawn: () => child })
+  t.mock.timers.tick(1999)
+  assert.equal(kill.mock.callCount(), 0)
+  t.mock.timers.tick(1)
+  assert.equal(await usable, false)
+  assert.deepEqual(kill.mock.calls[0].arguments, ['SIGKILL'])
+  assert.deepEqual(child.eventNames(), [])
+})
+
+test('the login probe handles both spawn errors and clears the timer and listeners', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const child = new EventEmitter()
+  child.kill = t.mock.fn()
+  const error = new Error('systemctl not found')
+  const usable = atLoginUsable({ env: {}, platform: 'linux', spawn: () => child })
+  child.emit('error', error)
+  assert.equal(await usable, false)
+  assert.deepEqual(child.eventNames(), [])
+  t.mock.timers.tick(2000)
+  assert.equal(child.kill.mock.callCount(), 0)
+  assert.equal(await atLoginUsable({ env: {}, platform: 'linux', spawn: () => { throw error } }), false)
+})
+
+test('the login probe never spawns on macOS, other platforms or server images', async (t) => {
+  const spawn = t.mock.fn()
+  assert.equal(await atLoginUsable({ env: {}, platform: 'darwin', spawn }), true)
+  assert.equal(await atLoginUsable({ env: {}, platform: 'win32', spawn }), false)
+  for (const platform of ['linux', 'darwin']) {
+    assert.equal(await atLoginUsable({ env: { AUTOMAGIK_GATE_IMAGE: '1' }, platform, spawn }), false)
+  }
+  assert.equal(spawn.mock.callCount(), 0)
+})
+
 test('Omni\'s CLI runs from Bun as plain arguments, with no shell and none of this host\'s Omni keys', async () => {
   const { spawn, calls } = fakeSpawn({ stdout: 'installing…\n{"ok":true,"home":"/s","apiUrl":"http://127.0.0.1:18882"}\n' })
-  const report = await runInstall({ bun: '/h/.bun/bin/bun', version: '2.261023.8', env: { PATH: '/usr/bin', OMNI_API_KEY: 'host-key', OMNI_CONFIG_DIR: '/x', OMNI_HOME: '/h/.omni/desktop' }, spawn })
+  const report = await runInstall({ bun: '/h/.bun/bin/bun', version: '2.261023.8', env: { PATH: '/usr/bin', OMNI_API_KEY: 'host-key', OMNI_CONFIG_DIR: '/x', OMNI_HOME: '/h/.omni/desktop' }, spawn, atLogin: true })
   assert.equal(report.ok, true)
   assert.equal(calls.length, 1)
   assert.equal(calls[0].command, '/h/.bun/bin/bun')
   assert.deepEqual(calls[0].args, ['x', '--bun', '@automagik/omni@2.261023.8', 'install', '--sandbox', '--at-login', '--json'])
-  assert.deepEqual(installArgs('1.2.3'), ['x', '--bun', '@automagik/omni@1.2.3', 'install', '--sandbox', '--at-login', '--json'])
+  assert.deepEqual(installArgs('1.2.3', { atLogin: true }), ['x', '--bun', '@automagik/omni@1.2.3', 'install', '--sandbox', '--at-login', '--json'])
+  assert.deepEqual(installArgs('1.2.3', { atLogin: false }), ['x', '--bun', '@automagik/omni@1.2.3', 'install', '--sandbox', '--json'])
+  assert.equal(installCommand('1.2.3', { atLogin: true }), 'bun x --bun @automagik/omni@1.2.3 install --sandbox --at-login')
+  assert.equal(installCommand('1.2.3', { atLogin: false }), 'bun x --bun @automagik/omni@1.2.3 install --sandbox')
   assert.equal(calls[0].options.shell, false)
   assert.equal(calls[0].options.env.PATH, '/h/.bun/bin:/usr/bin')
   assert.equal(calls[0].options.env.OMNI_HOME, '/h/.omni/desktop')
@@ -184,7 +239,7 @@ test('the sandbox key is read only from a config file inside the sandbox home', 
 })
 
 // A host whose computer has a Bun in ~/.bun and whose install prints `report(home)`.
-function host(t, { report, code = 0, validate = 200, env = { PATH: '' }, bunVersion = BUN_VERSION, downloadBun }) {
+function host(t, { report, code = 0, validate = 200, env = { PATH: '' }, bunVersion = BUN_VERSION, downloadBun, loginUsable = () => true }) {
   const home = tempDir(t, 'omni-local-home-')
   const bun = join(home, '.bun', 'bin', 'bun')
   mkdirSync(dirname(bun), { recursive: true })
@@ -206,7 +261,7 @@ function host(t, { report, code = 0, validate = 200, env = { PATH: '' }, bunVers
   const rt = { home: join(home, 'plugin'), config: {}, ctx: { effect: run => run() }, syncOmniEvents: () => {} }
   installHooks(rt)
   installLink(rt)
-  install(rt, { env, home, spawn: fake.spawn, downloadBun, versionProbeTimeoutMs: PROCESS_TIMEOUT_MS })
+  install(rt, { env, home, platform: 'linux', spawn: fake.spawn, downloadBun, atLoginUsable: loginUsable, versionProbeTimeoutMs: PROCESS_TIMEOUT_MS })
   return { rt, sandbox, calls: fake.calls, checked }
 }
 
@@ -229,12 +284,24 @@ test('running Omni here asks first, then installs, links it, and the key never r
   assert.deepEqual({ status: done.status, origin: done.origin }, { status: 'paired', origin: '127.0.0.1:18882' })
   assert.equal(calls.length, 1)
   assert.equal(calls[0].args[2], `@automagik/omni@${LATEST}`)
+  assert.ok(calls[0].args.includes('--at-login'))
   assert.deepEqual(checked, [{ url: 'http://127.0.0.1:18882/api/v2/auth/validate', key: SANDBOX_KEY }])
   const link = JSON.parse(readFileSync(join(rt.home, LINK_FILE), 'utf8'))
   assert.deepEqual({ url: link.url, key: link.key }, { url: 'http://127.0.0.1:18882', key: SANDBOX_KEY })
   const shown = JSON.stringify([asked, started, done, await rt.omniLinkEndpoint('omni-link')])
   assert.equal(shown.includes(SANDBOX_KEY), false)
   await assert.rejects(rt.omniLocalEndpoint('omni-local-install', { confirm: 'yes' }), { code: 'bot/invalid' })
+})
+
+test('the direct installer omits the login flag when the probe says it is unavailable', { timeout: PROCESS_TIMEOUT_MS }, async (t) => {
+  const loginUsable = t.mock.fn(async () => false)
+  const { rt, calls } = host(t, { report: okReport, loginUsable })
+  await rt.omniLocalEndpoint('omni-local-install', { confirm: true })
+  await rt.omniLocalJob()
+  assert.equal(loginUsable.mock.callCount(), 1)
+  assert.deepEqual(calls.map(call => call.args), [
+    ['x', '--bun', `@automagik/omni@${LATEST}`, 'install', '--sandbox', '--json'],
+  ])
 })
 
 test('an installed Bun with the wrong version uses a private download before installing', { timeout: PROCESS_TIMEOUT_MS }, async (t) => {
@@ -274,7 +341,6 @@ test('a sandbox that refuses its own key is a failure, not a link', { timeout: P
 })
 
 test('a sandboxed Omni below this plugin\'s minimum is offered the release a new one gets; one at it or newer is not', async (t) => {
-  const { discover } = await import('../src/host/omni-discover.js')
   const { newer } = await import('../src/host/version.js')
   const home = tempDir(t, 'omni-local-behind-')
   mkdirSync(join(home, '.omni', 'sandbox', 'config'), { recursive: true })
@@ -287,8 +353,10 @@ test('a sandboxed Omni below this plugin\'s minimum is offered the release a new
   }
   let asked = 0
   const release = async () => { asked += 1; return { version: LATEST, from: 'latest' } }
-  const [behind] = await discover({ env: {}, home, fetchImpl: answering('2.261001.1'), release })
-  assert.deepEqual([behind.outdated, behind.updateTo], [true, LATEST])
+  const [behind] = await discover({ env: {}, home, fetchImpl: answering('2.261001.1'), release, atLogin: true })
+  assert.deepEqual([behind.outdated, behind.updateTo, behind.installCommand], [
+    true, LATEST, `bun x --bun @automagik/omni@${LATEST} install --sandbox --at-login`,
+  ])
   // At the minimum, or newer, nothing is offered, and the registry is not asked.
   const [current] = await discover({ env: {}, home, fetchImpl: answering(OMNI_MINIMUM), release })
   assert.deepEqual([current.outdated, current.updateTo], [false, null])
@@ -300,6 +368,39 @@ test('a sandboxed Omni below this plugin\'s minimum is offered the release a new
   assert.equal(newer('2.261023.10', '2.261023.9'), true)
   assert.equal(newer('2.261023.6-labs.2', '2.261023.6'), false)
   assert.equal(newer('3.0.0', null), false)
+})
+
+test('discovery uses one login probe for the reinstall command and card metadata', async (t) => {
+  const home = tempDir(t, 'omni-local-discover-')
+  const config = join(home, '.omni', 'sandbox', 'config')
+  mkdirSync(config, { recursive: true })
+  writeFileSync(join(config, 'config.json'), JSON.stringify({ apiUrl: 'http://127.0.0.1:18882' }))
+  const fetchImpl = async address => new URL(address).pathname === '/api/v2/health'
+    ? new Response(JSON.stringify({ version: '2.261001.1' }))
+    : new Response(null, { status: 401 })
+  for (const [env, code, atLogin] of [[{}, 0, true], [{}, 1, false], [{ AUTOMAGIK_GATE_IMAGE: '1' }, 0, false]]) {
+    const { spawn, calls } = fakeSpawn({ code })
+    const rt = { ctx: { effect: run => run() }, hooks: { endpoint: () => () => {} } }
+    installDiscover(rt, { env, home, platform: 'linux', spawn, fetchImpl, release: async () => ({ version: LATEST }) })
+    const { omnis, sandbox } = await rt.omniDiscoverEndpoint('omni-discover')
+    assert.equal(sandbox.atLogin, atLogin)
+    assert.equal(omnis.find(omni => omni.source === 'sandbox').installCommand,
+      `bun x --bun @automagik/omni@${LATEST} install --sandbox${atLogin ? ' --at-login' : ''}`)
+    assert.equal(calls.length, env.AUTOMAGIK_GATE_IMAGE === '1' ? 0 : 1)
+  }
+})
+
+test('a server image refuses the direct install before the version lookup or any spawn', async (t) => {
+  const loginUsable = t.mock.fn()
+  const { rt, calls } = host(t, { report: okReport, env: { PATH: '', AUTOMAGIK_GATE_IMAGE: '1' }, loginUsable })
+  globalThis.fetch = t.mock.fn()
+  for (const body of [{}, { confirm: true }]) {
+    await assert.rejects(rt.omniLocalEndpoint('omni-local-install', body), { code: 'bot/refused', message: SERVER_IMAGE_INSTALL })
+  }
+  assert.equal((await rt.omniLocalEndpoint('omni-local-progress')).status, 'idle')
+  assert.deepEqual(calls, [])
+  assert.equal(loginUsable.mock.callCount(), 0)
+  assert.equal(globalThis.fetch.mock.callCount(), 0)
 })
 
 test('under Unfold nothing is installed here: no Bun download, no npm lookup, no install, no login item', async (t) => {

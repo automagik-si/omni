@@ -15222,6 +15222,12 @@ var DEFAULT_POLL_MS = 2e3;
 var PAIRING_EVENT = "omni:pairing";
 var REMOTE = "remote";
 var LOCAL = "local";
+function sandboxRunText(sandbox, mac) {
+  if (sandbox?.atLogin === true) {
+    return mac ? t("It starts with your Mac, stays on it, and never touches another Omni.") : t("It starts with your computer, stays on it, and never touches another Omni.");
+  }
+  return t("It runs until this computer restarts.");
+}
 async function connectFromApp(url, grant) {
   if (typeof url !== "string" || url === "") return;
   try {
@@ -15526,7 +15532,7 @@ function ConnectOmni({ onPaired, embedded = false } = {}) {
     if (isLinked) body = (0, import_react10.createElement)(Linked, { text: linked.version ? t("Connected to Omni {version}", { version: linked.version }) : t("Connected to {origin}", { origin: linked.origin }) });
     else if (terminal?.row === omni3.id) body = terminalOn(omni3.id);
     else {
-      const action2 = view.action === "update" ? (0, import_react10.createElement)("div", null, primary(t("Update and connect"), () => openTerminal(omni3.id, "update", omni3.id)), whatRuns("omni update --yes")) : view.action === "reinstall" ? (0, import_react10.createElement)("div", null, primary(t("Update and connect"), () => openTerminal(omni3.id, "install")), whatRuns(`bun x --bun @automagik/omni@${omni3.updateTo} install --sandbox --at-login`)) : view.action === "use" ? primary(busy === omni3.id ? t("Connecting…") : t("Use it"), () => run(omni3.id, "omni-discover-use", { id: omni3.id })) : view.action === "connect" ? primary(busy === omni3.id ? t("Connecting…") : t("Connect"), () => run(omni3.id, "omni-discover-use", { id: omni3.id })) : view.action === "elsewhere" && !hasSandbox ? (0, import_react10.createElement)("button", { type: "button", className: "oc-ghost", onClick: () => setOpen(LOCAL) }, mac ? t("Run Omni on this Mac") : t("Run Omni on this computer")) : null;
+      const action2 = view.action === "update" ? (0, import_react10.createElement)("div", null, primary(t("Update and connect"), () => openTerminal(omni3.id, "update", omni3.id)), whatRuns("omni update --yes")) : view.action === "reinstall" ? (0, import_react10.createElement)("div", null, primary(t("Update and connect"), () => openTerminal(omni3.id, "install")), omni3.installCommand ? whatRuns(omni3.installCommand) : null) : view.action === "use" ? primary(busy === omni3.id ? t("Connecting…") : t("Use it"), () => run(omni3.id, "omni-discover-use", { id: omni3.id })) : view.action === "connect" ? primary(busy === omni3.id ? t("Connecting…") : t("Connect"), () => run(omni3.id, "omni-discover-use", { id: omni3.id })) : view.action === "elsewhere" && !hasSandbox ? (0, import_react10.createElement)("button", { type: "button", className: "oc-ghost", onClick: () => setOpen(LOCAL) }, mac ? t("Run Omni on this Mac") : t("Run Omni on this computer")) : null;
       body = (0, import_react10.createElement)(
         "div",
         null,
@@ -15589,7 +15595,7 @@ function ConnectOmni({ onPaired, embedded = false } = {}) {
     }, localLinked ? (0, import_react10.createElement)(Linked, { text: linked.version ? t("Connected to Omni {version}", { version: linked.version }) : t("Connected to {origin}", { origin: linked.origin }) }) : terminal?.row === LOCAL ? terminalOn(LOCAL) : (0, import_react10.createElement)(
       "div",
       null,
-      (0, import_react10.createElement)("p", { className: "ox-muted" }, mac ? t("It starts with your Mac, stays on it, and never touches another Omni.") : t("It starts with your computer, stays on it, and never touches another Omni.")),
+      (0, import_react10.createElement)("p", { className: "ox-muted" }, sandboxRunText(sandbox, mac)),
       (0, import_react10.createElement)("div", { className: "ox-row ox-act" }, primary(t("Set it up"), () => openTerminal(LOCAL, "install"))),
       sandbox?.home ? (0, import_react10.createElement)("details", { className: "ox-more" }, (0, import_react10.createElement)("summary", null, t("Where it lives")), t("{home}, with its own database, NATS and ports.", { home: sandbox.home })) : null
     )));
@@ -19196,6 +19202,7 @@ var STRINGS = {
   "A private Omni just for this computer · about 1 GB": "只属于这台电脑的私人 Omni · 约 1 GB",
   "It starts with your Mac, stays on it, and never touches another Omni.": "它随你的 Mac 启动，只留在这台 Mac 上，不会动到其他 Omni。",
   "It starts with your computer, stays on it, and never touches another Omni.": "它随你的电脑启动，只留在这台电脑上，不会动到其他 Omni。",
+  "It runs until this computer restarts.": "它会一直运行到这台电脑重启。",
   "Set it up": "设置",
   "Where it lives": "它在哪里",
   "{home}, with its own database, NATS and ports.": "{home}，有自己的数据库、NATS 和端口。",

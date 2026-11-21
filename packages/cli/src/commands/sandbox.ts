@@ -27,7 +27,9 @@ import {
   type SandboxReport,
   handOffSandboxUpdate,
   installSandbox,
+  readSandboxState,
   resolveSandboxHome,
+  sandboxLayout,
   sandboxStatus,
   startSandbox,
   stopSandbox,
@@ -78,9 +80,13 @@ async function act(options: SandboxCliOptions, verb: string, operation: () => Pr
     const message = error instanceof Error ? error.message : String(error);
     const home = resolveSandboxHome(options.home);
     if (json) {
-      process.stdout.write(
-        `${JSON.stringify({ ok: false, installed: exitCode !== SANDBOX_EXIT.notInstalled, home, error: message })}\n`,
-      );
+      let installed = false;
+      try {
+        installed = readSandboxState(sandboxLayout(home)) !== null;
+      } catch {
+        // An unreadable home does not establish that a sandbox is installed.
+      }
+      process.stdout.write(`${JSON.stringify({ ok: false, installed, home, error: message })}\n`);
       process.exit(exitCode);
     }
     output.error(message, undefined, exitCode);
@@ -97,15 +103,28 @@ export interface SandboxInstallFlags extends SandboxCliOptions {
   autopgTarball?: string;
 }
 
+export type SandboxInstaller = (options: SandboxInstallOptions) => Promise<SandboxReport>;
+
 /**
  * Adds the `--sandbox` flags to `omni install` and runs a sandbox install when
  * asked; otherwise hands the options to the plain install.
  */
-export function withSandboxInstall<T extends object>(command: Command, plain: (options: T) => Promise<void>): Command {
+export function withSandboxInstall<T extends object>(
+  command: Command,
+  plain: (options: T) => Promise<void>,
+  sandboxInstall: SandboxInstaller = installSandbox,
+): Command {
+  const atLoginFlags = new Set<boolean>();
   return command
     .option('--sandbox', 'Install a separate, isolated Omni (own Postgres, NATS, ports and config) instead')
     .option('--home <dir>', 'With --sandbox: its home (default: $OMNI_HOME/sandbox, else ~/.omni/sandbox)')
-    .option('--at-login', 'With --sandbox: start it at login (launchd agent / systemd --user unit, no sudo)')
+    .option(
+      '--at-login',
+      'With --sandbox: start it at login without sudo (launchd agent on macOS, needs the systemd user manager on Linux)',
+    )
+    .option('--no-at-login', 'With --sandbox: do not start it at login (removes an at-login unit it had)')
+    .on('option:at-login', () => atLoginFlags.add(true))
+    .on('option:no-at-login', () => atLoginFlags.add(false))
     .option('--no-start', 'With --sandbox: install without starting it')
     .option('--package <spec>', 'With --sandbox: @automagik/omni version or spec for its runtime (default: this CLI)')
     .option(
@@ -115,7 +134,18 @@ export function withSandboxInstall<T extends object>(command: Command, plain: (o
     .option('--autopg-tarball <file>', "With --sandbox: install autopg's pinned release from this local tarball")
     .option('--json', 'With --sandbox: print one JSON report')
     .action(async (options: T & SandboxInstallFlags) => {
-      if (!(await runSandboxInstallIfAsked(options))) await plain(options);
+      const conflictingAtLogin = atLoginFlags.size === 2;
+      atLoginFlags.clear();
+      if (conflictingAtLogin) {
+        const message = '--at-login and --no-at-login cannot be used together';
+        if (options.sandbox) {
+          return act(options, 'installed', async () => {
+            throw new SandboxError(message);
+          });
+        }
+        output.error(message);
+      }
+      if (!(await runSandboxInstallIfAsked(options, sandboxInstall))) await plain(options);
     });
 }
 
@@ -124,14 +154,17 @@ export function withSandboxInstall<T extends object>(command: Command, plain: (o
  * (done), false for a plain install. Sandbox-only flags without `--sandbox` are
  * refused rather than ignored.
  */
-async function runSandboxInstallIfAsked(options: SandboxInstallFlags): Promise<boolean> {
+async function runSandboxInstallIfAsked(
+  options: SandboxInstallFlags,
+  sandboxInstall: SandboxInstaller,
+): Promise<boolean> {
   if (options.sandbox) {
-    await runSandboxInstall(options);
+    await runSandboxInstall(options, sandboxInstall);
     return true;
   }
   const stray = [
     options.home,
-    options.atLogin,
+    options.atLogin, // --at-login or --no-at-login
     options.package,
     options.pgPasswordFile,
     options.autopgTarball,
@@ -139,13 +172,13 @@ async function runSandboxInstallIfAsked(options: SandboxInstallFlags): Promise<b
   ].some((value) => value !== undefined);
   if (stray || options.start === false) {
     output.error(
-      '--home, --at-login, --no-start, --package, --pg-password-file, --autopg-tarball and --json need --sandbox',
+      '--home, --at-login, --no-at-login, --no-start, --package, --pg-password-file, --autopg-tarball and --json need --sandbox',
     );
   }
   return false;
 }
 
-function runSandboxInstall(options: SandboxInstallFlags): Promise<void> {
+function runSandboxInstall(options: SandboxInstallFlags, sandboxInstall: SandboxInstaller): Promise<void> {
   const { home, defaultHome } = homes(options);
   const install: SandboxInstallOptions = {
     home,
@@ -158,7 +191,7 @@ function runSandboxInstall(options: SandboxInstallFlags): Promise<void> {
   };
   if (!wantsJson(options))
     output.raw(`Installing a sandboxed Omni at ${home} (first start downloads Postgres; give it a minute)…`);
-  return act(options, 'installed', () => installSandbox(install));
+  return act(options, 'installed', () => sandboxInstall(install));
 }
 
 const withHome = (command: Command): Command =>

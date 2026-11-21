@@ -16,7 +16,7 @@ import { homedir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { z } from 'zod'
 import { candidates, foundOmni, linkWithKey, managerOf, probe, UNFOLD_RUNS_OMNI, unfoldHost } from './omni-discover.js'
-import { downloadBun, findBun } from './omni-local.js'
+import { atLoginUsable, downloadBun, findBun, installCommand } from './omni-local.js'
 import { installRelease } from './omni-release.js'
 
 const MAX_OUTPUT = 256 * 1024
@@ -128,10 +128,11 @@ export function install(rt, deps = {}) {
         bun = await (deps.downloadBun ?? downloadBun)({ env, home, fetchImpl })
       }
       const version = await release()
+      const atLogin = await (deps.atLoginUsable ?? atLoginUsable)({ env, platform, spawn: spawnPipe, uid: deps.uid })
       entry.step = null
       return {
         title: 'Install Omni on this computer',
-        command: `bun x --bun @automagik/omni@${version} install --sandbox --at-login`,
+        command: installCommand(version, { atLogin }),
         env: { PATH: withPath(env, [dirname(bun), ...bunFolders]) },
         after: () => linkSandbox(version),
       }

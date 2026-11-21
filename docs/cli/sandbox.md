@@ -23,8 +23,11 @@ it to that version, keeping data, ports and the API key.
 ## Who runs the supervisor
 
 With `--at-login`, the launchd agent or `systemd --user` unit does, at every
-login. Without it, the supervisor still goes to the user's service manager, for
-this login only: a transient `systemd --user` service
+login. On Linux, `--at-login` requires a reachable systemd user manager, even with
+`--no-start`. Reinstall with `--no-at-login` on the same `--home` to remove an
+existing at-login unit and run Omni for this session only. Without at-login, the
+supervisor still goes to the user's service manager for this login only. It runs
+as a transient `systemd --user` service
 (`omni-sandbox-<hash>-session.service`, collected once it stops) or a launchd
 job in the GUI domain whose plist stays in `<home>/run`. So it belongs to
 neither the CLI nor whatever ran the CLI. An app that runs `omni install
@@ -83,7 +86,7 @@ and their local media directory.
 ## Commands
 
 ```sh
-omni install --sandbox [--home <dir>] [--at-login] [--no-start] [--package <spec>]
+omni install --sandbox [--home <dir>] [--at-login | --no-at-login] [--no-start] [--package <spec>]
                        [--pg-password-file <file>] [--autopg-tarball <file>] [--json]
 omni sandbox status    [--home <dir>] [--json]
 omni sandbox start     [--home <dir>] [--json]
@@ -101,7 +104,8 @@ With `--json`, each command prints one line:
  "ports":{"api":18882,"pg":15432,"nats":14222},"pid":4242,"logsDir":"…/logs"}
 ```
 
-On failure it prints `{"ok":false,…,"error":"…"}`. Exit codes:
+On failure it prints `{"ok":false,…,"error":"…"}`. The `installed` field is true
+when the home has readable sandbox state. Exit codes:
 
 - `0`: ok
 - `1`: failed, for example the API did not answer within 3 minutes
@@ -314,7 +318,7 @@ other platforms too.
 
 ## Requirements
 
-- macOS or Linux (WSL included; `--at-login` on WSL needs systemd enabled).
+- macOS or Linux (WSL included). On Linux, `--at-login` needs the systemd user manager.
 - `bun`, since the CLI itself runs on it.
 - Network on the first install: bun fetches `@automagik/omni` (and `pgserve`
   off the autopg platforms) into `<home>/runtime`, and nats-server comes from

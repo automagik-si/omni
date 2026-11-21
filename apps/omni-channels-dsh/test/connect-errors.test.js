@@ -55,6 +55,34 @@ const settings = () => mount(() => react.createElement(ui.ChannelSettings, {
   request: (...args) => answer(...args), refresh: async () => {},
 }))
 const connect = () => mount(() => react.createElement(ui.ConnectOmni))
+
+for (const [atLogin, copy] of [
+  [true, 'It starts with your computer, stays on it, and never touches another Omni.'],
+  [false, 'It runs until this computer restarts.'],
+]) test(`the fresh sandbox card explains startup with atLogin=${atLogin}`, async () => {
+  answer = async endpoint => endpoint === 'omni-discover' ? { omnis: [], sandbox: { atLogin } } : defaults(endpoint)
+  const view = connect()
+  try {
+    const choice = nodes(await draw(view)).find(node => node.props['aria-controls'] === 'ox-body-local')
+    assert.ok(choice)
+    choice.props.onClick()
+    const card = nodes(view.draw()).find(node => node.props.id === 'ox-body-local')
+    assert.ok(nodes(card).some(node => node.type === 'p' && text(node) === copy))
+  } finally { view.unmount() }
+})
+
+test('the reinstall card shows the install command from discovery verbatim', async () => {
+  const installCommand = "bun x --bun '@automagik/omni@9.9.9' install --sandbox"
+  const found = { id: '0123456789abcdef', url: 'http://localhost:8882', source: 'sandbox', local: true, reachable: true, updateTo: '9.9.9', installCommand }
+  answer = async endpoint => endpoint === 'omni-discover' ? { omnis: [found], sandbox: { atLogin: false } } : defaults(endpoint)
+  const view = connect()
+  try {
+    const tree = await draw(view)
+    assert.ok(button(tree, 'Update and connect'))
+    assert.equal(text(nodes(tree).find(node => node.type === 'code')), installCommand)
+  } finally { view.unmount() }
+})
+
 const failOn = (endpoint, raw) => { answer = async name => { if (name === endpoint) throw new Error(raw); return defaults(name) } }
 const token = async view => {
   change(view, input(view, props => props.type === 'password'), 'fixture-bot-token')
