@@ -17,7 +17,7 @@
 // The person card of the Bot team's shared kit reads a chat's note and coverage through the
 // endpoint `omni-reading-note`.
 import { randomUUID } from 'node:crypto'
-import { chmodSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { chmodSync, readFileSync, renameSync, statSync } from 'node:fs'
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
@@ -56,6 +56,10 @@ export const NO_CHAT = 'Omni has no chat with that id that this link may read: t
 export const CURSOR_WINDOW = 'A cursor goes on with the window it was made for: leave from and to out, or start again without a cursor.'
 
 const invalid = message => Object.assign(new Error(message), { code: 'bot/invalid' })
+
+class CoverageDenied extends Error {
+  code = 'bot/invalid'
+}
 
 // What Omni answers (O1's contract), checked as it arrives.
 const optionalText = z.string().nullish()
@@ -221,7 +225,7 @@ function privateStore(rt, filename, schema) {
     } catch (error) {
       last = null
       if (error.code !== 'ENOENT') return unreadable()
-      return { file: empty(), bad: false, missing: true }
+      return { file: empty(), bad: false }
     }
     let parsed
     try {
@@ -260,14 +264,6 @@ function privateStore(rt, filename, schema) {
           warned = false
         }
         renameSync(temp, path)
-        return () => {
-          if (previous.missing || previous.bad) {
-            rmSync(path)
-          } else {
-            writeFileSync(temp, serialize(previous.file), { mode: 0o600 })
-            renameSync(temp, path)
-          }
-        }
       })
     } finally {
       await rm(temp, { force: true }).catch(() => {})
@@ -324,7 +320,7 @@ export function install(rt) {
     if (to) query.set('to', to)
     const reply = await omni(rt, 'GET', `/chats/${encodeURIComponent(chatId)}/coverage?${query}`, link)
     // Any other 404 is an Omni without the coverage read.
-    if (chatMissing(reply)) throw invalid(NO_CHAT)
+    if (chatMissing(reply) || reply.status === 401 || reply.status === 403) throw new CoverageDenied(NO_CHAT)
     if (!reply.ok) throw invalid(reply.status === 404 ? NO_PAGES : `omni answered ${reply.status} for the chat's coverage`)
     const parsed = Coverage.safeParse(reply.json)
     if (!parsed.success) throw invalid(NO_PAGES)
@@ -463,8 +459,8 @@ export function install(rt) {
       const updatedAt = new Date().toISOString()
       await notes.set(chatId, { note, readThrough, updatedAt }, check)
       if (summary !== undefined) {
-        await summaries.set(chatId, { summary, updatedAt }, check, apply =>
-          rt.saveOmniTransition('conversation.summarized', channelId, { chatId, updatedAt }, apply))
+        await summaries.set(chatId, { summary, updatedAt }, check, commit =>
+          rt.saveOmniTransition('conversation.summarized', link.url, channelId, { chatId, updatedAt }, check, commit))
       }
     })
     return `Reading note saved for ${readable.chat.name}: ${note.length} characters, read through ${isoOf(readThrough)}.`
@@ -525,7 +521,12 @@ export function install(rt) {
     if (!link) return closed
     const chat = await chatOf(rt, chatId, link).catch(() => null)
     if (chat === null || !sameReadingLink(rt, link) || !readByAnyBot(rt, chat.channelId)) return closed
-    const coverage = await coverageOf(chatId, undefined, undefined, link).catch(() => null)
+    let coverage = null
+    try {
+      coverage = await coverageOf(chatId, undefined, undefined, link)
+    } catch (error) {
+      if (error instanceof CoverageDenied) return closed
+    }
     if (!sameReadingLink(rt, link) || !readByAnyBot(rt, chat.channelId)) return closed
     const entry = notes.get(chatId)
     return {

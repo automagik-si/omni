@@ -604,6 +604,7 @@ export function install(rt) {
   const trainingState = thread => ({
     selected: isSelected(thread), threadId: thread?.id ?? null, sendingMode: thread ? sendingModeOf(thread) : null,
   })
+  const trainingRefusal = error => error?.message ?? 'The training selection could not be saved.'
   function trainingOf(chat) {
     const thread = byChat(chat.id)
     return trainingState(matchesTrainingThread(thread, chat.id, chat.channelId, explicitOwnerOf(chat.channelId), rt.omniLink?.()) ? thread : undefined)
@@ -612,7 +613,7 @@ export function install(rt) {
   function saveTrainingSelection(thread, selected, at, apply) {
     const name = selected ? 'training.selected' : 'training.deselected'
     const { chatId, channelId, id: threadId } = thread
-    return rt.saveOmniTransition(name, channelId, { chatId, threadId, selected, at }, apply)
+    return rt.saveOmniTransition(name, thread.origin, channelId, { chatId, threadId, selected, at }, apply)
   }
 
   function checkTrainingAuthority(chat, owner, link) {
@@ -641,12 +642,12 @@ export function install(rt) {
     check()
     const thread = byChat(chatId)
     if (!thread) {
-      if (!selected) return undefined
+      if (!selected) return {}
       if (!ready()) throw refused(rt.teamResume?.reason ?? NEEDS_NEWER_TEAM)
       const named = await namedChat(chat, chat.instanceId, link)
       const made = await makeResolved([named], false, undefined, '', { trainingOnly: true, check })
       if (!made.ok) throw refused(made.reason)
-      return made.thread
+      return { thread: made.thread }
     }
     if (!isAnswerChild(thread)) throw refused('This chat already belongs to a non-answer thread.')
     if (!matchesTrainingThread(thread, chatId, chat.instanceId, owner, link)) {
@@ -655,26 +656,32 @@ export function install(rt) {
     if (isSelected(thread) !== selected) {
       const before = thread.trainingSelectedAt
       const at = Date.now()
-      await saveTrainingSelection(thread, selected, at, () => {
+      try {
+        await saveTrainingSelection(thread, selected, at, () => {
+          check()
+          if (selected) thread.trainingSelectedAt = at
+          else delete thread.trainingSelectedAt
+          return () => {
+            if (before === undefined) delete thread.trainingSelectedAt
+            else thread.trainingSelectedAt = before
+          }
+        })
+      } catch (error) {
+        if (selected) throw error
         check()
-        if (selected) thread.trainingSelectedAt = at
-        else delete thread.trainingSelectedAt
-        return () => {
-          if (before === undefined) delete thread.trainingSelectedAt
-          else thread.trainingSelectedAt = before
-        }
-      })
+        return { thread, refusal: trainingRefusal(error) }
+      }
     }
-    return thread
+    return { thread }
   }
 
   function provisionTraining(chatId, selected = true) {
     return serial(async () => {
       try {
-        const thread = await selectTrainingNow(chatId, selected)
-        return { chatId, ...trainingState(thread), refusal: null }
+        const { thread, refusal = null } = await selectTrainingNow(chatId, selected)
+        return { chatId, ...trainingState(thread), refusal }
       } catch (error) {
-        return { chatId, ...trainingState(), refusal: error?.message ?? 'The training selection could not be saved.' }
+        return { chatId, ...trainingState(), refusal: trainingRefusal(error) }
       }
     })
   }

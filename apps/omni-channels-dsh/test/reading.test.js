@@ -25,7 +25,7 @@ import * as team from '@automagik/bots-dsh'
 import * as channels from '../index.js'
 import { LINK_FILE } from '../src/host/omni-link.js'
 import { ANSWER_CHILD_REFUSAL, BAD_CURSOR, CURSOR_WINDOW, NO_CHAT, NOT_OPERATOR, NOT_READABLE, NOTE_MAX, NOTES_FILE, PAGE_CHARS_MAX, SUMMARIES_FILE } from '../src/host/reading.js'
-import { INSTANCE, OMNI, OTHER_INSTANCE, resetFetch, teamState } from './thread-fixture.js'
+import { INSTANCE, OMNI, OTHER_INSTANCE, resetFetch, teamState, until } from './thread-fixture.js'
 
 const realFetch = globalThis.fetch
 afterEach(resetFetch)
@@ -101,7 +101,7 @@ function omniO1() {
     if (url.origin !== OMNI || init.headers?.['x-api-key'] !== LINK_KEY) return json(401, { error: { code: 'UNAUTHORIZED' } })
     if (method === 'POST' && path === '/events/trigger') {
       asked.at(-1).body = JSON.parse(init.body)
-      return json(201, {})
+      return json(201, { published: true })
     }
     if (method !== 'GET') return json(404, { error: { code: 'NOT_FOUND' } })
     const [, chatId, part] = /^\/chats\/([^/]+)(?:\/(messages|coverage))?$/.exec(path) ?? []
@@ -424,6 +424,47 @@ test('summaries stay in a private sidecar and the old strict note entries still 
   assert.equal(JSON.stringify(events).includes(marker), false)
 })
 
+test('a failed summary rename leaves its saved event for startup to deliver', async (t) => {
+  const omni = omniO1()
+  const home = homeWith(t)
+  const path = join(home, SUMMARIES_FILE)
+  const previous = { version: 1, chats: { [CHAT]: { summary: 'Previous summary', updatedAt: SAME } } }
+  writeFileSync(path, JSON.stringify(previous), { mode: 0o600 })
+  const dsh = await start(t, home)
+  const rt = dsh.root.get('omniChannels')
+  const save = rt.save
+  const state = () => JSON.parse(readFileSync(join(home, 'state.json'), 'utf8'))
+  const events = () => omni.asked.filter(call => call.path === '/events/trigger').map(call => call.body)
+  let entry
+  rt.save = async (options) => {
+    await save(options)
+    if (!options?.required) return
+    assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), previous)
+    const pending = state().omniEventOutbox
+    assert.equal(pending.length, 1)
+    entry = pending[0]
+    const staged = readdirSync(home).filter(file => file.startsWith(`${SUMMARIES_FILE}.`) && file.endsWith('.tmp'))
+    assert.equal(staged.length, 1)
+    rmSync(join(home, staged[0]))
+  }
+  // Simulate the lost process between the team save and the sidecar replacement.
+  rt.flushOmniEventOutbox = async () => {}
+  const summary = 'New private summary'
+  assert.match(await dsh.run('save_reading_note', { chat: CHAT, note: 'Reading note', readThrough: SAME, summary }), /ENOENT.*rename/)
+  assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), previous)
+  assert.equal(entry.origin, OMNI)
+  assert.equal(entry.event.eventType, 'custom.omni-channels.conversation.summarized')
+  assert.equal(entry.event.payload.chatId, CHAT)
+  assert.equal(JSON.stringify(state()).includes(summary), false)
+  assert.deepEqual(events(), [])
+  await dsh.stop()
+
+  await start(t, home)
+  await until(() => events().length === 1 && state().omniEventOutbox?.length === 0)
+  assert.deepEqual(events(), [entry.event])
+  assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), previous)
+})
+
 test('a page that does not fit even at the shortest cut is read again from the same cursor with fewer messages: never over the limit, nothing skipped (200 heavy rows under an 8,000-character note)', async (t) => {
   const omni = omniO1()
   const dsh = await start(t, homeWith(t))
@@ -463,9 +504,10 @@ test('the kit\'s endpoint gives a note and coverage only for a chat Omni finds a
     omniOwnership: { defaultBotId: 'w1', channels: { [INSTANCE]: 'm1', [OTHER_INSTANCE]: 'w1' } },
   })
   const home = homeWith(t, state)
-  // Notes kept from before: one for a chat no operating Bot may read now, one for a chat Omni no longer has.
   const kept = { note: 'kept from before', readThrough: '2026-11-01T00:00:00.000Z', updatedAt: '2026-11-02T00:00:00.000Z' }
-  writeFileSync(join(home, NOTES_FILE), JSON.stringify({ version: 1, chats: { [ELSEWHERE]: kept, [UNKNOWN]: kept } }), { mode: 0o600 })
+  const marker = 'PRIVATE-SCOPED-CHAT'
+  writeFileSync(join(home, NOTES_FILE), JSON.stringify({ version: 1, chats: { [ELSEWHERE]: kept, [UNKNOWN]: kept, [SCOPED_OUT]: { ...kept, note: marker } } }), { mode: 0o600 })
+  writeFileSync(join(home, SUMMARIES_FILE), JSON.stringify({ version: 1, chats: { [SCOPED_OUT]: { summary: marker, updatedAt: kept.updatedAt } } }), { mode: 0o600 })
   const dsh = await start(t, home)
   // Unreadable: the tools refuse it, and the card gets its id alone.
   assert.equal(await dsh.run('read_history', { chat: ELSEWHERE }), NOT_READABLE)
@@ -478,10 +520,22 @@ test('the kit\'s endpoint gives a note and coverage only for a chat Omni finds a
   assert.equal(coverageReads(), before)
   // A chat whose history routes answer Omni's chat-not-found (a key held to other channels).
   assert.equal(await dsh.run('read_history', { chat: SCOPED_OUT }), NO_CHAT)
+  const closed = { chat: { id: SCOPED_OUT }, note: null, coverage: null }
+  assert.deepEqual(await dsh.endpoint('omni-reading-note', { chat: SCOPED_OUT }), closed)
   // Readable: the note and the coverage.
   assert.match(await dsh.run('save_reading_note', { chat: CHAT, note: 'open order', readThrough: '2026-11-01' }), /^Reading note saved/)
   const card = await dsh.endpoint('omni-reading-note', { chat: CHAT })
   assert.deepEqual([card.chat, card.note.text, card.coverage.count], [{ id: CHAT, name: 'Ana', channelId: INSTANCE }, 'open order', 8])
+  const inner = globalThis.fetch
+  let status = 403
+  globalThis.fetch = (url, init) => new URL(url).pathname.endsWith(`/chats/${SCOPED_OUT}/coverage`)
+    ? new Response(null, { status }) : inner(url, init)
+  assert.deepEqual(await dsh.endpoint('omni-reading-note', { chat: SCOPED_OUT }), closed)
+  status = 503
+  const unavailable = await dsh.endpoint('omni-reading-note', { chat: SCOPED_OUT })
+  assert.equal(unavailable.coverage, null)
+  assert.equal(unavailable.note.text, marker)
+  assert.equal(unavailable.note.summary, marker)
 })
 
 test('the reading note never reaches state.json, a log, the team view or any other file', async (t) => {

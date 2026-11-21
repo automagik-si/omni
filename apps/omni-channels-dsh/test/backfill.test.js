@@ -376,16 +376,18 @@ test('omni-conversations returns the newest run and counts only chats readable o
   const runId = chatId(6)
   const oldId = chatId(7)
   const threadId = chatId(8)
+  const jobId = chatId(9)
   const activity = { ...coverage(1), lastInbound: '2026-11-14T15:00:00.000Z', lastOutbound: '2026-11-14T16:00:00.000Z' }
   const row = (chatId, outcome, coverage = null, channelId = INSTANCE) => ({
     chatId, channelId, chat: 'Label from the run', state: outcome === 'done' ? 'done' : 'failed', outcome, counts: { stored: 3 }, jobId: null, coverage,
   })
+  const missingChat = { ...row(chatId(0), 'done'), chat: 'Hidden job label', jobId: oldId }
   const run = { id: runId, from: FROM, to: TO, startedAt: 1000 }
   const home = homeWith(teamState({
     bots: { ...teamState().bots, w1: { id: 'w1', name: 'Other Bot', createdAt: 2 } },
     omniOwnership: { defaultBotId: 'w1', channels: { [INSTANCE]: 'm1', [OTHER_INSTANCE]: 'w1' } },
     omniBackfillRuns: [
-      { ...run, rows: [row(ANA, 'done', activity), row(BRUNO, 'not-started'), row(CARLA, 'done', { ...coverage(2), lastInbound: null, lastOutbound: null }), row(ELSEWHERE, 'failed', null, OTHER_INSTANCE)] },
+      { ...run, rows: [{ ...row(ANA, 'done', activity), jobId }, row(BRUNO, 'not-started'), row(CARLA, 'done', { ...coverage(2), lastInbound: null, lastOutbound: null }), row(ELSEWHERE, 'failed', null, OTHER_INSTANCE), missingChat] },
       { ...run, id: oldId, startedAt: 1, rows: [row(BRUNO, 'failed')] },
     ],
     omniThreads: {
@@ -416,10 +418,16 @@ test('omni-conversations returns the newest run and counts only chats readable o
   assert.equal((await detail({ runId: oldId })).summary.failed, 1)
   assert.deepEqual(await detail({ runId: 'pruned' }), { run: null, chats: [] })
   await assert.rejects(detail({ extra: true }))
+  const status = await dsh.run('backfill_status', {})
+  assert.ok(status.includes(`(job ${jobId}): done`))
+  assert.ok(status.includes('2 done, 0 phone did not answer, 0 stopped, 1 failed, 0 running.'))
+  assert.ok(!status.includes(missingChat.chat))
   rmSync(join(home, LINK_FILE))
   const disconnected = await detail({})
   assert.deepEqual(disconnected.chats, [])
   assert.equal(disconnected.summary.total, 0)
+  assert.match(await dsh.run('backfill_status', {}), /^No backfill here yet\./)
+  assert.equal(await dsh.run('backfill_status', { jobId }), `No backfill job ${jobId} this bot may follow.`)
 })
 
 test('after a restart, the stream reads each unfinished job by its route before it streams, and goes on with the events', async (t) => {

@@ -881,6 +881,7 @@ export class WebhookService {
       // keyed trigger and an unkeyed one are indistinguishable in the journal.
       direction: 'internal',
       status: 'completed',
+      instanceId: metadata.instanceId ?? null,
       rawPayload: payload,
       idempotencyKey,
       causationId: metadata.causationId ?? null,

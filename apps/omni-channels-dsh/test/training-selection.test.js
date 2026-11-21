@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { afterEach, test } from 'node:test'
-import { boot, CHAT, ELSEWHERE, fakeOmni, GROUP, homeFor, INSTANCE, readOnlyPresets, record, resetFetch, saved, teamState, until } from './thread-fixture.js'
+import { LINK_FILE } from '../src/host/omni-link.js'
+import { boot, CHAT, ELSEWHERE, fakeOmni, GROUP, homeFor, INSTANCE, OMNI, readOnlyPresets, record, resetFetch, saved, teamState, until } from './thread-fixture.js'
 
 afterEach(resetFetch)
 
@@ -20,7 +23,13 @@ const selection = async (run, chats, selected = true) => {
 const postEvents = (handle) => {
   const inner = globalThis.fetch
   globalThis.fetch = (url, init) => new URL(url).pathname.endsWith('/events/trigger')
-    ? handle(JSON.parse(init.body)) : inner(url, init)
+    ? handle(JSON.parse(init.body), new URL(url)) : inner(url, init)
+}
+const trackFlush = (run) => {
+  const flush = run.channels.flushOmniEventOutbox
+  let latest
+  run.channels.flushOmniEventOutbox = () => { latest = flush(); return latest }
+  return () => latest
 }
 
 test('concurrent owner requests save one child born in training with its event, then retry it at startup', async (t) => {
@@ -58,9 +67,10 @@ test('concurrent owner requests save one child born in training with its event, 
     payload: { chatId: CHAT, threadId: thread.id, selected: true, at: thread.trainingSelectedAt },
   }
   assert.deepEqual(events[0].body, event)
-  assert.deepEqual(events[0].state.omniEventOutbox, [event])
+  const entry = { origin: OMNI, event }
+  assert.deepEqual(events[0].state.omniEventOutbox, [entry])
   assert.equal(events[0].state.omniThreads[thread.id].trainingSelectedAt, thread.trainingSelectedAt)
-  assert.deepEqual(saved(home).omniEventOutbox, [event])
+  assert.deepEqual(saved(home).omniEventOutbox, [entry])
   assert.equal(run.view().omniThreads[0].trainingSelected, true)
   assert.deepEqual(run.made, [thread.sessionId])
   assert.equal(omni.asked.filter(call => call === 'POST /keys/children').length, 1)
@@ -86,6 +96,145 @@ test('concurrent owner requests save one child born in training with its event, 
   assert.equal(saved(home).omniThreads[thread.id].sessionId, thread.sessionId)
   assert.deepEqual(restarted.archived, [])
 })
+
+test('a pending event for Omni A survives a restart on B and is sent on returning to A', async (t) => {
+  const home = homeFor(t, fakeOmni(), answering())
+  const path = join(home, LINK_FILE)
+  const original = readFileSync(path, 'utf8')
+  const attempts = []
+  let available = false
+  postEvents((body, url) => {
+    attempts.push({ origin: url.origin, body })
+    return available ? Response.json({ published: true }, { status: 201 }) : new Response(null, { status: 429 })
+  })
+  const first = await start(t, home)
+  const flushed = trackFlush(first)
+  assert.equal((await selection(first, [CHAT]))[0].selected, true)
+  await flushed()
+  const [entry] = saved(home).omniEventOutbox
+  assert.equal(entry.origin, OMNI)
+  assert.deepEqual(attempts, [{ origin: OMNI, body: entry.event }])
+  await first.stop()
+
+  available = true
+  writeFileSync(path, JSON.stringify({ ...JSON.parse(original), url: 'https://other-omni.example.com', key: 'test-key-b' }))
+  const restarted = await start(t, home)
+  await restarted.channels.flushOmniEventOutbox()
+  assert.deepEqual(saved(home).omniEventOutbox, [entry])
+  assert.equal(attempts.length, 1)
+
+  writeFileSync(path, original)
+  await restarted.channels.flushOmniEventOutbox()
+  assert.deepEqual(attempts, [{ origin: OMNI, body: entry.event }, { origin: OMNI, body: entry.event }])
+  assert.deepEqual(saved(home).omniEventOutbox, [])
+})
+
+test('a 201 without a publish retries with the same key and a confirmed duplicate settles it', async (t) => {
+  const home = homeFor(t, fakeOmni(), answering())
+  const attempts = []
+  let duplicate = false
+  postEvents((body) => {
+    attempts.push(body)
+    return Response.json({ published: false, ...(duplicate ? { duplicate } : {}) }, { status: 201 })
+  })
+  const run = await start(t, home)
+  const flushed = trackFlush(run)
+  await selection(run, [CHAT])
+  await flushed()
+  const [entry] = saved(home).omniEventOutbox
+  assert.deepEqual(attempts, [entry.event])
+
+  duplicate = true
+  await run.channels.flushOmniEventOutbox()
+  assert.deepEqual(attempts, [entry.event, entry.event])
+  assert.deepEqual(saved(home).omniEventOutbox, [])
+})
+
+test('a failed selection keeps its later deselection pending until both can reach the journal in order', async (t) => {
+  const home = homeFor(t, fakeOmni(), answering())
+  const attempts = []
+  const journal = []
+  const selected = 'custom.omni-channels.training.selected'
+  const deselected = 'custom.omni-channels.training.deselected'
+  postEvents(({ eventType }) => {
+    attempts.push(eventType)
+    if (eventType === selected && attempts.length <= 2) return new Response(null, { status: 429 })
+    journal.push(eventType)
+    return Response.json({ published: true }, { status: 201 })
+  })
+  const run = await start(t, home)
+  const flushed = trackFlush(run)
+  assert.equal((await selection(run, [CHAT]))[0].selected, true)
+  await flushed()
+  assert.equal((await selection(run, [CHAT], false))[0].selected, false)
+  await flushed()
+  assert.deepEqual(attempts, [selected, selected])
+  assert.deepEqual(journal, [])
+  assert.deepEqual(saved(home).omniEventOutbox.map(({ event }) => event.eventType), [selected, deselected])
+
+  await run.channels.flushOmniEventOutbox()
+  assert.deepEqual(attempts, [selected, selected, selected, deselected])
+  assert.deepEqual(journal, [selected, deselected])
+  assert.deepEqual(saved(home).omniEventOutbox, [])
+})
+
+test('a failed deselection reports the restored selection only while the owner remains authorized', async (t) => {
+  const home = homeFor(t, fakeOmni(), answering())
+  postEvents(() => Response.json({ published: true }, { status: 201 }))
+  const run = await start(t, home)
+  const flushed = trackFlush(run)
+  const [selected] = await selection(run, [CHAT])
+  await flushed()
+  const thread = saved(home).omniThreads[selected.threadId]
+  assert.ok(Number.isFinite(thread.trainingSelectedAt))
+  const save = run.channels.save
+  let loseOwner = false
+  run.channels.save = async (options) => {
+    if (!options?.required) return save(options)
+    if (loseOwner) delete run.team.state.omniOwnership.channels[INSTANCE]
+    throw new Error('Required save failed.')
+  }
+
+  assert.deepEqual(await selection(run, [CHAT], false), [{ ...selected, refusal: 'Required save failed.' }])
+  assert.equal(run.team.state.omniThreads[thread.id].trainingSelectedAt, thread.trainingSelectedAt)
+  assert.equal(saved(home).omniThreads[thread.id].trainingSelectedAt, thread.trainingSelectedAt)
+  assert.deepEqual(saved(home).omniEventOutbox, [])
+
+  loseOwner = true
+  const [closed] = await selection(run, [CHAT], false)
+  assert.deepEqual(closed, { chatId: CHAT, selected: false, threadId: null, sendingMode: null, refusal: 'This chat needs a channel with the same explicit Bot owner.' })
+})
+
+for (const first of ['inbound', 'selection']) {
+  test(`overlapping inbound and training selection create one child when ${first} reaches mint first`, async (t) => {
+    const omni = fakeOmni()
+    const home = homeFor(t, omni, answering())
+    const run = await start(t, home)
+    const mintStarted = Promise.withResolvers()
+    const mintMayFinish = Promise.withResolvers()
+    const mint = run.channels.threadKeys.mint
+    run.channels.threadKeys.mint = async (...args) => {
+      mintStarted.resolve()
+      await mintMayFinish.promise
+      return mint(...args)
+    }
+    const inbound = () => run.channels.threads.answerFor({ ownerBotId: 'm1', channelId: INSTANCE, chatId: CHAT })
+    const select = () => selection(run, [CHAT])
+    const started = first === 'inbound' ? inbound() : select()
+    await mintStarted.promise
+    const overlapping = first === 'inbound' ? select() : inbound()
+    await new Promise(resolve => setImmediate(resolve))
+    mintMayFinish.resolve()
+    const [child, [selected]] = await Promise.all(first === 'inbound' ? [started, overlapping] : [overlapping, started])
+    const mode = first === 'inbound' ? 'sending' : 'training'
+    assert.deepEqual(selected, { chatId: CHAT, selected: true, threadId: child.id, sendingMode: mode, refusal: null })
+    assert.deepEqual(Object.keys(saved(home).omniThreads), [child.id])
+    assert.equal(saved(home).omniThreads[child.id].sendingMode, mode)
+    assert.equal(child.sendingMode, mode)
+    assert.deepEqual(run.made, [child.sessionId])
+    assert.equal(omni.asked.filter(call => call === 'POST /keys/children').length, 1)
+  })
+}
 
 test('selection reuses an inbound-first child and preserves sending mode, streak, pause and binding', async (t) => {
   const omni = fakeOmni()

@@ -166,6 +166,7 @@ const OutboxEvent = z.discriminatedUnion('eventType', [
     payload: z.object({ chatId: id, updatedAt: z.iso.datetime() }).strict(),
   }).strict(),
 ])
+const UnpublishedTrigger = z.object({ published: z.literal(false), duplicate: z.literal(true).optional().catch(undefined) })
 
 function installOutbox(rt) {
   const { ctx, state } = rt
@@ -176,9 +177,9 @@ function installOutbox(rt) {
     return next
   }
   const pending = () => Array.isArray(state.omniEventOutbox) ? state.omniEventOutbox : []
-  // Apply the local transition and add its event before the same team save. This queue also
-  // covers removals so a concurrent flush cannot undo a newly enqueued event.
-  rt.saveOmniTransition = (name, instanceId, payload, apply) => inTurn(async () => {
+  // Save team transitions and their events together. For a sidecar, save the event first
+  // so an interrupted replacement can leave an extra event but cannot lose one.
+  rt.saveOmniTransition = (name, origin, instanceId, payload, apply, commitSidecar) => inTurn(async () => {
     // The required save increments this revision. It stays unique across restarts even
     // when several selections or summaries have the same timestamp.
     const sequence = state.revision + 1
@@ -187,7 +188,7 @@ function installOutbox(rt) {
       idempotencyKey: `${name}:${payload.threadId ?? payload.chatId}:${sequence}`,
     })
     const before = state.omniEventOutbox
-    const next = [...pending(), event]
+    const next = [...pending(), { origin, event }]
     const dropped = next.length > OUTBOX_MAX
     const undo = apply()
     state.omniEventOutbox = next.slice(-OUTBOX_MAX)
@@ -196,11 +197,15 @@ function installOutbox(rt) {
     } catch (error) {
       if (before === undefined) delete state.omniEventOutbox
       else state.omniEventOutbox = before
-      undo()
+      undo?.()
       throw error
     }
     if (dropped) rt.warn?.('omni-channels: the Omni event outbox is full; dropping its oldest entries')
-    void rt.flushOmniEventOutbox()
+    try {
+      commitSidecar?.()
+    } finally {
+      void rt.flushOmniEventOutbox()
+    }
   })
 
   let flushing = Promise.resolve()
@@ -212,17 +217,34 @@ function installOutbox(rt) {
   async function flush() {
     if (stopped || rt.readOnly?.() !== undefined) return
     const link = rt.omniLink?.()
+    if (!link) return
     const snapshot = await inTurn(() => pending().slice())
     const settled = new Set()
+    const blocked = new Set()
     for (const entry of snapshot) {
       if (stopped || rt.readOnly?.() !== undefined || !sameReadingLink(rt, link)) break
-      const parsed = OutboxEvent.safeParse(entry)
+      // Entries without an origin cannot be safely assigned to a link.
+      if (entry?.origin !== link.url) continue
+      const parsed = OutboxEvent.safeParse(entry.event)
       if (!parsed.success) {
         settled.add(entry)
         continue
       }
-      const response = await rt.omniRequest('POST', '/events/trigger', { ...link, body: parsed.data }).catch(() => null)
-      if (response?.ok || (response?.status >= 400 && response.status < 500 && response.status !== 429)) settled.add(entry)
+      const event = parsed.data
+      const subject = event.payload.threadId === undefined ? `chat:${event.payload.chatId}` : `thread:${event.payload.threadId}`
+      if (blocked.has(subject)) continue
+      const response = await rt.omniRequest('POST', '/events/trigger', { ...link, body: event }).catch(() => null)
+      if (response?.ok) {
+        const unpublished = UnpublishedTrigger.safeParse(await response.json().catch(() => null))
+        if (!unpublished.success || unpublished.data.duplicate) {
+          settled.add(entry)
+          continue
+        }
+      } else if (response?.status >= 400 && response.status < 500 && response.status !== 429) {
+        settled.add(entry)
+        continue
+      }
+      blocked.add(subject)
     }
     if (settled.size === 0) return
     await inTurn(async () => {
@@ -240,8 +262,7 @@ function installOutbox(rt) {
   }, 'omni-channels: Omni event outbox')
 }
 
-async function reviewRows(rt, rows, mayRead) {
-  const link = rt.omniLink?.()
+async function reviewRows(rt, rows, mayRead, link = rt.omniLink?.()) {
   if (!link) return []
   const found = []
   for (let at = 0; at < rows.length; at += REVIEW_READS) {
@@ -268,8 +289,8 @@ export function install(rt) {
   const unfinished = () => runs().flatMap(run => run.rows).filter(row => row.jobId !== null && !ended(row))
 
   // One request, its method named where it is called, so the plugin-compat check sees each route.
-  async function omni(method, path, body) {
-    const response = await rt.omniRequest(method, path, body === undefined ? {} : { body })
+  async function omni(method, path, body, link) {
+    const response = await rt.omniRequest(method, path, { ...link, ...(body === undefined ? {} : { body }) })
     if (response === null) throw invalid('Omni is not connected here: connect one on the Channels page.')
     const text = await response.text()
     let json = null
@@ -295,19 +316,21 @@ export function install(rt) {
   }
 
   // The job route: the fallback read of one row. A job Omni no longer has ends the row.
-  async function readJob(row) {
-    const reply = await omni('GET', `/chats/${encodeURIComponent(row.chatId)}/backfill/${encodeURIComponent(row.jobId)}`)
+  async function readJob(row, link) {
+    const reply = await omni('GET', `/chats/${encodeURIComponent(row.chatId)}/backfill/${encodeURIComponent(row.jobId)}`, undefined, link)
+    if (link && !sameReadingLink(rt, link)) return false
     if (reply.status === 404) return applyProgress(row, {}, 'failed')
     if (!reply.ok) return false
     const data = reply.json?.data
     return applyProgress(row, data, endOf(data))
   }
   // Every unfinished row read again; one that fails to read waits for its events.
-  async function refresh(rows = unfinished()) {
+  async function refresh(rows = unfinished(), link) {
     let changed = false
     for (const row of rows) {
+      if (link && !sameReadingLink(rt, link)) break
       if (row.jobId === null || ended(row)) continue
-      changed = (await readJob(row).catch(() => false)) || changed
+      changed = (await readJob(row, link).catch(() => false)) || changed
     }
     if (changed) await rt.save()
     if (!rt.backfillsUnfinished()) rt.syncOmniEvents?.()
@@ -452,24 +475,32 @@ export function install(rt) {
     if (actor.refusal) return actor.refusal
     const parsed = StatusArgs.safeParse(raw ?? {})
     if (!parsed.success) return 'Give optionally a jobId that backfill_status gave.'
-    const mine = runs().map(run => ({ ...run, rows: run.rows.filter(row => rt.canChannel(actor.bot, row.channelId, 'read')) })).filter(run => run.rows.length > 0)
     const wanted = parsed.data.jobId
-    if (wanted !== undefined && !mine.some(run => run.rows.some(row => row.jobId === wanted))) return `No backfill job ${wanted} this bot may follow.`
-    await refresh(mine.flatMap(run => run.rows).filter(row => wanted === undefined || row.jobId === wanted))
+    const mayRead = channelId => actorOf(exec).bot === actor.bot && rt.canChannel(actor.bot, channelId, 'read')
+    const mine = runs().map(run => ({ ...run, rows: run.rows.filter(row => mayRead(row.channelId)) }))
+      .filter(run => run.rows.some(row => wanted === undefined || row.jobId === wanted))
+    const link = rt.omniLink?.()
+    const found = await reviewRows(rt, mine.flatMap(run => run.rows), mayRead, link)
+    if (found.length > 0) await refresh(found.map(({ row }) => row).filter(row => wanted === undefined || row.jobId === wanted), link)
+    const current = actorOf(exec)
+    if (current.bot !== actor.bot) return current.refusal ?? NOT_OPERATOR
+    const visible = new Set(sameReadingLink(rt, link) ? found.filter(({ chat }) => mayRead(chat.channelId)).map(({ row }) => row) : [])
+    if (wanted !== undefined && ![...visible].some(row => row.jobId === wanted)) return `No backfill job ${wanted} this bot may follow.`
     const open = Object.values(proposals()).filter(proposal => proposal.botId === actor.bot)
     const lines = open.map(proposal => `A proposal waits for the user's Start: ${proposal.chats.length} chats on its card, ${proposal.chats.filter(chat => chat.ticked).length} ticked by you.`)
     for (const run of mine) {
-      const rows = run.rows.filter(row => wanted === undefined || row.jobId === wanted)
+      const visibleRows = run.rows.filter(row => visible.has(row))
+      const rows = visibleRows.filter(row => wanted === undefined || row.jobId === wanted)
       if (rows.length === 0) continue
-      const s = summaryOf(run.rows)
+      const s = summaryOf(visibleRows)
       lines.push(`Backfill of ${dayOf(run.from)} to ${dayOf(run.to)}, started ${new Date(run.startedAt).toISOString()}: ${s.done} done, ${s.phoneDidNotAnswer} phone did not answer, ${s.stopped} stopped, ${s.failed} failed, ${s.running} running.`)
       lines.push(...rows.map(lineOf))
-      const review = await reviewRows(rt, rows.filter(ended), channelId => actorOf(exec).bot === actor.bot && rt.canChannel(actor.bot, channelId, 'read'))
+      const review = rows.filter(ended)
       if (review.length > 0) {
         lines.push(`Review backfill ${run.id}, from ${run.from} to ${run.to}:`)
-        for (const { row, chat } of review) {
+        for (const row of review) {
           const coverage = row.coverage ? `Omni holds ${row.coverage.countInWindow} messages in this window` : 'coverage unavailable'
-          lines.push(`- ${row.chat} (chat ${chat.id}): ${row.outcome}; ${coverage}.`)
+          lines.push(`- ${row.chat} (chat ${row.chatId}): ${row.outcome}; ${coverage}.`)
         }
         lines.push(REVIEW_INSTRUCTION)
       }

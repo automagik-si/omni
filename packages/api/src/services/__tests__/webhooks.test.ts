@@ -926,6 +926,18 @@ describe('WebhookService', () => {
       expect(mockEventBus.publishGeneric).toHaveBeenCalledTimes(2);
     });
 
+    test('a keyed training event claims a journal row with the trigger instance', async () => {
+      const eventType = 'custom.omni-channels.training.selected' as CustomEventType;
+      const instanceId = crypto.randomUUID();
+      const payload = { chatId: crypto.randomUUID(), threadId: crypto.randomUUID(), selected: true, at: Date.now() };
+
+      const result = await service.trigger(eventType, payload, { idempotencyKey: 'training-1', instanceId });
+
+      expect(mockDb._calls.insert).toEqual([
+        expect.objectContaining({ id: result.eventId, eventType, instanceId, rawPayload: payload }),
+      ]);
+    });
+
     test('without a key, an identical payload publishes again (#1109)', async () => {
       const eventType = 'custom.connector.window' as CustomEventType;
       const payload = { window: '2026-09-11' };
