@@ -342,7 +342,9 @@ export async function loadMessages(call, chatId) {
 
 export async function refreshLive(call) {
   const generation = dataGeneration
-  const reply = await call('omni-overview')
+  // The open chat is named, so it stays listed though the newest chats do not hold it.
+  const { preview, chatId } = omniStore.getSnapshot()
+  const reply = await (preview || chatId === null ? call('omni-overview') : call('omni-overview', { chatId }))
   if (generation !== dataGeneration || deleting.size) return
   if (!reply.configured) {
     set(state => (state.preview ? { source: { kind: 'preview', missing: reply.missing } } : {}))

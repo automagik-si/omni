@@ -294,9 +294,11 @@ export function install(rt) {
   // identities from GET /persons/{id}/presence, through a ten-minute cache, so the 15 s poll
   // asks Omni nothing new for people it read. A read that fails is no photo, never a chat
   // without its messages.
-  const photosFor = async (url, apiKey, messages) => {
+  const photosFor = async (url, apiKey, messages) => photosOfPeople(url, apiKey, messages.filter(message => message.isFromMe !== true).map(message => message.senderPersonId))
+  // The same photos for any people, by their person ids (the left bar's chats, bot-channels.js).
+  const photosOfPeople = async (url, apiKey, ids) => {
     const owner = createHash('sha256').update(`${url}\n${apiKey}`).digest('hex')
-    const people = [...new Set(messages.filter(message => message.isFromMe !== true && typeof message.senderPersonId === 'string' && ID.test(message.senderPersonId)).map(message => message.senderPersonId))]
+    const people = [...new Set(ids.filter(person => typeof person === 'string' && ID.test(person)))]
     const fresh = person => { const kept = photosFor.cache.get(`${owner}|${person}`); return kept !== undefined && Date.now() - kept.at < PHOTO_TTL_MS ? kept : undefined }
     await Promise.all(people.filter(person => fresh(person) === undefined).slice(0, PHOTO_READS).map(async (person) => {
       const photos = await get(url, apiKey, `/persons/${person}/presence`).then(reply => (Array.isArray(reply?.data?.identities) ? reply.data.identities : [])
@@ -309,6 +311,31 @@ export function install(rt) {
     return new Map(people.map(person => [person, fresh(person)?.photos ?? []]))
   }
   photosFor.cache = new Map()
+  rt.omniPeoplePhotos = async (ids) => {
+    const url = base()
+    const apiKey = await key()
+    return url === null || !apiKey ? new Map() : photosOfPeople(url, apiKey, ids)
+  }
+
+  // The channels and how each one is now: GET /instances, then each one's status (null when
+  // that read failed), with the Omni they were read on. The overview reads them so, and so does
+  // the left bar's channel list (bot-channels.js), which hears every read (omniInstancesSeen).
+  const statusesOf = (url, apiKey, items) => Promise.all(items.map(instance => get(url, apiKey, `/instances/${instance.id}/status`).then(reply => reply.data, () => null)))
+  const seenRead = (url, items, statuses) => {
+    const read = { url, at: Date.now(), instances: items, statuses }
+    rt.omniInstancesSeen?.(read)
+    return read
+  }
+  const instancesOn = async (url, apiKey) => {
+    const instances = await get(url, apiKey, '/instances?limit=100')
+    return seenRead(url, instances.items, await statusesOf(url, apiKey, instances.items))
+  }
+  rt.omniBaseUrl = () => base()
+  rt.omniInstances = async () => {
+    const url = base()
+    const apiKey = await key()
+    return url === null || !apiKey ? null : instancesOn(url, apiKey)
+  }
 
   rt.omniEndpoint = async (endpoint, body) => {
     const url = base()
@@ -323,7 +350,13 @@ export function install(rt) {
       ])
       const names = new Map(agents.filter(agent => typeof agent?.id === 'string' && typeof agent?.name === 'string').map(agent => [agent.id, agent.name]))
       // A failed status read leaves that one channel in "needs attention", not the page empty.
-      const statuses = await Promise.all(instances.items.map(instance => get(url, apiKey, `/instances/${instance.id}/status`).then(reply => reply.data, () => null)))
+      const { statuses } = seenRead(url, instances.items, await statusesOf(url, apiKey, instances.items))
+      // The chat open in the chat view stays listed while it is open, though the newest chats
+      // do not hold it (one opened from a channel's own chats in the left bar, bot-channels.js).
+      const open = typeof body?.chatId === 'string' && ID.test(body.chatId) && !chats.items.some(chat => chat.id === body.chatId)
+        ? await get(url, apiKey, `/chats/${body.chatId}`).then(reply => reply?.data ?? null, () => null)
+        : null
+      const listed = open !== null && instances.items.some(instance => instance.id === open.instanceId) ? [...chats.items, open] : chats.items
       // Routes say which chats answer through an agent of their own; the rest inherit the
       // channel's agent.
       const routes = await Promise.all(instances.items.map(instance => routesFor(url, apiKey, instance.id)))
@@ -332,7 +365,7 @@ export function install(rt) {
         configured: true,
         origin: new URL(url).host,
         channels: instances.items.map((instance, index) => channelOf(instance, statuses[index], { routes: routes[index], names })),
-        chats: chats.items.map(chat => chatOf(chat, agentOfChat(chat, channelOfChat.get(chat.instanceId) ?? { names }))),
+        chats: listed.map(chat => chatOf(chat, agentOfChat(chat, channelOfChat.get(chat.instanceId) ?? { names }))),
       }
     }
     if (endpoint === 'omni-messages') {

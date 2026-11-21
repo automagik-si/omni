@@ -337,6 +337,8 @@ test('apply registers its listeners, tools and effects after the team\'s, in a f
     'tool read_history',
     'tool save_reading_note',
     'effect omni-channels: omni-reading-note',
+    'effect omni-channels: bot channels',
+    'effect omni-channels: omni-bot-chats',
     'tool propose_backfill',
     'tool cancel_backfill',
     'tool backfill_status',

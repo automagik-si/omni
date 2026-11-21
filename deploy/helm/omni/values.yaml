@@ -17,7 +17,7 @@ fullnameOverride: ""
 # unless that image was intentionally built. The dev overlay uses local images.
 image:
   repository: ghcr.io/automagik-si/omni-api
-  tag: "v2.261116.6"
+  tag: "v2.261119.2"
   # Optional immutable OCI index digest. When set, omni-api renders as
   # repository@digest and tag/appVersion are ignored. Only lowercase sha256
   # digests are accepted so GitOps cannot silently deploy a mutable alias.

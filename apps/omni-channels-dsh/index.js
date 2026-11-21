@@ -5,9 +5,9 @@
 // The team's runtime arrives as the omniTeam service. This plugin's modules install on a
 // runtime of their own whose prototype is the team's: they call the team's functions
 // (load, save, botOf, deliver…) as before, while their tools, listeners and effects sit on
-// this plugin's fiber, and they add to the team only through its hooks (rt.hooks), so
-// turning this plugin off takes all of it away. Its own runtime is provided as
-// omniChannels for the canvas plugin, which reads omni through it.
+// this plugin's fiber. They add to the team only through rt.hooks and, on a team that has
+// it, rt.noteStop; the team keeps those notes in memory for a while. Its own runtime is
+// provided as omniChannels for the canvas plugin, which reads omni through it.
 import * as resumeHook from './src/host/resume-hook.js'
 import * as grants from './src/host/grants.js'
 import * as subscriptions from './src/host/subscriptions.js'
@@ -31,6 +31,7 @@ import * as needsStaff from './src/host/needs-staff.js'
 import * as standingRecovery from './src/host/standing-recovery.js'
 import * as standingRuns from './src/host/standing-runs.js'
 import * as reading from './src/host/reading.js'
+import * as botChannels from './src/host/bot-channels.js'
 import * as backfill from './src/host/backfill.js'
 
 export const name = 'omni-channels'
@@ -57,8 +58,9 @@ export const inject = ['omniTeam', 'tools', 'sessions', 'sessionTitle', 'setting
 // Changing channels from the Channels page comes next: it only calls omni through omni.js.
 // Reading a chat's history and keeping its reading note comes next: it only reads omni
 // through omni.js and checks the threads' answer children and the channels' owners.
-// The backfill tools use the event stream to track their rows.
-const MODULES = [resumeHook, grants, subscriptions, asks, omniApi, omniLink, omniDiscover, omniLocal, omniTerminal, omniUpdate, omni, threadKeys, threads, threadTools, needsStaff, standingRuns, standingRecovery, answerStrangers, answerCodes, answerOutsideCheck, omniEvents, omniChannelActions, reading, backfill]
+// The left bar reads each Bot’s channels and chats through omni.js.
+// The backfill tools come last: they use the event stream to track their rows.
+const MODULES = [resumeHook, grants, subscriptions, asks, omniApi, omniLink, omniDiscover, omniLocal, omniTerminal, omniUpdate, omni, threadKeys, threads, threadTools, needsStaff, standingRuns, standingRecovery, answerStrangers, answerCodes, answerOutsideCheck, omniEvents, omniChannelActions, reading, botChannels, backfill]
 
 export function apply(ctx, config = {}) {
   ctx.provide('omniChannels', createRuntime(ctx, ctx.omniTeam, config))
