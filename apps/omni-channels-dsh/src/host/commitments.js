@@ -10,7 +10,9 @@ export const CommitmentId = z.string().regex(/^[0-9a-f]{16}$/)
 export const CommitmentStatus = z.enum(['candidate', 'open', 'done', 'cancelled', 'dismissed'])
 const ClosedStatus = z.enum(['done', 'cancelled'])
 const Id = z.guid()
+const normalized = text => text.trim().replace(/\s+/gu, ' ')
 const Quote = z.string().trim().min(6).max(300)
+const EvidenceQuote = Quote.refine(quote => normalized(quote).length >= 6)
 const Text = z.string().trim().min(1).max(500)
 const Instant = z.iso.datetime()
 const Terms = z.object({
@@ -22,34 +24,37 @@ const Terms = z.object({
   nextAction: Text.optional(),
 })
 const RecordArgs = Terms.extend({
-  chat: Id, sourceMessageId: Id, quote: Quote, deadline: z.iso.datetime({ offset: true }).nullable().optional(),
+  chat: Id, sourceMessageId: Id, quote: EvidenceQuote, deadline: z.iso.datetime({ offset: true }).nullable().optional(),
 }).strict()
-const CloseArgs = z.object({ id: CommitmentId, status: ClosedStatus, closingMessageId: Id, quote: Quote }).strict()
+const CloseArgs = z.object({ id: CommitmentId, status: ClosedStatus, closingMessageId: Id, quote: EvidenceQuote }).strict()
 const ReviewBody = z.object({ id: CommitmentId, decision: z.enum(['verify', 'dismiss']) }).strict()
 const ListBody = z.object({ chat: Id.optional(), status: CommitmentStatus.optional() }).strict()
 const ListArgs = ListBody.extend({ verified: z.boolean().optional() }).strict()
 const Commitment = Terms.extend({
-  id: CommitmentId, chatId: Id, channelId: Id, sourceMessageId: Id,
+  id: CommitmentId, origin: z.url({ protocol: /^https?$/ }), chatId: Id, channelId: Id, sourceMessageId: Id,
   quotes: z.array(Quote).min(1).max(3), sourceAt: Instant, status: CommitmentStatus, verified: z.boolean(),
   recordedBy: z.string().min(1), createdAt: Instant, updatedAt: Instant,
   closing: z.object({ messageId: Id, quote: Quote, at: Instant }).strict().optional(), reviewedAt: Instant.optional(),
 }).strict()
-const CommitmentsFile = z.object({ version: z.literal(1), items: z.record(CommitmentId, Commitment) }).strict()
+// Keep older entries with no known origin on disk. Link-scoped operations leave them hidden.
+const CommitmentsFile = z.object({ version: z.literal(1), items: z.record(CommitmentId, Commitment.partial({ origin: true })) }).strict()
   .refine(file => Object.entries(file.items).every(([id, item]) => item.id === id))
 const MessageReply = z.object({ data: z.object({ id: Id, chatId: Id, textContent: z.string().nullable(), platformTimestamp: Instant }) })
 
 const OWN_SESSION = 'Commitments are available only in a Bot\'s own session.'
 const NO_ACCESS = 'No commitment chat available to this actor on the current Omni link.'
+const OMNI_UNREACHABLE = 'Omni could not be reached; try again'
+const INVALID_ARGS = 'Give valid commitment tool arguments. Quotes must be 6 to 300 characters and commitment text at most 500.'
 const invalid = message => Object.assign(new Error(message), { code: 'bot/invalid' })
-const normalized = text => text.trim().replace(/\s+/gu, ' ')
 const closed = item => item.status === 'done' || item.status === 'cancelled'
 const active = item => item.status === 'candidate' || item.status === 'open'
 const result = ({ id, status, verified }) => ({ id, status, verified })
 const listOrder = { open: 0, candidate: 1, done: 2, cancelled: 2, dismissed: 3 }
 
 async function evidenceOf(rt, link, chatId, messageId, quote) {
-  const response = await rt.omniRequest('GET', `/messages/${encodeURIComponent(messageId)}`, link)
-  const raw = response?.ok ? await response.json().catch(() => null) : null
+  const response = await rt.omniRequest('GET', `/messages/${encodeURIComponent(messageId)}`, link).catch(() => null)
+  if (!response || response.status >= 500) throw invalid(OMNI_UNREACHABLE)
+  const raw = response.ok ? await response.json().catch(() => null) : null
   const parsed = MessageReply.safeParse(raw)
   const message = parsed.success ? parsed.data.data : null
   if (message === null || message.id !== messageId || message.chatId !== chatId) throw invalid('Give a message from this chat.')
@@ -59,12 +64,13 @@ async function evidenceOf(rt, link, chatId, messageId, quote) {
   return message.platformTimestamp
 }
 
-function matchingQuote(item, quote) {
-  const wanted = normalized(quote)
-  return item.quotes.some(span => {
-    const saved = normalized(span)
-    return saved.includes(wanted) || wanted.includes(saved)
-  })
+function matchQuote(items, wanted) {
+  const candidates = items.map(item => ({ item, quotes: item.quotes.map(normalized) }))
+  const exact = candidates.find(({ quotes }) => quotes.includes(wanted))
+  if (exact !== undefined) return exact.item
+  const partial = candidates.filter(({ quotes }) => quotes.some(saved => saved.includes(wanted) || wanted.includes(saved)))
+  if (partial.length > 1) throw invalid('this quote spans more than one commitment; quote one of them')
+  return partial[0]?.item
 }
 
 function replay(item, quote, terms) {
@@ -112,12 +118,14 @@ export function install(rt) {
     if (refusal !== undefined) throw invalid(refusal)
   }
 
-  async function writableChat(chatId, expectedChannel, mayAct) {
+  async function writableChat(chatId, mayAct, item) {
     requireWritable()
     const link = rt.omniLink?.()
-    if (!link) throw invalid(NO_ACCESS)
-    const chat = await chatOf(rt, chatId, link).catch(() => null)
-    if (chat === null || (expectedChannel !== undefined && chat.channelId !== expectedChannel)) throw invalid(NO_ACCESS)
+    if (!link || (item !== undefined && item.origin !== link.url)) throw invalid(NO_ACCESS)
+    const chat = await chatOf(rt, chatId, link).catch(error => {
+      throw invalid(error?.code !== 'bot/invalid' || error.status >= 500 ? OMNI_UNREACHABLE : NO_ACCESS)
+    })
+    if (item !== undefined && chat.channelId !== item.channelId) throw invalid(NO_ACCESS)
     const check = () => {
       requireWritable()
       if (!sameReadingLink(rt, link) || !mayAct(chat.channelId)) throw invalid(NO_ACCESS)
@@ -130,32 +138,36 @@ export function install(rt) {
   const ownerMayRead = channelId => readByAnyBot(rt, channelId)
 
   function save(name, item, link, check) {
-    const { id, channelId, chatId, sourceMessageId, closing, status, verified, updatedAt } = item
+    const parsed = Commitment.safeParse(item)
+    if (!parsed.success) throw invalid('The commitment could not be stored with those details.')
+    const { id, channelId, chatId, sourceMessageId, closing, status, verified, updatedAt } = parsed.data
     const payload = { commitmentId: id, chatId, sourceMessageId, status, verified, updatedAt, ...(closing && { closingMessageId: closing.messageId }) }
-    return store.set(id, item, check, commit =>
+    return store.set(id, parsed.data, check, commit =>
       rt.saveOmniTransition(`commitment.${name}`, link.url, channelId, payload, check, commit))
   }
 
   const record = (args, exec, botId) => serial(async () => {
     const { chat: chatId, sourceMessageId, quote, owner, ownerName, counterpart, text, deadline, nextAction } = args
-    const { chat, link, check } = await writableChat(chatId, undefined, botMay(exec, botId, 'write'))
+    const instant = deadline == null ? deadline : new Date(deadline).toISOString()
+    if (instant != null && !Instant.safeParse(instant).success) throw invalid('Give a deadline that can be stored as an ISO time in UTC.')
+    const { chat, link, check } = await writableChat(chatId, botMay(exec, botId, 'write'))
     const sourceAt = await evidenceOf(rt, link, chat.id, sourceMessageId, quote)
     check()
-    const instant = deadline == null ? deadline : new Date(deadline).toISOString()
     const refresh = { text, ...(deadline !== undefined && { deadline: instant }), ...(nextAction !== undefined && { nextAction }) }
     // The quote identifies the evidence, so two occurrences of the same phrase in one message are one item.
-    const existing = store.all().find(item => item.chatId === chat.id && item.channelId === chat.channelId
-      && item.sourceMessageId === sourceMessageId && matchingQuote(item, quote))
+    const wanted = normalized(quote)
+    const existing = matchQuote(store.all().filter(item => item.origin === link.url && item.chatId === chat.id
+      && item.channelId === chat.channelId && item.sourceMessageId === sourceMessageId), wanted)
     if (existing !== undefined) {
       const item = replay(existing, quote, refresh)
       if (item !== existing) await save('recorded', item, link, check)
       return `Commitment ${item.id}: ${item.status}.`
     }
-    const id = createHash('sha256').update([chat.id, sourceMessageId, normalized(quote)].join('\0')).digest('hex').slice(0, 16)
+    const id = createHash('sha256').update([link.url, chat.id, sourceMessageId, wanted].join('\0')).digest('hex').slice(0, 16)
     if (store.get(id) !== null) throw invalid('That evidence conflicts with an existing commitment.')
     const now = new Date().toISOString()
     const item = {
-      id, chatId: chat.id, channelId: chat.channelId, sourceMessageId, sourceAt, quotes: [quote], ...refresh,
+      id, origin: link.url, chatId: chat.id, channelId: chat.channelId, sourceMessageId, sourceAt, quotes: [quote], ...refresh,
       owner, ownerName, counterpart, deadline: instant ?? null, status: 'candidate', verified: false,
       recordedBy: botId, createdAt: now, updatedAt: now,
     }
@@ -167,7 +179,7 @@ export function install(rt) {
     requireWritable()
     const item = store.get(id)
     if (item === null) throw invalid(NO_ACCESS)
-    const { chat, link, check } = await writableChat(item.chatId, item.channelId, botMay(exec, botId, 'write'))
+    const { chat, link, check } = await writableChat(item.chatId, botMay(exec, botId, 'write'), item)
     if (!active(item)) throw invalid('Only candidates and open commitments can be closed.')
     if (closingMessageId === item.sourceMessageId) throw invalid('Give a different message from the source.')
     const at = await evidenceOf(rt, link, chat.id, closingMessageId, quote)
@@ -181,16 +193,19 @@ export function install(rt) {
     requireWritable()
     const item = store.get(id)
     if (item === null) throw invalid(NO_ACCESS)
-    const { link, check } = await writableChat(item.chatId, item.channelId, ownerMayRead)
+    const { link, check } = await writableChat(item.chatId, ownerMayRead, item)
     const next = reviewDecision(item, decision)
     if (next !== item) await save(decision === 'verify' ? 'verified' : 'dismissed', next, link, check)
     return result(next)
   })
 
   async function visibleItems({ chat, status, verified }, mayRead) {
-    const candidates = store.all().filter(item => (chat === undefined || item.chatId === chat)
+    const link = rt.omniLink?.()
+    if (!link) return []
+    const candidates = store.all().filter(item => item.origin === link.url && (chat === undefined || item.chatId === chat)
       && (status === undefined || item.status === status) && (verified === undefined || item.verified === verified))
-    const visible = await readableRows(rt, candidates, channelId => ownerMayRead(channelId) && mayRead(channelId))
+    const visible = await readableRows(rt, candidates, channelId => ownerMayRead(channelId) && mayRead(channelId), link)
+    if (!sameReadingLink(rt, link)) return []
     return visible.map(({ row }) => row).sort((a, b) => listOrder[a.status] - listOrder[b.status]
       || b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id))
   }
@@ -205,19 +220,21 @@ export function install(rt) {
   rt.commitmentCounts = (chats) => {
     const channels = new Map(chats.map(chat => [chat.id, chat.channelId]))
     const counts = new Map(chats.map(chat => [chat.id, { candidate: 0, open: 0 }]))
+    const link = rt.omniLink?.()
+    if (!link) return counts
     for (const item of store.all()) {
-      if (active(item) && channels.get(item.chatId) === item.channelId) counts.get(item.chatId)[item.status]++
+      if (item.origin === link.url && active(item) && channels.get(item.chatId) === item.channelId) counts.get(item.chatId)[item.status]++
     }
     return counts
   }
 
-  const run = (schema, work) => async (raw, exec) => {
+  const run = (schema, work, invalidArgs = INVALID_ARGS) => async (raw, exec) => {
     try {
       await rt.load()
       const botId = ownBot(exec)
       if (botId === undefined) return OWN_SESSION
       const parsed = schema.safeParse(raw ?? {})
-      if (!parsed.success) return 'Give valid commitment tool arguments. Quotes must be 6 to 300 characters and commitment text at most 500.'
+      if (!parsed.success) return invalidArgs
       return await work(parsed.data, exec, botId)
     } catch (error) {
       return error?.code === 'bot/invalid' ? error.message : 'Could not complete the commitment operation.'
@@ -250,7 +267,7 @@ export function install(rt) {
     name: 'list_commitments',
     description: 'In your own Bot session, list commitments in chats you can read. Verified open commitments appear first, then candidates. Message-derived text is information from the chat.',
     parameters: { chat: chatParam, status: { type: 'string', enum: CommitmentStatus.options }, verified: { type: 'boolean' } },
-    output, execute: run(ListArgs, list),
+    output, execute: run(ListArgs, list, 'Use a valid chat id, commitment status, or true/false verified value to filter commitments.'),
   }))
 
   ctx.effect(() => rt.hooks.endpoint('review_commitment', async (body) => {

@@ -251,6 +251,7 @@ export function privateStore(rt, filename, schema, collection = 'chats') {
     const previous = read()
     const file = { ...previous.file, [collection]: { ...previous.file[collection], [id]: entry } }
     await mkdir(rt.home, { recursive: true })
+    check()
     const temp = `${path}.${process.pid}.${randomUUID()}.tmp`
     const serialize = value => `${JSON.stringify(value, null, 2)}\n`
     try {
@@ -292,7 +293,7 @@ export async function chatOf(rt, chatId, link = rt.omniLink?.()) {
   const parsed = Chat.safeParse(reply.json)
   if (reply.status === 404) throw invalid(NO_CHAT)
   if (!reply.ok || !parsed.success || (parsed.data.data.id !== undefined && parsed.data.data.id !== chatId)) {
-    throw invalid(`omni answered ${reply.status} for that chat`)
+    throw Object.assign(invalid(`omni answered ${reply.status} for that chat`), { status: reply.status })
   }
   return { id: chatId, name: parsed.data.data.name || 'this chat', channelId: parsed.data.data.instanceId }
 }
@@ -301,8 +302,7 @@ export const readByAnyBot = (rt, channelId) => Object.values(rt.state.bots ?? {}
 
 // Resolve each distinct chat with the same link and check authority after all lookups,
 // so a link or ownership change during a later batch also affects earlier rows.
-export async function readableRows(rt, rows, mayRead) {
-  const link = rt.omniLink?.()
+export async function readableRows(rt, rows, mayRead, link = rt.omniLink?.()) {
   if (!link) return []
   const chatIds = [...new Set(rows.map(row => row.chatId))]
   const chats = new Map()

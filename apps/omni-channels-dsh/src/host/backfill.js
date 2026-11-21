@@ -190,8 +190,8 @@ function installOutbox(rt) {
     return next
   }
   const pending = () => Array.isArray(state.omniEventOutbox) ? state.omniEventOutbox : []
-  // Save team transitions and their events together. For a sidecar, save the event first
-  // so an interrupted replacement can leave an extra event but cannot lose one.
+  // Save team transitions and their events together. For a sidecar, save the event first.
+  // A process exit between the team save and the replacement can leave one event for an unchanged item.
   rt.saveOmniTransition = (name, origin, instanceId, payload, apply, commitSidecar) => inTurn(async () => {
     // The required save increments this revision. It stays unique across restarts even
     // when several selections or summaries have the same timestamp.
@@ -205,20 +205,24 @@ function installOutbox(rt) {
     const dropped = next.length > OUTBOX_MAX
     const undo = apply()
     state.omniEventOutbox = next.slice(-OUTBOX_MAX)
+    let saved = false
     try {
       await rt.save({ required: true })
+      saved = true
+      commitSidecar?.()
     } catch (error) {
       if (before === undefined) delete state.omniEventOutbox
       else state.omniEventOutbox = before
       undo?.()
+      if (saved) {
+        try { await rt.save({ required: true }) } catch (rollbackError) {
+          rt.warn?.('omni-channels: could not roll back the Omni event outbox: %s', rollbackError?.message ?? rollbackError)
+        }
+      }
       throw error
     }
     if (dropped) rt.warn?.('omni-channels: the Omni event outbox is full; dropping its oldest entries')
-    try {
-      commitSidecar?.()
-    } finally {
-      void rt.flushOmniEventOutbox()
-    }
+    void rt.flushOmniEventOutbox()
   })
 
   let flushing = Promise.resolve()
@@ -527,7 +531,9 @@ export function install(rt) {
     const kept = state.omniBackfillRuns ?? []
     const run = runId === undefined ? kept[0] : kept.find(item => item.id === runId)
     if (run === undefined) return { run: null, chats: [] }
-    const visible = await readableRows(rt, run.rows, channelId => readByAnyBot(rt, channelId))
+    const link = rt.omniLink?.()
+    const found = await readableRows(rt, run.rows, channelId => readByAnyBot(rt, channelId), link)
+    const visible = sameReadingLink(rt, link) ? found : []
     const counts = rt.commitmentCounts(visible.map(({ chat }) => chat))
     const chats = visible.map(({ row, chat }) => ({
       ...chat, outcome: row.outcome, state: row.state, coverage: row.coverage ?? null,

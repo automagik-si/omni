@@ -8,6 +8,8 @@
 // Omni is a fake of the two routes reading uses (O1's contract), kept in one place: omniO1.
 import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import fsPromises from 'node:fs/promises'
+import { syncBuiltinESMExports } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, afterEach, test } from 'node:test'
@@ -25,7 +27,7 @@ import * as team from '@automagik/bots-dsh'
 import * as channels from '../index.js'
 import { LINK_FILE } from '../src/host/omni-link.js'
 import { ANSWER_CHILD_REFUSAL, BAD_CURSOR, CURSOR_WINDOW, NO_CHAT, NOT_OPERATOR, NOT_READABLE, NOTE_MAX, NOTES_FILE, PAGE_CHARS_MAX, SUMMARIES_FILE } from '../src/host/reading.js'
-import { INSTANCE, OMNI, OTHER_INSTANCE, resetFetch, teamState, until } from './thread-fixture.js'
+import { INSTANCE, OMNI, OTHER_INSTANCE, resetFetch, teamState } from './thread-fixture.js'
 
 const realFetch = globalThis.fetch
 afterEach(resetFetch)
@@ -424,45 +426,89 @@ test('summaries stay in a private sidecar and the old strict note entries still 
   assert.equal(JSON.stringify(events).includes(marker), false)
 })
 
-test('a failed summary rename leaves its saved event for startup to deliver', async (t) => {
-  const omni = omniO1()
-  const home = homeWith(t)
-  const path = join(home, SUMMARIES_FILE)
-  const previous = { version: 1, chats: { [CHAT]: { summary: 'Previous summary', updatedAt: SAME } } }
-  writeFileSync(path, JSON.stringify(previous), { mode: 0o600 })
-  const dsh = await start(t, home)
-  const rt = dsh.root.get('omniChannels')
-  const save = rt.save
-  const state = () => JSON.parse(readFileSync(join(home, 'state.json'), 'utf8'))
-  const events = () => omni.asked.filter(call => call.path === '/events/trigger').map(call => call.body)
-  let entry
-  rt.save = async (options) => {
-    await save(options)
-    if (!options?.required) return
+for (const failure of ['rename failure', 'authority refusal']) {
+  test(`a summary replacement with ${failure} preserves the old summary and publishes no event, even after restart`, async (t) => {
+    const omni = omniO1()
+    const home = homeWith(t)
+    const path = join(home, SUMMARIES_FILE)
+    const previous = { version: 1, chats: { [CHAT]: { summary: 'Previous summary', updatedAt: SAME } } }
+    writeFileSync(path, JSON.stringify(previous), { mode: 0o600 })
+    const dsh = await start(t, home)
+    const rt = dsh.root.get('omniChannels')
+    const save = rt.save
+    const readOnly = dsh.team.readOnly
+    const state = () => JSON.parse(readFileSync(join(home, 'state.json'), 'utf8'))
+    const events = () => omni.asked.filter(call => call.path === '/events/trigger').map(call => call.body)
+    let saves = 0
+    rt.save = async (options) => {
+      await save(options)
+      if (!options?.required || ++saves !== 1) return
+      assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), previous)
+      const [entry] = state().omniEventOutbox
+      assert.equal(entry.origin, OMNI)
+      assert.equal(entry.event.eventType, 'custom.omni-channels.conversation.summarized')
+      assert.equal(entry.event.payload.chatId, CHAT)
+      if (failure === 'authority refusal') {
+        dsh.team.readOnly = () => 'Became read-only during the team save.'
+      } else {
+        const staged = readdirSync(home).filter(file => file.startsWith(`${SUMMARIES_FILE}.`) && file.endsWith('.tmp'))
+        assert.equal(staged.length, 1)
+        rmSync(join(home, staged[0]))
+      }
+    }
+    const summary = 'New private summary'
+    assert.match(await dsh.run('save_reading_note', { chat: CHAT, note: 'Reading note', readThrough: SAME, summary }),
+      failure === 'authority refusal' ? /Became read-only/ : /ENOENT.*rename/)
+    assert.equal(saves, 2)
+    rt.save = save
+    dsh.team.readOnly = readOnly
+    await rt.flushOmniEventOutbox()
     assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), previous)
-    const pending = state().omniEventOutbox
-    assert.equal(pending.length, 1)
-    entry = pending[0]
-    const staged = readdirSync(home).filter(file => file.startsWith(`${SUMMARIES_FILE}.`) && file.endsWith('.tmp'))
-    assert.equal(staged.length, 1)
-    rmSync(join(home, staged[0]))
-  }
-  // Simulate the lost process between the team save and the sidecar replacement.
-  rt.flushOmniEventOutbox = async () => {}
-  const summary = 'New private summary'
-  assert.match(await dsh.run('save_reading_note', { chat: CHAT, note: 'Reading note', readThrough: SAME, summary }), /ENOENT.*rename/)
-  assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), previous)
-  assert.equal(entry.origin, OMNI)
-  assert.equal(entry.event.eventType, 'custom.omni-channels.conversation.summarized')
-  assert.equal(entry.event.payload.chatId, CHAT)
-  assert.equal(JSON.stringify(state()).includes(summary), false)
-  assert.deepEqual(events(), [])
-  await dsh.stop()
+    assert.equal(state().omniEventOutbox?.length ?? 0, 0)
+    assert.equal(rt.state.omniEventOutbox?.length ?? 0, 0)
+    assert.equal(JSON.stringify(state()).includes(summary), false)
+    assert.deepEqual(events(), [])
+    await dsh.stop()
 
-  await start(t, home)
-  await until(() => events().length === 1 && state().omniEventOutbox?.length === 0)
-  assert.deepEqual(events(), [entry.event])
-  assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), previous)
+    const restarted = await start(t, home)
+    await restarted.root.get('omniChannels').flushOmniEventOutbox()
+    assert.deepEqual(events(), [])
+    assert.equal(state().omniEventOutbox?.length ?? 0, 0)
+    assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), previous)
+  })
+}
+
+test('becoming read-only during directory preparation never creates a private temporary file', async (t) => {
+  omniO1()
+  const home = homeWith(t)
+  const dsh = await start(t, home)
+  const path = join(home, NOTES_FILE)
+  const { mkdir, writeFile } = fsPromises
+  let prepared = false
+  let staged = 0
+  const prepare = t.mock.method(fsPromises, 'mkdir', async (...args) => {
+    const value = await mkdir(...args)
+    if (args[0] === home) {
+      prepared = true
+      dsh.team.readOnly = () => 'Became read-only during directory preparation.'
+    }
+    return value
+  })
+  const write = t.mock.method(fsPromises, 'writeFile', async (...args) => {
+    if (String(args[0]).startsWith(`${path}.`)) staged++
+    return writeFile(...args)
+  })
+  syncBuiltinESMExports()
+  try {
+    assert.match(await dsh.run('save_reading_note', { chat: CHAT, note: 'Private note', readThrough: SAME }), /Became read-only during directory preparation/)
+    assert.equal(prepared, true)
+    assert.equal(staged, 0)
+    assert.ok(readdirSync(home).every(file => !file.startsWith(NOTES_FILE)))
+  } finally {
+    prepare.mock.restore()
+    write.mock.restore()
+    syncBuiltinESMExports()
+  }
 })
 
 test('a page that does not fit even at the shortest cut is read again from the same cursor with fewer messages: never over the limit, nothing skipped (200 heavy rows under an 8,000-character note)', async (t) => {

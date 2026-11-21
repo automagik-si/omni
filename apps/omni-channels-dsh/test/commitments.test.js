@@ -44,7 +44,8 @@ function fake(t, state) {
       events.push({ body: JSON.parse(init.body), saved: saved(home) })
       return new Response(null, { status: controls.eventStatus })
     }
-    await controls.onRead(route)
+    const override = await controls.onRead(route)
+    if (override !== undefined) return override
     const message = messages.get(route.split('/')[2])
     if (init.method === 'GET' && route.startsWith('/messages/') && message !== undefined && init.headers?.['x-api-key'] === omni.link.text) {
       return Response.json({ data: message })
@@ -78,7 +79,7 @@ test('a record requires a verifiable canonical source and replays by normalized,
   assert.equal(existsSync(env.path), false)
 
   const id = idOf(await record(run, { quote: 'I will\t send the revised sketch', deadline: '2026-11-12T13:00:00+01:00', nextAction: 'Check the draft', ownerName: 'Sender' }))
-  assert.equal(id, createHash('sha256').update([CHAT, SOURCE, QUOTE].join('\0')).digest('hex').slice(0, 16))
+  assert.equal(id, createHash('sha256').update([OMNI, CHAT, SOURCE, QUOTE].join('\0')).digest('hex').slice(0, 16))
   assert.equal(env.file().items[id].sourceAt, AT)
   assert.equal(env.file().items[id].deadline, AFTER)
   assert.equal(env.file().items[id].recordedBy, 'm1')
@@ -100,6 +101,72 @@ test('a record requires a verifiable canonical source and replays by normalized,
   const second = idOf(await record(run, { quote: OTHER_QUOTE }))
   assert.notEqual(second, id)
   assert.equal((await read(run)).length, 2)
+})
+
+test('a quote spanning two commitments is refused and an exact replay keeps its own id', async (t) => {
+  const env = fake(t)
+  const run = await env.start()
+  const first = 'Deliver report'
+  const second = 'arrange pickup'
+  const spanning = `${first} and ${second}`
+  env.messages.set(SOURCE, reply(CHAT, SOURCE, spanning))
+  const firstId = idOf(await record(run, { quote: first, text: first }))
+  const secondId = idOf(await record(run, { quote: second, text: second }))
+  assert.notEqual(firstId, secondId)
+  await run.channels.flushOmniEventOutbox()
+  const previous = env.file()
+  assert.equal(await record(run, { quote: spanning, text: 'Combined work' }), 'this quote spans more than one commitment; quote one of them')
+  assert.deepEqual(env.file(), previous)
+  assert.equal(saved(env.home).omniEventOutbox.length, 0)
+  assert.equal(idOf(await record(run, { quote: second, text: 'Updated pickup plan' })), secondId)
+  assert.deepEqual(env.file().items[firstId], previous.items[firstId])
+  assert.equal(env.file().items[secondId].text, 'Updated pickup plan')
+})
+
+test('a deadline outside the stored UTC range leaves the item and pending outbox intact', async (t) => {
+  const env = fake(t)
+  env.controls.eventStatus = 429
+  const run = await env.start()
+  const id = idOf(await record(run, { deadline: AFTER }))
+  await run.channels.flushOmniEventOutbox()
+  const previous = env.file()
+  const pending = saved(env.home).omniEventOutbox
+  assert.equal(pending.length, 1)
+  const attempts = env.events.length
+  assert.match(await record(run, { deadline: '9999-12-31T23:59:59-01:00', text: 'A changed plan' }), /deadline.*ISO time in UTC/)
+  assert.deepEqual(env.file(), previous)
+  assert.deepEqual(await read(run), [previous.items[id]])
+  assert.deepEqual(saved(env.home).omniEventOutbox, pending)
+  assert.deepEqual(run.team.state.omniEventOutbox, pending)
+  assert.equal(env.events.length, attempts)
+})
+
+test('a whitespace-padded short quote is refused and lookup and filter failures give distinct messages', async (t) => {
+  const env = fake(t)
+  const run = await env.start()
+  env.messages.set(SOURCE, reply(CHAT, SOURCE, `${QUOTE}. I do`))
+  env.messages.set(LATER, reply(CHAT, LATER, `${CLOSING}. I do`, AFTER))
+  assert.match(await record(run, { quote: 'I    do' }), /Quotes must be 6 to 300/)
+  assert.equal(existsSync(env.path), false)
+  const id = idOf(await record(run))
+  assert.match(await close(run, id, { quote: 'I    do' }), /Quotes must be 6 to 300/)
+
+  const unreachable = 'Omni could not be reached; try again'
+  for (const routeToFail of [`/chats/${CHAT}`, `/messages/${SOURCE}`, `/messages/${LATER}`]) {
+    env.controls.onRead = async (route) => {
+      if (route === routeToFail) return new Response(null, { status: 503 })
+    }
+    assert.equal(routeToFail.endsWith(LATER) ? await close(run, id) : await record(run), unreachable)
+    env.controls.onRead = async (route) => {
+      if (route === routeToFail) throw new TypeError('fetch failed')
+    }
+    assert.equal(routeToFail.endsWith(LATER) ? await close(run, id) : await record(run), unreachable)
+  }
+  env.controls.onRead = async () => {}
+  assert.equal(await record(run, { sourceMessageId: FOREIGN }), 'Give a message from this chat.')
+  assert.equal(await record(run, { quote: QUOTE.toUpperCase() }), 'The quote must occur verbatim in that message, allowing for whitespace differences.')
+  assert.equal(await list(run, { chat: 'missing' }), 'Use a valid chat id, commitment status, or true/false verified value to filter commitments.')
+  assert.equal(env.file().items[id].status, 'candidate')
 })
 
 test('close needs a different message from the same chat with later platform time and a verbatim quote', async (t) => {
@@ -307,42 +374,54 @@ test('the private file holds evidence, and the text-free outbox persists, retrie
   assert.equal(deliveries, 0)
 })
 
-test('a failed commitment replacement preserves the old item and the saved event for startup to deliver', async (t) => {
-  const env = fake(t)
-  const run = await env.start()
-  const id = idOf(await record(run))
-  await run.channels.flushOmniEventOutbox()
-  const previous = env.file()
-  const save = run.channels.save
-  run.channels.save = async options => {
-    await save(options)
-    if (!options?.required) return
+for (const failure of ['rename failure', 'authority refusal']) {
+  test(`a commitment replacement with ${failure} preserves the candidate and publishes no verification, even after restart`, async (t) => {
+    const env = fake(t)
+    const run = await env.start()
+    const id = idOf(await record(run))
+    await run.channels.flushOmniEventOutbox()
+    const previous = env.file()
+    const save = run.channels.save
+    const readOnly = run.team.readOnly
+    let saves = 0
+    run.channels.save = async options => {
+      await save(options)
+      if (!options?.required || ++saves !== 1) return
+      assert.deepEqual(env.file(), previous)
+      const [entry] = saved(env.home).omniEventOutbox
+      assert.equal(entry.event.eventType, 'custom.omni-channels.commitment.verified')
+      assert.equal(entry.event.payload.commitmentId, id)
+      if (failure === 'authority refusal') {
+        run.team.readOnly = () => 'Became read-only during the team save.'
+      } else {
+        const staged = readdirSync(env.home).filter(file => file.startsWith(`${COMMITMENTS_FILE}.`) && file.endsWith('.tmp'))
+        assert.equal(staged.length, 1)
+        rmSync(join(env.home, staged[0]))
+      }
+    }
+
+    const failed = await review(run, id, 'verify')
+    assert.equal(failed.ok, false)
+    assert.match(failed.error.message, failure === 'authority refusal' ? /Became read-only/ : /ENOENT/)
+    assert.equal(saves, 2)
+    run.team.readOnly = readOnly
+    run.channels.save = save
+    await run.channels.flushOmniEventOutbox()
     assert.deepEqual(env.file(), previous)
-    const staged = readdirSync(env.home).filter(file => file.startsWith(`${COMMITMENTS_FILE}.`) && file.endsWith('.tmp'))
-    assert.equal(staged.length, 1)
-    rmSync(join(env.home, staged[0]))
-  }
-  run.channels.flushOmniEventOutbox = async () => {}
+    assert.deepEqual(saved(env.home).omniEventOutbox, [])
+    assert.deepEqual(run.team.state.omniEventOutbox, [])
+    const published = env.events.map(({ body }) => body.eventType)
+    assert.deepEqual(published, ['custom.omni-channels.commitment.recorded'])
+    await run.stop()
 
-  const failed = await review(run, id, 'verify')
-  assert.equal(failed.ok, false)
-  assert.match(failed.error.message, /ENOENT/)
-  assert.deepEqual(env.file(), previous)
-  const pending = saved(env.home).omniEventOutbox
-  assert.equal(pending.length, 1)
-  assert.deepEqual(run.team.state.omniEventOutbox, pending)
-  const [entry] = pending
-  assert.equal(entry.origin, OMNI)
-  assert.equal(entry.event.eventType, 'custom.omni-channels.commitment.verified')
-  assert.equal(entry.event.payload.commitmentId, id)
-  assert.equal(env.events.length, 1)
-  await run.stop()
-
-  await env.start()
-  await until(() => env.events.length === 2 && saved(env.home).omniEventOutbox?.length === 0)
-  assert.deepEqual(env.events[1].body, entry.event)
-  assert.deepEqual(env.file(), previous)
-})
+    const restarted = await env.start()
+    await restarted.channels.flushOmniEventOutbox()
+    assert.deepEqual(env.events.map(({ body }) => body.eventType), published)
+    assert.deepEqual(saved(env.home).omniEventOutbox, [])
+    assert.deepEqual(env.file(), previous)
+    assert.equal(env.file().items[id].status, 'candidate')
+  })
+}
 
 test('the read endpoint and conversation counts use current, readable chats, and the list filters and orders visible items', async (t) => {
   const row = (chatId, channelId) => ({ chatId, channelId, outcome: 'done', state: 'done', counts: { stored: 1 } })
@@ -373,6 +452,63 @@ test('the read endpoint and conversation counts use current, readable chats, and
   rmSync(join(env.home, LINK_FILE), { force: true })
   assert.deepEqual(await read(run), [])
   assert.equal(await list(run), 'No visible commitments match.')
+})
+
+test('two links that resolve the same chat and channel ids keep commitments separate', async (t) => {
+  const backfill = { id: uuid(14), from: AT, to: AFTER, startedAt: 1, rows: [
+    { chatId: CHAT, channelId: INSTANCE, outcome: 'done', state: 'done', counts: { stored: 1 } },
+  ] }
+  const env = fake(t, teamState({ omniBackfillRuns: [backfill] }))
+  const run = await env.start()
+  const first = idOf(await record(run, { text: 'First link commitment' }))
+  assert.equal((await review(run, first, 'verify')).ok, true)
+  await run.channels.flushOmniEventOutbox()
+  const firstItem = env.file().items[first]
+  assert.equal(firstItem.origin, OMNI)
+  const counts = async () => (await run.call('omni-conversations', {})).chats[0].commitments
+  assert.deepEqual(await counts(), { candidate: 0, open: 1 })
+
+  const linkPath = join(env.home, LINK_FILE)
+  const originalLink = JSON.parse(readFileSync(linkPath, 'utf8'))
+  const secondOrigin = 'http://localhost'
+  // The fake serves the same chat, channel and evidence IDs at both URLs.
+  writeFileSync(linkPath, JSON.stringify({ ...originalLink, url: secondOrigin }), { mode: 0o600 })
+  assert.deepEqual(await read(run), [])
+  assert.equal(await list(run), 'No visible commitments match.')
+  assert.deepEqual(await counts(), { candidate: 0, open: 0 })
+  assert.equal((await review(run, first, 'verify')).ok, false)
+  assert.match(await close(run, first), /No commitment chat available/)
+  assert.deepEqual(env.file().items[first], firstItem)
+
+  const second = idOf(await record(run, { text: 'Second link commitment' }))
+  assert.notEqual(second, first)
+  assert.equal(env.file().items[second].origin, secondOrigin)
+  await run.channels.flushOmniEventOutbox()
+  assert.deepEqual((await read(run)).map(item => item.id), [second])
+  assert.match(await list(run), /Second link commitment$/)
+  assert.deepEqual(await counts(), { candidate: 1, open: 0 })
+  writeFileSync(linkPath, JSON.stringify(originalLink), { mode: 0o600 })
+  assert.deepEqual(await read(run), [firstItem])
+  assert.deepEqual(await counts(), { candidate: 0, open: 1 })
+  assert.equal((await review(run, second, 'verify')).ok, false)
+  assert.match(await close(run, second), /No commitment chat available/)
+})
+
+test('a legacy commitment with no origin stays on disk and is hidden after a new record', async (t) => {
+  const env = fake(t)
+  const run = await env.start()
+  const id = idOf(await record(run))
+  await run.channels.flushOmniEventOutbox()
+  const legacy = env.file().items[id]
+  legacy.id = createHash('sha256').update([CHAT, SOURCE, QUOTE].join('\0')).digest('hex').slice(0, 16)
+  delete legacy.origin
+  writeFileSync(env.path, JSON.stringify({ version: 1, items: { [legacy.id]: legacy } }), { mode: 0o600 })
+  assert.deepEqual(await read(run), [])
+  assert.equal((await review(run, legacy.id, 'verify')).ok, false)
+  assert.match(await close(run, legacy.id), /No commitment chat available/)
+  assert.equal(idOf(await record(run, { text: 'New commitment' })), id)
+  assert.deepEqual(env.file().items[legacy.id], legacy)
+  assert.deepEqual((await read(run)).map(item => item.id), [id])
 })
 
 test('listing is limited to 100 lines and resolves distinct chats at most eight at a time', async (t) => {
