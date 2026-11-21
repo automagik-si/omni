@@ -61,7 +61,7 @@ const TO = '2026-11-15T23:59:59.999Z'
 const coverage = n => ({ oldest: '2026-03-02T09:00:00.000Z', newest: '2026-11-14T18:00:00.000Z', count: 100 + n, countInWindow: 90 + n, deletedCount: 1, mediaMissing: n, lastInbound: '2026-11-14T18:00:00.000Z', lastOutbound: '2026-11-13T10:00:00.000Z' })
 
 // O3's routes and the consumer stream, as the branch feat/chat-backfill-edits has them.
-function omniO3() {
+function omniO3(secondOrigin = OMNI) {
   const asked = []
   const jobs = new Map()
   const streams = []
@@ -87,7 +87,7 @@ function omniO3() {
     const path = url.pathname.replace(/^\/api\/v2/, '')
     const body = init.body ? JSON.parse(init.body) : undefined
     asked.push({ method, path, query: Object.fromEntries(url.searchParams), body })
-    if (url.origin !== OMNI || init.headers?.['x-api-key'] !== LINK_KEY) return json(401, { error: { code: 'UNAUTHORIZED' } })
+    if (![OMNI, secondOrigin].includes(url.origin) || init.headers?.['x-api-key'] !== LINK_KEY) return json(401, { error: { code: 'UNAUTHORIZED' } })
     if (method === 'GET' && path === '/chats') return json(200, { items: Object.values(CHATS), meta: { hasMore: false } })
     if (method === 'GET' && path === '/instances') return json(200, { items: [{ id: INSTANCE, name: 'Shop line' }, { id: OTHER_INSTANCE, name: 'Other line' }] })
     if (path === '/events/consumers' && method === 'POST') return json(201, { data: { name: body.name } })
@@ -372,7 +372,8 @@ test('review status uses canonical ids for duplicate labels and is read-only for
 })
 
 test('omni-conversations returns the newest run and counts only chats readable on the current link', async (t) => {
-  omniO3()
+  const secondOrigin = 'http://localhost'
+  omniO3(secondOrigin)
   const runId = chatId(6)
   const oldId = chatId(7)
   const threadId = chatId(8)
@@ -395,7 +396,11 @@ test('omni-conversations returns the newest run and counts only chats readable o
     },
   }))
   writeFileSync(join(home, NOTES_FILE), JSON.stringify({ version: 1, chats: { [ANA]: { note: 'Private notes', readThrough: TO, updatedAt: TO } } }), { mode: 0o600 })
-  writeFileSync(join(home, SUMMARIES_FILE), JSON.stringify({ version: 1, chats: { [ANA]: { summary: 'Ready for review', updatedAt: TO }, [ELSEWHERE]: { summary: 'Hidden', updatedAt: TO } } }), { mode: 0o600 })
+  writeFileSync(join(home, SUMMARIES_FILE), JSON.stringify({ version: 1, chats: {
+    [JSON.stringify([OMNI, INSTANCE, ANA])]: { summary: 'Ready for review', updatedAt: TO },
+    [JSON.stringify([OMNI, OTHER_INSTANCE, BRUNO])]: { summary: 'Different channel', updatedAt: TO },
+    [CARLA]: { summary: 'Legacy summary', updatedAt: TO },
+  } }), { mode: 0o600 })
   const dsh = await start(t, home)
   assert.equal(dsh.team.extended.endpointOf('omni-conversations').read, true)
   const detail = body => dsh.endpoint('omni-conversations', body)
@@ -414,6 +419,7 @@ test('omni-conversations returns the newest run and counts only chats readable o
     inWindow: null, stored: 3, lastActivity: null, summary: null, noted: false, training: emptyTraining, commitments,
   })
   assert.equal(newest.chats[2].lastActivity, coverage(2).newest)
+  assert.equal(newest.chats[2].summary, null)
   assert.deepEqual(newest.summary, { total: 3, running: 0, done: 2, phoneDidNotAnswer: 0, stopped: 0, failed: 0, notStarted: 1 })
   assert.equal((await detail({ runId: oldId })).summary.failed, 1)
   assert.deepEqual(await detail({ runId: 'pruned' }), { run: null, chats: [] })
@@ -422,7 +428,23 @@ test('omni-conversations returns the newest run and counts only chats readable o
   assert.ok(status.includes(`(job ${jobId}): done`))
   assert.ok(status.includes('2 done, 0 phone did not answer, 0 stopped, 1 failed, 0 running.'))
   assert.ok(!status.includes(missingChat.chat))
+  const linkPath = join(home, LINK_FILE)
+  const link = JSON.parse(readFileSync(linkPath, 'utf8'))
+  const linkRevision = () => dsh.team.extended.live().omniHistoryLink
+  const originalRevision = linkRevision()
+  assert.equal(typeof originalRevision, 'string')
+  assert.equal(linkRevision(), originalRevision)
+  writeFileSync(linkPath, JSON.stringify({ ...link, url: secondOrigin }), { mode: 0o600 })
+  const otherLink = await detail({})
+  assert.equal(otherLink.chats[0].id, ANA)
+  assert.equal(otherLink.chats[0].summary, null)
+  assert.match(await dsh.run('save_reading_note', { chat: ANA, note: 'A reading note', readThrough: TO, summary: 'Second link summary' }), /^Reading note saved/)
+  assert.equal((await detail({})).chats[0].summary, 'Second link summary')
+  assert.notEqual(linkRevision(), originalRevision)
+  writeFileSync(linkPath, JSON.stringify(link), { mode: 0o600 })
+  assert.equal((await detail({})).chats[0].summary, 'Ready for review')
   rmSync(join(home, LINK_FILE))
+  assert.equal(linkRevision(), null)
   const disconnected = await detail({})
   assert.deepEqual(disconnected.chats, [])
   assert.equal(disconnected.summary.total, 0)

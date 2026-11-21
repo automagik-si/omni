@@ -206,6 +206,8 @@ const SummariesFile = z.object({
   version: z.literal(1),
   chats: z.record(z.string(), z.object({ summary: Summary, updatedAt: z.iso.datetime() }).strict()),
 }).strict()
+// Legacy entries keyed only by chat id stay on disk and are never read as summaries.
+const summaryKey = (chat, link) => JSON.stringify([link.url, chat.channelId, chat.id])
 
 export function privateStore(rt, filename, schema, collection = 'chats') {
   const path = join(rt.home, filename)
@@ -322,8 +324,8 @@ export function install(rt) {
   const { ctx } = rt
   const notes = privateStore(rt, NOTES_FILE, NotesFile)
   const summaries = privateStore(rt, SUMMARIES_FILE, SummariesFile)
-  const summaryOf = chatId => summaries.get(chatId)?.summary ?? null
-  rt.readingDetail = chatId => ({ summary: summaryOf(chatId), noted: notes.get(chatId) !== null })
+  const summaryOf = (chat, link) => link ? summaries.get(summaryKey(chat, link))?.summary ?? null : null
+  rt.readingDetail = (chat, link) => ({ summary: summaryOf(chat, link), noted: notes.get(chat.id) !== null })
   let writes = Promise.resolve()
   const serial = work => {
     const next = writes.then(work)
@@ -399,7 +401,7 @@ export function install(rt) {
     }
     const [first, coverage] = await Promise.all([fetchPage(size), coverageOf(chat.id, from, to, link)])
     const note = notes.get(chat.id)
-    const summary = summaryOf(chat.id)
+    const summary = summaryOf(chat, link)
     const pages = Math.max(1, Math.ceil(coverage.countInWindow / size))
     const page = Math.ceil(read / size) + 1
     // The page as the Bot reads it, from what Omni gave when asked for `limit` messages.
@@ -478,7 +480,7 @@ export function install(rt) {
       const updatedAt = new Date().toISOString()
       await notes.set(chatId, { note, readThrough, updatedAt }, check)
       if (summary !== undefined) {
-        await summaries.set(chatId, { summary, updatedAt }, check, commit =>
+        await summaries.set(summaryKey(readable.chat, link), { summary, updatedAt }, check, commit =>
           rt.saveOmniTransition('conversation.summarized', link.url, channelId, { chatId, updatedAt }, check, commit))
       }
     })
@@ -550,7 +552,7 @@ export function install(rt) {
     const entry = notes.get(chatId)
     return {
       chat,
-      note: entry === null ? null : { text: entry.note, readThrough: entry.readThrough, updatedAt: entry.updatedAt, summary: summaryOf(chatId) },
+      note: entry === null ? null : { text: entry.note, readThrough: entry.readThrough, updatedAt: entry.updatedAt, summary: summaryOf(chat, link) },
       coverage: coverage === null ? null : {
         oldest: coverage.oldest, newest: coverage.newest, count: coverage.count, mediaMissing: coverage.mediaMissing,
         deletedCount: coverage.deletedCount, lastInbound: coverage.lastInbound, lastOutbound: coverage.lastOutbound,

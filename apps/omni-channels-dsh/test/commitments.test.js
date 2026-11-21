@@ -62,6 +62,8 @@ const close = (run, id, fields = {}, session = 'm1') => use(run, 'close_commitme
 const list = (run, fields = {}, session = 'm1') => use(run, 'list_commitments', session, fields)
 const review = (run, id, decision) => run.http('review_commitment', { id, decision })
 const read = (run, fields = {}) => run.call('omni-commitments', fields).then(value => value.commitments)
+const displayFields = ({ origin, sourceMessageId, quotes, recordedBy, reviewedAt, closing, ...fields }) =>
+  closing ? { ...fields, closing: { at: closing.at } } : fields
 function idOf(text) {
   assert.match(text, /^Commitment [0-9a-f]{16}: /)
   return text.split(' ')[1].slice(0, -1)
@@ -135,7 +137,7 @@ test('a deadline outside the stored UTC range leaves the item and pending outbox
   const attempts = env.events.length
   assert.match(await record(run, { deadline: '9999-12-31T23:59:59-01:00', text: 'A changed plan' }), /deadline.*ISO time in UTC/)
   assert.deepEqual(env.file(), previous)
-  assert.deepEqual(await read(run), [previous.items[id]])
+  assert.deepEqual(await read(run), [displayFields(previous.items[id])])
   assert.deepEqual(saved(env.home).omniEventOutbox, pending)
   assert.deepEqual(run.team.state.omniEventOutbox, pending)
   assert.equal(env.events.length, attempts)
@@ -364,7 +366,7 @@ test('the private file holds evidence, and the text-free outbox persists, retrie
   assert.equal(new Set(env.events.slice(1).map(event => event.body.idempotencyKey)).size, 5)
   assert.equal(env.events.find(event => event.body.payload.status === 'done').body.payload.closingMessageId, LATER)
   assert.deepEqual(saved(env.home).omniEventOutbox, [])
-  assert.deepEqual((await read(restarted, { chat: CHAT })).find(row => row.id === id), env.file().items[id])
+  assert.deepEqual((await read(restarted, { chat: CHAT })).find(row => row.id === id), displayFields(env.file().items[id]))
   const exposed = JSON.stringify([saved(env.home), restarted.view(), env.events])
   for (const text of [PRIVATE, QUOTE, OTHER_QUOTE, CLOSING, 'Private owner', 'Private counterpart', 'Private next action']) assert.ok(!exposed.includes(text))
   assert.deepEqual(env.omni.sent, [])
@@ -445,10 +447,24 @@ test('the read endpoint and conversation counts use current, readable chats, and
   assert.deepEqual((await list(run)).split('\n').map(line => line.split(' | ')[0]), [open, candidate, closedId])
   assert.match(await list(run, { verified: true, chat: CHAT }), new RegExp(`^${open} \\| open`))
   assert.match(await list(run, { status: 'candidate', verified: false }), new RegExp(`^${candidate} \\| candidate`))
-  await assert.rejects(read(run, { verified: true }))
+  assert.deepEqual(ids(await read(run, { verified: true })), [open])
+  assert.deepEqual(ids(await read(run, { status: 'done', verified: false })), [closedId])
+  assert.deepEqual(await read(run, { status: 'done', verified: true }), [])
+  await assert.rejects(read(run, { verified: 'false' }))
   const conversations = await run.call('omni-conversations', {})
   assert.deepEqual(conversations.chats.map(chat => [chat.id, chat.commitments]), [[CHAT, { candidate: 1, open: 1 }], [GROUP, { candidate: 0, open: 0 }]])
   assert.equal(conversations.summary.total, 2)
+  const closedRow = (await read(run, { status: 'done' }))[0]
+  assert.deepEqual(closedRow, {
+    id: closedId, chatId: CHAT, channelId: INSTANCE, text: PRIVATE, owner: 'user',
+    deadline: null,
+    sourceAt: '2026-11-11T12:00:00.000Z', status: 'done', verified: false,
+    createdAt: env.file().items[closedId].createdAt, updatedAt: env.file().items[closedId].updatedAt,
+    closing: { at: AFTER },
+  })
+  assert.equal((await review(run, candidate, 'dismiss')).ok, true)
+  assert.deepEqual(ids(await read(run)), [open, closedId])
+  assert.deepEqual(ids(await read(run, { status: 'dismissed', verified: false })), [candidate])
   rmSync(join(env.home, LINK_FILE), { force: true })
   assert.deepEqual(await read(run), [])
   assert.equal(await list(run), 'No visible commitments match.')
@@ -488,7 +504,7 @@ test('two links that resolve the same chat and channel ids keep commitments sepa
   assert.match(await list(run), /Second link commitment$/)
   assert.deepEqual(await counts(), { candidate: 1, open: 0 })
   writeFileSync(linkPath, JSON.stringify(originalLink), { mode: 0o600 })
-  assert.deepEqual(await read(run), [firstItem])
+  assert.deepEqual(await read(run), [displayFields(firstItem)])
   assert.deepEqual(await counts(), { candidate: 0, open: 1 })
   assert.equal((await review(run, second, 'verify')).ok, false)
   assert.match(await close(run, second), /No commitment chat available/)
