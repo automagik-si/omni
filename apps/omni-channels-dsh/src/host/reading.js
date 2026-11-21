@@ -207,9 +207,9 @@ const SummariesFile = z.object({
   chats: z.record(z.string(), z.object({ summary: Summary, updatedAt: z.iso.datetime() }).strict()),
 }).strict()
 
-function privateStore(rt, filename, schema) {
+export function privateStore(rt, filename, schema, collection = 'chats') {
   const path = join(rt.home, filename)
-  const empty = () => ({ version: 1, chats: {} })
+  const empty = () => ({ version: 1, [collection]: {} })
   // Read on every use, as omni.json is; the last read is kept while the file on disk is the
   // same one. `bad`: there but failing its check, which is said once.
   let warned = false
@@ -245,11 +245,11 @@ function privateStore(rt, filename, schema) {
     last = null
     return { file: empty(), bad: true }
   }
-  // The caller serializes updates to both private files. Finish the replacement in the
+  // The caller serializes updates to the private file. Finish the replacement in the
   // same turn as the authority check, after the temporary file has been written.
-  async function set(chatId, entry, check, commit = apply => apply()) {
+  async function set(id, entry, check, commit = apply => apply()) {
     const previous = read()
-    const file = { ...previous.file, chats: { ...previous.file.chats, [chatId]: entry } }
+    const file = { ...previous.file, [collection]: { ...previous.file[collection], [id]: entry } }
     await mkdir(rt.home, { recursive: true })
     const temp = `${path}.${process.pid}.${randomUUID()}.tmp`
     const serialize = value => `${JSON.stringify(value, null, 2)}\n`
@@ -269,7 +269,7 @@ function privateStore(rt, filename, schema) {
       await rm(temp, { force: true }).catch(() => {})
     }
   }
-  return { get: chatId => read().file.chats[chatId] ?? null, set }
+  return { get: id => read().file[collection][id] ?? null, all: () => Object.values(read().file[collection]), set }
 }
 
 // A saved link pins the request to a single URL/key pair. Check it again after awaits
@@ -298,6 +298,25 @@ export async function chatOf(rt, chatId, link = rt.omniLink?.()) {
 }
 
 export const readByAnyBot = (rt, channelId) => Object.values(rt.state.bots ?? {}).some(bot => operatesOmni(rt, bot.id) && rt.canChannel(bot.id, channelId, 'read'))
+
+// Resolve each distinct chat with the same link and check authority after all lookups,
+// so a link or ownership change during a later batch also affects earlier rows.
+export async function readableRows(rt, rows, mayRead) {
+  const link = rt.omniLink?.()
+  if (!link) return []
+  const chatIds = [...new Set(rows.map(row => row.chatId))]
+  const chats = new Map()
+  const concurrency = 8
+  for (let at = 0; at < chatIds.length; at += concurrency) {
+    const batch = await Promise.all(chatIds.slice(at, at + concurrency).map(id => chatOf(rt, id, link).catch(() => null)))
+    for (const chat of batch) if (chat !== null) chats.set(chat.id, chat)
+  }
+  if (!sameReadingLink(rt, link)) return []
+  return rows.flatMap((row) => {
+    const chat = chats.get(row.chatId)
+    return chat !== undefined && chat.channelId === row.channelId && mayRead(chat.channelId) ? [{ row, chat }] : []
+  })
+}
 
 export function install(rt) {
   const { ctx } = rt

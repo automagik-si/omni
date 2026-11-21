@@ -22,7 +22,8 @@ import { z } from 'zod'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { omniActorOf, operatesOmni } from './grants.js'
 import { output } from './output.js'
-import { chatOf as readingChatOf, readByAnyBot, sameReadingLink } from './reading.js'
+import { CommitmentId, CommitmentStatus } from './commitments.js'
+import { chatOf as readingChatOf, readableRows, readByAnyBot, sameReadingLink } from './reading.js'
 import { isAnswerChild } from './threads.js'
 
 // The chats a card offers: the most active ones on channels the Bot may read, then any it named.
@@ -157,6 +158,14 @@ const trainingEvent = (name, selected) => z.object({
   eventType: z.literal(`custom.omni-channels.${name}`),
   payload: z.object({ chatId: id, threadId: id, selected: z.literal(selected), at: z.number().int().nonnegative() }).strict(),
 }).strict()
+const commitmentEvent = name => z.object({
+  ...eventFields,
+  eventType: z.literal(`custom.omni-channels.commitment.${name}`),
+  payload: z.object({
+    commitmentId: CommitmentId, chatId: id, sourceMessageId: id, closingMessageId: id.optional(),
+    status: CommitmentStatus, verified: z.boolean(), updatedAt: z.iso.datetime(),
+  }).strict(),
+}).strict()
 const OutboxEvent = z.discriminatedUnion('eventType', [
   trainingEvent('training.selected', true),
   trainingEvent('training.deselected', false),
@@ -165,6 +174,10 @@ const OutboxEvent = z.discriminatedUnion('eventType', [
     eventType: z.literal('custom.omni-channels.conversation.summarized'),
     payload: z.object({ chatId: id, updatedAt: z.iso.datetime() }).strict(),
   }).strict(),
+  commitmentEvent('recorded'),
+  commitmentEvent('verified'),
+  commitmentEvent('dismissed'),
+  commitmentEvent('closed'),
 ])
 const UnpublishedTrigger = z.object({ published: z.literal(false), duplicate: z.literal(true).optional().catch(undefined) })
 
@@ -185,7 +198,7 @@ function installOutbox(rt) {
     const sequence = state.revision + 1
     const event = OutboxEvent.parse({
       eventType: `custom.omni-channels.${name}`, instanceId, payload,
-      idempotencyKey: `${name}:${payload.threadId ?? payload.chatId}:${sequence}`,
+      idempotencyKey: `${name}:${payload.commitmentId ?? payload.threadId ?? payload.chatId}:${sequence}`,
     })
     const before = state.omniEventOutbox
     const next = [...pending(), { origin, event }]
@@ -514,13 +527,14 @@ export function install(rt) {
     const kept = state.omniBackfillRuns ?? []
     const run = runId === undefined ? kept[0] : kept.find(item => item.id === runId)
     if (run === undefined) return { run: null, chats: [] }
-    const visible = await reviewRows(rt, run.rows, channelId => readByAnyBot(rt, channelId))
+    const visible = await readableRows(rt, run.rows, channelId => readByAnyBot(rt, channelId))
+    const counts = rt.commitmentCounts(visible.map(({ chat }) => chat))
     const chats = visible.map(({ row, chat }) => ({
       ...chat, outcome: row.outcome, state: row.state, coverage: row.coverage ?? null,
       inWindow: row.coverage?.countInWindow ?? null, stored: row.counts.stored,
       lastActivity: lastActivityOf(row.coverage),
       ...rt.readingDetail(chat.id), training: rt.threads.trainingOf(chat),
-      commitments: { candidate: 0, open: 0 },
+      commitments: counts.get(chat.id),
     }))
     const notStarted = chats.filter(chat => chat.outcome === 'not-started').length
     const summary = summaryOf(chats)

@@ -115,7 +115,7 @@ const TEAM_BROWSER_TOOLS = ['browser_back', 'browser_click', 'browser_handoff', 
 test('with this plugin, the team registers the tools TEAM_TOOLS names but show_canvas, plus the plugin\'s own', async (t) => {
   const { ctx, stop } = start(undefined, { config: { browser: true } })
   t.after(stop)
-  assert.deepEqual([...ctx.registeredTools.keys()].sort(), [...TEAM_TOOLS.filter(name => name !== 'show_canvas'), ...TEAM_BROWSER_TOOLS, ...THREAD_TOOLS, 'create_thread', 'propose_answer_bot', 'set_child_notes', 'set_answer_shared_notes', 'resume_answer_child', 'answer_chats', 'thread_needs_staff', 'read_history', 'save_reading_note', 'propose_backfill', 'cancel_backfill', 'backfill_status'].sort())
+  assert.deepEqual([...ctx.registeredTools.keys()].sort(), [...TEAM_TOOLS.filter(name => name !== 'show_canvas'), ...TEAM_BROWSER_TOOLS, ...THREAD_TOOLS, 'create_thread', 'propose_answer_bot', 'set_child_notes', 'set_answer_shared_notes', 'resume_answer_child', 'answer_chats', 'thread_needs_staff', 'read_history', 'save_reading_note', 'propose_backfill', 'cancel_backfill', 'backfill_status', 'record_commitment', 'close_commitment', 'list_commitments'].sort())
   assert.equal(ctx.registeredTools.has('omni_handoff'), false)
 })
 
@@ -349,6 +349,11 @@ test('apply registers its listeners, tools and effects after the team\'s, in a f
     'effect omni-channels: omni-conversations',
     'effect omni-channels: start_backfill',
     'effect omni-channels: cancel_backfill',
+    'tool record_commitment',
+    'tool close_commitment',
+    'tool list_commitments',
+    'effect omni-channels: review_commitment',
+    'effect omni-channels: omni-commitments',
     'provide omniChannels',
   ])
   assert.ok(!own.includes('on llm/stream'))
