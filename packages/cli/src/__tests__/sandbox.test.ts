@@ -2563,11 +2563,21 @@ describe('command wiring', () => {
     const sandboxInstall = mock(() => {
       throw new Error('unexpected sandbox install');
     });
-    const exit = new Error('exit');
+    // Other files in a single-process sweep replace output.js with their own stubs (some reset to a no-op), so
+    // this test installs its own: output.error records its arguments and stops the command, as the real one does.
+    const actual = { ...(await import('../output.js')) };
+    class Refused extends Error {}
+    const refusals: Array<{ message: string; exitCode: unknown }> = [];
+    mock.module('../output.js', () => ({
+      ...actual,
+      error: (text: string, _details?: unknown, exitCode: unknown = 1): never => {
+        refusals.push({ message: text, exitCode });
+        throw new Refused(text);
+      },
+    }));
     const exitSpy = spyOn(process, 'exit').mockImplementation(() => {
-      throw exit;
+      throw new Error('unexpected exit');
     });
-    const stderr = spyOn(console, 'error').mockImplementation(() => {});
     const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
     try {
       const reason = await createInstallCommand(sandboxInstall)
@@ -2576,21 +2586,16 @@ describe('command wiring', () => {
           () => undefined,
           (error: unknown) => error,
         );
-      // In the package-wide run another file stubs output.error to throw its message instead of exiting.
-      if (reason === exit) {
-        expect(exitSpy).toHaveBeenCalledWith(1);
-        expect(stderr).toHaveBeenCalledWith(expect.any(String), message);
-      } else {
-        expect(reason).toBeInstanceOf(Error);
-        expect((reason as Error).message).toBe(message);
-      }
-      // Refused either way: never a clean exit, nothing printed as a report, no install ran.
-      expect(exitSpy).not.toHaveBeenCalledWith(0);
+      // Refused: output.error got exactly this message with a non-zero exit code, the command stopped there,
+      // nothing was printed as a report and no install ran.
+      expect(reason).toBeInstanceOf(Refused);
+      expect(refusals).toEqual([{ message, exitCode: 1 }]);
+      expect(exitSpy).not.toHaveBeenCalled();
       expect(stdout).not.toHaveBeenCalled();
       expect(sandboxInstall).not.toHaveBeenCalled();
     } finally {
+      mock.module('../output.js', () => actual);
       stdout.mockRestore();
-      stderr.mockRestore();
       exitSpy.mockRestore();
     }
   });
