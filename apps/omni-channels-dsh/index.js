@@ -32,6 +32,7 @@ import * as standingRecovery from './src/host/standing-recovery.js'
 import * as standingRuns from './src/host/standing-runs.js'
 import * as reading from './src/host/reading.js'
 import * as botChannels from './src/host/bot-channels.js'
+import * as backfill from './src/host/backfill.js'
 
 export const name = 'omni-channels'
 // The chat threads take their instructions from a prompt section, archive their Sessions in
@@ -58,7 +59,8 @@ export const inject = ['omniTeam', 'tools', 'sessions', 'sessionTitle', 'setting
 // Reading a chat's history and keeping its reading note comes next: it only reads omni
 // through omni.js and checks the threads' answer children and the channels' owners.
 // The left bar reads each Bot’s channels and chats through omni.js.
-const MODULES = [resumeHook, grants, subscriptions, asks, omniApi, omniLink, omniDiscover, omniLocal, omniTerminal, omniUpdate, omni, threadKeys, threads, threadTools, needsStaff, standingRuns, standingRecovery, answerStrangers, answerCodes, answerOutsideCheck, omniEvents, omniChannelActions, reading, botChannels]
+// The backfill tools come last: they use the event stream to track their rows.
+const MODULES = [resumeHook, grants, subscriptions, asks, omniApi, omniLink, omniDiscover, omniLocal, omniTerminal, omniUpdate, omni, threadKeys, threads, threadTools, needsStaff, standingRuns, standingRecovery, answerStrangers, answerCodes, answerOutsideCheck, omniEvents, omniChannelActions, reading, botChannels, backfill]
 
 export function apply(ctx, config = {}) {
   ctx.provide('omniChannels', createRuntime(ctx, ctx.omniTeam, config))

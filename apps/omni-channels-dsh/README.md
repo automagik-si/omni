@@ -28,6 +28,9 @@ and needs it; the canvas plugin (`@automagik/omni-canvas-dsh`) sits on this one.
   page. A run for an event only reads omni. A "thread" worker runs each event in the thread
   of the chat it came from, making that chat a thread first when it is none, so an
   automation over many chats works in one thread per chat, drawn under the Omni Bot's row.
+- **Backfilling chats' history**: `propose_backfill` puts a card before the user, who ticks
+  chats, sets the range and presses Start once; each chat's row moves live until it ends (see
+  below). `backfill_status` and `cancel_backfill` let the Bot follow and stop one.
 - **Omni's rules**: how to operate Omni, that it has no computer, and how to run automations,
   as a part of the Main Bot's rules inside the team's prompt section.
 - **Connect Omni**, the onboarding step `omni-connect` (order −250), between the Omni AI
@@ -293,6 +296,77 @@ Otherwise the answer is `{ chat: { id }, note: null, coverage: null }`, never a 
 `note` is null until a Bot saves one; `coverage` is null when the Omni cannot give it. Times are
 ISO strings.
 
+## Backfill a chat's history
+
+The user asks the Bot that operates Omni for history ("my chats since March"). The Bot calls
+`propose_backfill { chats?, from?, to? }`; any Bot that operates Omni may, never an answer
+child. It saves a proposal the shared kit draws as one card:
+
+- the chats the Bot may read (the 200 most active, then any it named), pre-ticked only when
+  the user named them;
+- the range, only when the user gave one;
+- nothing else: it starts nothing and carries no authority. A new proposal from the same Bot
+  replaces its open one, so the next card starts empty.
+
+The user ticks chats, sets the range and presses Start once. That owner action alone starts
+the work, one Omni backfill job per ticked chat (`POST /chats/:id/backfill`):
+
+- each chat is read again at Start and must be on a channel the proposing Bot may read;
+- the proposal is used once;
+- `omni_call` refuses that route, so no model's call stands in for it.
+
+Cancel really stops a job, from the card (`cancel_backfill`) or by the Bot's `cancel_backfill`
+tool when the user asks; Omni's worker stops after the round it is in. Omni stores what a
+backfill fetches without publishing it as new messages, so old messages never wake an answer.
+
+Each job is a row in every state answer (the chat asks every 1.5 s), fed by Omni's `sync.*`
+events, which Omni journals for durable consumers. This plugin streams its `sync.*` consumer
+only while a job is unfinished. The job's route is the fallback read: after Start, on
+`backfill_status`, on cancel, and each time the stream connects (so after a restart too).
+Rows carry labels and counts, never message text.
+
+### For the shared kit
+
+The picker card reads `omniBackfillProposals` in the team view:
+
+```text
+{ id, botId, from: ISO | null, to: ISO | null, createdAt: ms,
+  chats: [{ id, name, kind: 'dm' | 'group' | … | null, channelId, channel: name | null, ticked }] }
+```
+
+The owner actions are endpoints of `POST /api/omni-ui`; neither is a read, so a host that only
+reads the team refuses them:
+
+```text
+start_backfill  { proposalId, chats: [chat id, 1-200, all on the card], from, to }
+                → { runId, jobs: [{ chatId, jobId | null, state }] }
+cancel_backfill { jobId } → { jobId, state, outcome }
+```
+
+`from` and `to` are ISO times, or dates for that whole day (`from` before `to`, `from` not in
+the future). A refusal comes back as the endpoint's error message.
+
+The live rows are `omniBackfills` in every state answer, newest run first, the last 10 runs
+(an unfinished one is never dropped):
+
+```text
+{ id (the proposal's), botId, from, to, startedAt,
+  summary: { total, running, done, phoneDidNotAnswer, stopped, failed },
+  rows: [{ chatId, chat (its name), channelId, jobId | null,
+           state: 'queued' | 'fetching' | 'done' | 'phone-did-not-answer' | 'cancelled' | 'failed',
+           outcome: null | 'done' | 'phone-did-not-answer' | 'stopped' | 'failed' | 'not-started',
+           counts: { fetched, stored, duplicates, mediaDownloaded, mediaMissing, reactions, edits, deletions, unmatched },
+           round, oldestReached: ISO | null,
+           coverage: null | { oldest, newest, count, countInWindow, deletedCount, mediaMissing, lastInbound, lastOutbound },
+           startedAt, updatedAt }] }
+```
+
+`outcome` is null while the job runs, and set only when it ends (Omni's sync.completed,
+sync.cancelled or sync.failed, or the job route's status). `state` can read
+`phone-did-not-answer` or `done` a little before that, while Omni reads the chat's coverage.
+`coverage` is what Omni holds of the chat once its job ends, and null before then and on a
+failure. `not-started` means Omni refused to queue that chat's job at Start.
+
 ## Existing channel settings
 
 Open an existing channel to read its configuration groups, derived provider and assigned
@@ -465,7 +539,8 @@ deletion is reported separately, without treating deletion as failed
   its tool cards, account-menu row, row badge, header button and Bot-surface panels to. It
   exports `channels`, the live views of omni the canvas plugin draws with.
 - **Data**: the automations and their runs (`subscriptions`, `subscriptionRuns`,
-  `omniEventCursors`) stay in the team's `state.json`, saved through the team's lock; a DSH
+  `omniEventCursors`), and the backfill proposals and runs (`omniBackfillProposals`,
+  `omniBackfillRuns`), stay in the team's `state.json`, saved through the team's lock; a DSH
   that only reads the team does not change them.
 
 ## Meta webhook setup
