@@ -31,6 +31,7 @@ import * as channels from '../index.js'
 import { ANSWER_CHILD_REFUSAL, NOT_OPERATOR, NOT_READABLE } from '../src/host/backfill.js'
 import { BACKFILL_START_REFUSAL } from '../src/host/omni-api.js'
 import { LINK_FILE } from '../src/host/omni-link.js'
+import { NOTES_FILE, SUMMARIES_FILE } from '../src/host/reading.js'
 import { INSTANCE, OMNI, OTHER_INSTANCE, resetFetch, teamState } from './thread-fixture.js'
 import { until } from './until.js'
 
@@ -346,6 +347,79 @@ test('rows move with Omni\'s sync.* events on the plugin\'s stream, read by rout
   const shown = JSON.stringify([dsh.team.extended.live(), dsh.team.extended.view(), readFileSync(join(dsh.home, 'state.json'), 'utf8')])
   for (const text of [PREVIEW, ERROR, 'whatsapp.net', 'Cancelled by person', 'Finished requesting', 'Phone did not answer the chat']) assert.ok(!shown.includes(text), text)
   assert.deepEqual(Object.keys(dsh.rowOf(ana)).sort(), ['channelId', 'chat', 'chatId', 'counts', 'coverage', 'jobId', 'oldestReached', 'outcome', 'round', 'startedAt', 'state', 'updatedAt'])
+})
+
+test('review status uses canonical ids for duplicate labels and is read-only for ended rows', async (t) => {
+  omniO3()
+  const runId = chatId(6)
+  const rows = [ANA, BRUNO].map((chatId, index) => ({
+    chatId, channelId: INSTANCE, chat: 'Same label', state: 'done', outcome: 'done', counts: { fetched: 4, stored: 3 },
+    jobId: null, round: 1, coverage: coverage(index + 1),
+  }))
+  const home = homeWith(teamState({ omniBackfillRuns: [{ id: runId, from: FROM, to: TO, startedAt: 1, rows }] }))
+  const dsh = await start(t, home)
+  const status = await dsh.run('backfill_status', {})
+  assert.ok(status.includes(`Review backfill ${runId}, from ${FROM} to ${TO}:`))
+  assert.ok(status.includes(`- Same label (chat ${ANA}): done; Omni holds 91 messages in this window.`))
+  assert.ok(status.includes(`- Same label (chat ${BRUNO}): done; Omni holds 92 messages in this window.`))
+  assert.ok(status.endsWith('To review: read each chat with read_history (its chat id, this window) and save its reading note with a summary; then the user can choose chats for Answer Mode training.'))
+  const rt = dsh.root.get('omniChannels')
+  const save = rt.save
+  let saves = 0
+  rt.save = (...args) => { saves += 1; return save(...args) }
+  assert.equal(await dsh.run('backfill_status', {}), status)
+  assert.equal(saves, 0)
+})
+
+test('omni-conversations returns the newest run and counts only chats readable on the current link', async (t) => {
+  omniO3()
+  const runId = chatId(6)
+  const oldId = chatId(7)
+  const threadId = chatId(8)
+  const activity = { ...coverage(1), lastInbound: '2026-11-14T15:00:00.000Z', lastOutbound: '2026-11-14T16:00:00.000Z' }
+  const row = (chatId, outcome, coverage = null, channelId = INSTANCE) => ({
+    chatId, channelId, chat: 'Label from the run', state: outcome === 'done' ? 'done' : 'failed', outcome, counts: { stored: 3 }, jobId: null, coverage,
+  })
+  const run = { id: runId, from: FROM, to: TO, startedAt: 1000 }
+  const home = homeWith(teamState({
+    bots: { ...teamState().bots, w1: { id: 'w1', name: 'Other Bot', createdAt: 2 } },
+    omniOwnership: { defaultBotId: 'w1', channels: { [INSTANCE]: 'm1', [OTHER_INSTANCE]: 'w1' } },
+    omniBackfillRuns: [
+      { ...run, rows: [row(ANA, 'done', activity), row(BRUNO, 'not-started'), row(CARLA, 'done', { ...coverage(2), lastInbound: null, lastOutbound: null }), row(ELSEWHERE, 'failed', null, OTHER_INSTANCE)] },
+      { ...run, id: oldId, startedAt: 1, rows: [row(BRUNO, 'failed')] },
+    ],
+    omniThreads: {
+      [threadId]: { id: threadId, sessionId: 'child', chatId: ANA, chatIds: [ANA], channelId: INSTANCE, ownerBotId: 'm1', origin: OMNI, answerChild: true, sendingMode: 'training', trainingSelectedAt: 10 },
+    },
+  }))
+  writeFileSync(join(home, NOTES_FILE), JSON.stringify({ version: 1, chats: { [ANA]: { note: 'Private notes', readThrough: TO, updatedAt: TO } } }), { mode: 0o600 })
+  writeFileSync(join(home, SUMMARIES_FILE), JSON.stringify({ version: 1, chats: { [ANA]: { summary: 'Ready for review', updatedAt: TO }, [ELSEWHERE]: { summary: 'Hidden', updatedAt: TO } } }), { mode: 0o600 })
+  const dsh = await start(t, home)
+  assert.equal(dsh.team.extended.endpointOf('omni-conversations').read, true)
+  const detail = body => dsh.endpoint('omni-conversations', body)
+  const emptyTraining = { selected: false, threadId: null, sendingMode: null }
+  const commitments = { candidate: 0, open: 0 }
+  const newest = await detail({})
+  assert.deepEqual(newest.run, run)
+  assert.equal(newest.chats.length, 3)
+  assert.deepEqual(newest.chats[0], {
+    id: ANA, name: 'Ana', channelId: INSTANCE, state: 'done', outcome: 'done', coverage: activity,
+    inWindow: activity.countInWindow, stored: 3, lastActivity: activity.lastOutbound, summary: 'Ready for review', noted: true,
+    training: { selected: true, threadId, sendingMode: 'training' }, commitments,
+  })
+  assert.deepEqual(newest.chats[1], {
+    id: BRUNO, name: 'Bruno', channelId: INSTANCE, state: 'failed', outcome: 'not-started', coverage: null,
+    inWindow: null, stored: 3, lastActivity: null, summary: null, noted: false, training: emptyTraining, commitments,
+  })
+  assert.equal(newest.chats[2].lastActivity, coverage(2).newest)
+  assert.deepEqual(newest.summary, { total: 3, running: 0, done: 2, phoneDidNotAnswer: 0, stopped: 0, failed: 0, notStarted: 1 })
+  assert.equal((await detail({ runId: oldId })).summary.failed, 1)
+  assert.deepEqual(await detail({ runId: 'pruned' }), { run: null, chats: [] })
+  await assert.rejects(detail({ extra: true }))
+  rmSync(join(home, LINK_FILE))
+  const disconnected = await detail({})
+  assert.deepEqual(disconnected.chats, [])
+  assert.equal(disconnected.summary.total, 0)
 })
 
 test('after a restart, the stream reads each unfinished job by its route before it streams, and goes on with the events', async (t) => {

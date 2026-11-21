@@ -11,6 +11,7 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, wr
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, afterEach, test } from 'node:test'
+import { z } from 'zod'
 import { Context } from '@deepseek-ai/cordis'
 import { AgentRegistry } from '@deepseek-ai/dsh-agent'
 import { LlmRuntime, ToolCallId } from '@deepseek-ai/dsh-llm'
@@ -23,7 +24,7 @@ import { ToolRuntime } from '@deepseek-ai/dsh-tools'
 import * as team from '@automagik/bots-dsh'
 import * as channels from '../index.js'
 import { LINK_FILE } from '../src/host/omni-link.js'
-import { ANSWER_CHILD_REFUSAL, BAD_CURSOR, CURSOR_WINDOW, NO_CHAT, NOT_OPERATOR, NOT_READABLE, NOTE_MAX, NOTES_FILE, PAGE_CHARS_MAX } from '../src/host/reading.js'
+import { ANSWER_CHILD_REFUSAL, BAD_CURSOR, CURSOR_WINDOW, NO_CHAT, NOT_OPERATOR, NOT_READABLE, NOTE_MAX, NOTES_FILE, PAGE_CHARS_MAX, SUMMARIES_FILE } from '../src/host/reading.js'
 import { INSTANCE, OMNI, OTHER_INSTANCE, resetFetch, teamState } from './thread-fixture.js'
 
 const realFetch = globalThis.fetch
@@ -98,6 +99,10 @@ function omniO1() {
     const path = url.pathname.replace(/^\/api\/v2/, '')
     asked.push({ method, path, query: Object.fromEntries(url.searchParams) })
     if (url.origin !== OMNI || init.headers?.['x-api-key'] !== LINK_KEY) return json(401, { error: { code: 'UNAUTHORIZED' } })
+    if (method === 'POST' && path === '/events/trigger') {
+      asked.at(-1).body = JSON.parse(init.body)
+      return json(201, {})
+    }
     if (method !== 'GET') return json(404, { error: { code: 'NOT_FOUND' } })
     const [, chatId, part] = /^\/chats\/([^/]+)(?:\/(messages|coverage))?$/.exec(path) ?? []
     if (chatId === undefined) return json(404, { error: { code: 'NOT_FOUND' } })
@@ -361,11 +366,62 @@ test('the reading note survives a restart: saved in its own 0600 file, shown on 
   const card = await second.endpoint('omni-reading-note', { chat: CHAT })
   assert.deepEqual({ ...card, note: { ...card.note, updatedAt: typeof card.note.updatedAt } }, {
     chat: { id: CHAT, name: 'Ana', channelId: INSTANCE },
-    note: { text: note, readThrough: '2026-11-01T08:00:00.000Z', updatedAt: 'string' },
+    note: { text: note, readThrough: '2026-11-01T08:00:00.000Z', updatedAt: 'string', summary: null },
     coverage: { oldest: '2026-03-02T10:00:00.000Z', newest: '2026-11-01T08:00:00.000Z', count: 8, mediaMissing: 3, deletedCount: 1, lastInbound: '2026-11-01T08:00:00.000Z', lastOutbound: '2026-08-01T09:00:00.000Z' },
   })
   assert.equal((await second.endpoint('omni-reading-note', { chat: BIG })).note, null)
   await assert.rejects(second.endpoint('omni-reading-note', { chat: 'not-a-chat' }))
+})
+
+test('summaries stay in a private sidecar and the old strict note entries still parse', async (t) => {
+  const omni = omniO1()
+  const threadId = id(900)
+  const state = teamState({
+    bots: { m1: { ...teamState().bots.m1, answer: { enabled: true } } },
+    omniOwnership: { defaultBotId: 'm1', channels: { [INSTANCE]: 'm1' } },
+    omniThreads: {
+      [threadId]: {
+        id: threadId, sessionId: 'child', ownerBotId: 'm1', channelId: INSTANCE, origin: OMNI, chatId: CHAT,
+        chatIds: [CHAT], chatName: 'Ana', notes: '', answerChild: true, sendingMode: 'sending',
+      },
+    },
+  })
+  const home = homeWith(t, state)
+  const dsh = await start(t, home)
+  const rt = dsh.root.get('omniChannels')
+  const marker = 'PRIVATE-SUMMARY-29f9'
+  const note = { chat: CHAT, note: 'Reading notes.', readThrough: SAME }
+  const sidecar = join(home, SUMMARIES_FILE)
+  for (const summary of ['   ', 'x'.repeat(301)]) assert.match(await dsh.run('save_reading_note', { ...note, summary }), /summary of 1 to 300 characters/)
+  assert.match(await dsh.run('save_reading_note', { ...note, summary: `  ${marker}  ` }), /^Reading note saved/)
+  const first = JSON.parse(readFileSync(sidecar, 'utf8'))
+  assert.equal(first.version, 1)
+  assert.equal(first.chats[CHAT].summary, marker)
+  assert.equal(statSync(sidecar).mode & 0o777, 0o600)
+  const oldNotes = z.object({
+    version: z.literal(1),
+    chats: z.record(z.string(), z.object({ note: z.string().max(NOTE_MAX), readThrough: z.string(), updatedAt: z.string() }).strict()),
+  })
+  assert.equal(oldNotes.parse(JSON.parse(readFileSync(join(home, NOTES_FILE), 'utf8'))).chats[CHAT].note, note.note)
+  assert.match(await dsh.run('save_reading_note', { ...note, note: 'More reading notes.' }), /^Reading note saved/)
+  assert.deepEqual(JSON.parse(readFileSync(sidecar, 'utf8')), first)
+  assert.ok((await dsh.run('read_history', { chat: CHAT })).includes(`Conversation summary: ${marker}`))
+  assert.equal((await dsh.endpoint('omni-reading-note', { chat: CHAT })).note.summary, marker)
+  assert.equal((await dsh.endpoint('select_conversation_training', { chats: [CHAT], selected: true })).results[0].selected, true)
+  const { updatedAt } = first.chats[CHAT]
+  const stateText = readFileSync(join(home, 'state.json'), 'utf8')
+  const views = JSON.stringify([dsh.team.extended.view(), dsh.team.extended.live(), rt.threads.list()])
+  assert.equal(stateText.includes(marker), false)
+  assert.equal(views.includes(marker), false)
+  await dsh.stop()
+  const events = omni.asked.filter(call => call.path === '/events/trigger').map(call => call.body)
+  assert.deepEqual(events.filter(event => event.eventType.endsWith('.summarized')), [{
+    eventType: 'custom.omni-channels.conversation.summarized', instanceId: INSTANCE,
+    idempotencyKey: events[0].idempotencyKey,
+    payload: { chatId: CHAT, updatedAt },
+  }])
+  assert.ok(events[0].idempotencyKey.startsWith(`conversation.summarized:${CHAT}:`))
+  assert.equal(JSON.stringify(events).includes(marker), false)
 })
 
 test('a page that does not fit even at the shortest cut is read again from the same cursor with fewer messages: never over the limit, nothing skipped (200 heavy rows under an 8,000-character note)', async (t) => {

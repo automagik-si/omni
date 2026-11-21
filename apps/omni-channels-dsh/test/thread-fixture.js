@@ -194,6 +194,12 @@ export const record = (id, sessionId, extra = {}) => ({
 // plugin's own start pass runs (`fake.archiveError` sets it later).
 export async function boot(t, home, { mask = false, services = {}, resumesDone, archiveError = null, renameError = null, stops } = {}) {
   const ctx = fakeContext({ services })
+  let route
+  const registerFetch = ctx.connection.fetch.register
+  ctx.connection.fetch.register = (options) => {
+    if (options.path === '/api/omni-ui') route = options
+    return registerFetch(options)
+  }
   const agents = new Map()
   const made = []
   const resolved = []
@@ -317,6 +323,9 @@ export async function boot(t, home, { mask = false, services = {}, resumesDone, 
   const channels = createRuntime(ctx, base)
   await channels.load()
   const call = (endpoint, body) => team.extended.endpointOf(endpoint).fn(body)
+  const http = async (endpoint, payload) => (await route.fetch(new Request('http://localhost/api/omni-ui', {
+    method: 'POST', body: JSON.stringify({ endpoint, payload }),
+  }))).json()
   // What the team's state endpoint sends: its view fields, then the live ones.
   const view = () => ({ ...team.extended.view(), ...team.extended.live() })
   let stopped = false
@@ -328,7 +337,7 @@ export async function boot(t, home, { mask = false, services = {}, resumesDone, 
   // Stopped before its home goes (homeFor).
   if (stopsOf.has(home)) stopsOf.get(home).push(stop)
   else t.after(stop)
-  return { ctx, team, channels, call, view, emit, cut, agentOf, freshAgent, made, resolved, selected, archived, archiving, restricts, executors, registered, titled, fake, stop, stops: { owners, notes, ownerOf: id => owners.map(fn => fn(id)).find(Boolean) } }
+  return { ctx, team, channels, call, http, view, emit, cut, agentOf, freshAgent, made, resolved, selected, archived, archiving, restricts, executors, registered, titled, fake, stop, stops: { owners, notes, ownerOf: id => owners.map(fn => fn(id)).find(Boolean) } }
 }
 
 // A fresh home linked to `omni`, with the team in it; removed once every start on it stopped.
@@ -474,17 +483,20 @@ export const defaultAnswerState = (defaultBotId = ANSWER_MASTER) => teamState({
 })
 // `clock`: a start time for a fake clock that also moves Date (staff take-over deadlines).
 export const ANSWER_CLOCK = Date.parse('2026-11-12T12:00:00.000Z')
-export async function answerBench(t, { visibility = 'isolated', allowedTools = [], presets: supplied, enabled = true, clock, state = answerState() } = {}) {
-  t.mock.timers.enable(clock === undefined ? { apis: ['setTimeout'] } : { apis: ['setTimeout', 'Date'], now: clock })
-  const omni = watchedOmni(t, { instanceIds: [INSTANCE, OTHER_INSTANCE] })
-  const home = homeFor(t, omni, state)
+export function readOnlyPresets() {
   const selected = new Map()
-  const presets = supplied ?? {
+  return {
     available: true,
     catalog() { return { options: this.available ? [{ value: 'read-only' }] : [], defaultPreset: 'workspace-write' } },
     current: session => selected.get(session.id) ?? 'workspace-write',
     set(session, preset) { if (!this.available) throw new Error('preset unavailable'); selected.set(session.id, preset) },
   }
+}
+export async function answerBench(t, { visibility = 'isolated', allowedTools = [], presets: supplied, enabled = true, clock, state = answerState() } = {}) {
+  t.mock.timers.enable(clock === undefined ? { apis: ['setTimeout'] } : { apis: ['setTimeout', 'Date'], now: clock })
+  const omni = watchedOmni(t, { instanceIds: [INSTANCE, OTHER_INSTANCE] })
+  const home = homeFor(t, omni, state)
+  const presets = supplied ?? readOnlyPresets()
   const run = await boot(t, home, { services: { permissionPresets: presets } })
   const settings = { botId: ANSWER_MASTER, enabled, visibility, allowedTools, sharedNotes: 'SHARED: returns within 30 days.' }
   await run.call('omni-answer-settings', settings)

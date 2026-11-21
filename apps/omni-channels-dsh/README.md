@@ -257,7 +257,7 @@ messages never start an answer.
   channel's history) marks. The header gives the coverage (oldest, newest, count, count in the
   window, deleted, media without a file), the last contact each way, "page N of about M", the
   next cursor (which keeps its window, and its size unless another is given) and the chat's
-  reading note. When Omni holds nothing for the window, it says to ask the user for a backfill
+  reading note and conversation summary. When Omni holds nothing for the window, it says to ask the user for a backfill
   first. A page stays under the size DSH keeps whole in a tool result (about 46,000
   characters): a page that fits keeps every text whole; one that does not cuts its texts
   shorter, never its lines, and its header says to read it again (same cursor, none on a first
@@ -266,14 +266,15 @@ messages never start an answer.
   (at most 8 times), the header says "fewer messages than asked, to fit", and the next cursor
   is Omni's own after the last message shown. A chat Omni does not have, or that this link may
   not read, is said plainly.
-- `save_reading_note { chat, note, readThrough }` keeps the note (at most 8,000 characters: who
+- `save_reading_note { chat, note, readThrough, summary? }` keeps the note (at most 8,000 characters: who
   the person is to the user, what is open, the last contact, how the user talks to them), the
   newest message time it covers (`readThrough`, where a later reading of what is new starts),
   and when it was updated. Pages go back from the newest, so until a reading reaches its last
-  page the note itself says how far back it has read.
+  page the note itself says how far back it has read. Supply a summary of 1–300 characters
+  for conversation review. Leaving it out keeps the previous summary.
 
-The notes live in `omni-reading-notes.json` beside `omni.json` (0600), keyed by Omni chat id:
-never in `state.json`, a log or the roster view. Each save rewrites the file through a
+Notes and summaries live in `omni-reading-notes.json` and `omni-reading-summaries.json`
+beside `omni.json` (0600), keyed by Omni chat id. Each save rewrites the file through a
 temporary file and a rename, one at a time in this host; there is no lock across hosts, and a
 host that only reads the team does not save. The tools need an Omni with the page cursor and
 the coverage read, so `engines.omni` names the release this change is cut in.
@@ -285,7 +286,7 @@ The shared kit's person card reads one chat's note and coverage through the endp
 request:  { chat: "<Omni chat id>" }
 response: {
   chat: { id, name?, channelId? },
-  note: { text, readThrough, updatedAt } | null,
+  note: { text, readThrough, updatedAt, summary: string | null } | null,
   coverage: { oldest, newest, count, mediaMissing, deletedCount, lastInbound, lastOutbound } | null
 }
 ```
@@ -325,6 +326,11 @@ only while a job is unfinished. The job's route is the fallback read: after Star
 `backfill_status`, on cancel, and each time the stream connects (so after a restart too).
 Rows carry labels and counts, never message text.
 
+For ended rows the calling Bot can still read, `backfill_status` gives the run ID, exact
+window, chat IDs, outcomes and the number of messages Omni holds in that window. The Bot
+can read those chats with `read_history` and save a summary before the user chooses chats
+for Answer Mode training.
+
 ### For the shared kit
 
 The picker card reads `omniBackfillProposals` in the team view:
@@ -334,17 +340,41 @@ The picker card reads `omniBackfillProposals` in the team view:
   chats: [{ id, name, kind: 'dm' | 'group' | … | null, channelId, channel: name | null, ticked }] }
 ```
 
-The owner actions are endpoints of `POST /api/omni-ui`; neither is a read, so a host that only
-reads the team refuses them:
+The owner actions are write endpoints of `POST /api/omni-ui`. They require a writable host.
 
 ```text
 start_backfill  { proposalId, chats: [chat id, 1-200, all on the card], from, to }
                 → { runId, jobs: [{ chatId, jobId | null, state }] }
 cancel_backfill { jobId } → { jobId, state, outcome }
+select_conversation_training { chats: [chat id, 1–50], selected: boolean }
+                             → { results: [{ chatId, selected, threadId | null, sendingMode | null, refusal | null }] }
 ```
 
 `from` and `to` are ISO times, or dates for that whole day (`from` before `to`, `from` not in
 the future). A refusal comes back as the endpoint's error message.
+
+`omni-conversations { runId? }` reads the newest run by default. Unknown or pruned runs
+return `{ run: null, chats: [] }`. Each row must resolve on the current Omni link to a
+channel a Bot that operates Omni can read. The response includes the run's exact window,
+visible chats and their outcome, coverage, last activity, summary, reading-note status and
+training selection. `inWindow` counts messages Omni holds in the window, and `stored`
+counts messages stored by the job. The totals reflect the visible rows.
+
+The owner can select direct chats on channels explicitly owned by a Bot with Answer Mode
+and channel write access. A new answer child starts in training mode. If live intake
+created the child first, selection reuses it and returns its existing sending mode, which
+may be `sending`. Deselecting clears the selection and keeps the child available for the
+existing pause and remove controls. Conversation review and selection create no sends,
+cards, deliveries, runs or follow-ups.
+
+Answer children can read their own chat, including imported messages, with
+`thread_history`. Staff can add approved context with `set_child_notes`. Reading notes
+and summaries stay in their private files and authorized reads.
+
+Training selection and summary changes are published through Omni as
+`custom.omni-channels.training.selected`, `custom.omni-channels.training.deselected` and
+`custom.omni-channels.conversation.summarized`. The team's outbox retains pending events
+with IDs, timestamps and selection status for retry.
 
 The live rows are `omniBackfills` in every state answer, newest run first, the last 10 runs
 (an unfinished one is never dropped):
