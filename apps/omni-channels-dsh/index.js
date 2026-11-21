@@ -13,6 +13,7 @@ import * as grants from './src/host/grants.js'
 import * as subscriptions from './src/host/subscriptions.js'
 import * as asks from './src/host/asks.js'
 import * as omniApi from './src/host/omni-api.js'
+import * as outsideSenders from './src/host/outside-senders.js'
 import * as omniLink from './src/host/omni-link.js'
 import * as omniDiscover from './src/host/omni-discover.js'
 import * as omniLocal from './src/host/omni-local.js'
@@ -45,6 +46,7 @@ export const inject = ['omniTeam', 'tools', 'sessions', 'sessionTitle', 'setting
 // this plugin's Sessions (resume-hook.js). Then the team's install order, kept: automations
 // and Omni's tools first, the link (the Omnis found on this computer to link, one to run here,
 // the terminal that updates or sets one up, and updating them) and its events after.
+// The team's outside-send classifier follows Omni's API tools.
 // Asking the Omni Bot from a thread (asks.js) comes right after the automations, whose run
 // log it shares. Permissions come before the tools that check them. The threads' own keys
 // come after omni.js, whose requests they make, the threads after their keys, and the
@@ -61,7 +63,7 @@ export const inject = ['omniTeam', 'tools', 'sessions', 'sessionTitle', 'setting
 // through omni.js and checks the threads' answer children and the channels' owners.
 // The left bar reads each Bot’s channels and chats through omni.js.
 // The backfill tools use the event stream to track their rows. Commitments use their outbox.
-const MODULES = [resumeHook, grants, subscriptions, asks, omniApi, omniLink, omniDiscover, omniLocal, omniTerminal, omniUpdate, omni, threadKeys, threads, threadTools, needsStaff, standingRuns, standingRecovery, answerStrangers, answerCodes, answerOutsideCheck, omniEvents, omniChannelActions, reading, botChannels, backfill, commitments]
+const MODULES = [resumeHook, grants, subscriptions, asks, omniApi, outsideSenders, omniLink, omniDiscover, omniLocal, omniTerminal, omniUpdate, omni, threadKeys, threads, threadTools, needsStaff, standingRuns, standingRecovery, answerStrangers, answerCodes, answerOutsideCheck, omniEvents, omniChannelActions, reading, botChannels, backfill, commitments]
 
 export function apply(ctx, config = {}) {
   ctx.provide('omniChannels', createRuntime(ctx, ctx.omniTeam, config))

@@ -37,6 +37,12 @@ and needs it; the canvas plugin (`@automagik/omni-canvas-dsh`) sits on this one.
   plugin's welcome (−300) and Connect AI (−200). A skip is kept by `@automagik/welcome-dsh`
   when it is installed, else in this browser.
 
+On a Bot team whose `bots-dsh` release passes the Session to step classifiers, an
+`omni_call` post into a group or channel and a presence update with text count as hard
+steps. Auto never lets one through by itself, every asking level asks, and a never-asking
+level refuses. Sends to a person and deletes keep Omni's own confirmation card.
+`omni_send`, reactions, automation event runs, and chat threads keep Omni's rules.
+
 ## Attach a Telegram bot from a wizard host
 
 The host-only `omniChannels.omniTelegramAttach({ token, name, source?, answerBot? })`
