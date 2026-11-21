@@ -2570,9 +2570,20 @@ describe('command wiring', () => {
     const stderr = spyOn(console, 'error').mockImplementation(() => {});
     const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
     try {
-      await expect(createInstallCommand(sandboxInstall).parseAsync(args, { from: 'user' })).rejects.toBe(exit);
-      expect(exitSpy).toHaveBeenCalledWith(1);
-      expect(stderr).toHaveBeenCalledWith(expect.any(String), message);
+      const reason = await createInstallCommand(sandboxInstall)
+        .parseAsync(args, { from: 'user' })
+        .then(
+          () => undefined,
+          (error: unknown) => error,
+        );
+      // In the package-wide run another file stubs output.error to throw its message instead of exiting.
+      if (reason === exit) {
+        expect(exitSpy).toHaveBeenCalledWith(1);
+        expect(stderr).toHaveBeenCalledWith(expect.any(String), message);
+      } else {
+        expect(reason).toBeInstanceOf(Error);
+        expect((reason as Error).message).toBe(message);
+      }
       expect(stdout).not.toHaveBeenCalled();
       expect(sandboxInstall).not.toHaveBeenCalled();
     } finally {
