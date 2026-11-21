@@ -126,9 +126,25 @@ const QUIET_WRITES = [
   /^POST \/messages\/[^/]+\/(read|star)$/,
   /^POST \/media\/(tts|stt|vision|imagine|music|film)$/,
 ]
-const SENDS = /^\/messages\/send(\/(media|contact|location|sticker|tts|forward|poll|embed))?$/
+export const SENDS = /^\/messages\/send(\/(media|contact|location|sticker|tts|forward|poll|embed))?$/
 // Where many people read one shared room, not a person's inbox: a WhatsApp group or channel.
 const SHARED_ROOM = /@(g\.us|newsletter)$/
+
+const nonEmptyText = value => typeof value === 'string' && value.length > 0
+
+/** Whether a normalized omni_call can post to a shared room or show custom presence text. */
+export function postsToRoom(method, path, body) {
+  if (method !== 'POST') return false
+  if (SENDS.test(path)) {
+    const to = body?.to
+    return typeof to === 'string' && SHARED_ROOM.test(to)
+  }
+  if (path !== '/messages/send/presence' || body?.hold === true) return false
+  if (body?.type !== 'typing' && body?.type !== 'recording') return false
+  const { status, loadingMessages } = body
+  return nonEmptyText(status) || (Array.isArray(loadingMessages) && loadingMessages.length > 0
+    && Array.from(loadingMessages).every(nonEmptyText))
+}
 
 /** What an omni_call is when it asks first (send, delete, disconnect, change); null when it runs quietly. */
 export function sensitiveCall(method, path, body) {
