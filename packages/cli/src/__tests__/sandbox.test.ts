@@ -2584,6 +2584,8 @@ describe('command wiring', () => {
         expect(reason).toBeInstanceOf(Error);
         expect((reason as Error).message).toBe(message);
       }
+      // Refused either way: never a clean exit, nothing printed as a report, no install ran.
+      expect(exitSpy).not.toHaveBeenCalledWith(0);
       expect(stdout).not.toHaveBeenCalled();
       expect(sandboxInstall).not.toHaveBeenCalled();
     } finally {
