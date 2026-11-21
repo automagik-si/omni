@@ -134,7 +134,17 @@ export function withSandboxInstall<T extends object>(
     .option('--autopg-tarball <file>', "With --sandbox: install autopg's pinned release from this local tarball")
     .option('--json', 'With --sandbox: print one JSON report')
     .action(async (options: T & SandboxInstallFlags) => {
-      if (atLoginFlags.size === 2) output.error('--at-login and --no-at-login cannot be used together');
+      const conflictingAtLogin = atLoginFlags.size === 2;
+      atLoginFlags.clear();
+      if (conflictingAtLogin) {
+        const message = '--at-login and --no-at-login cannot be used together';
+        if (options.sandbox) {
+          return act(options, 'installed', async () => {
+            throw new SandboxError(message);
+          });
+        }
+        output.error(message);
+      }
       if (!(await runSandboxInstallIfAsked(options, sandboxInstall))) await plain(options);
     });
 }

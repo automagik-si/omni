@@ -410,6 +410,7 @@ const FRESH_AT_LOGIN_ERROR =
   '--at-login needs the systemd user manager, which could not be reached here (it is missing in a container, for example). Install without --at-login: Omni then runs for this session only.';
 const SAVED_AT_LOGIN_ERROR =
   'This sandbox starts at login, but the systemd user manager could not be reached here (it is missing in a container, for example). Run the install again with --no-at-login on the same --home to keep Omni for this session only, or try again once the user manager is running.';
+const CONFLICTING_AT_LOGIN_ERROR = '--at-login and --no-at-login cannot be used together';
 
 async function expectJsonInstallRefusal(
   args: string[],
@@ -421,13 +422,16 @@ async function expectJsonInstallRefusal(
     throw exit;
   });
   const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
+  const stderr = spyOn(console, 'error').mockImplementation(() => {});
   try {
     await expect(createInstallCommand(sandboxInstall).parseAsync(args, { from: 'user' })).rejects.toBe(exit);
     expect(exitSpy).toHaveBeenCalledWith(1);
     expect(stdout.mock.calls.map(([line]) => line)).toEqual([
       `${JSON.stringify({ ok: false, installed, home, error })}\n`,
     ]);
+    expect(stderr).not.toHaveBeenCalled();
   } finally {
+    stderr.mockRestore();
     stdout.mockRestore();
     exitSpy.mockRestore();
   }
@@ -499,6 +503,66 @@ describe('at login', () => {
     expect(readSandboxState(layout)).toMatchObject({ atLogin: false, ports: before?.ports });
     expect(readSandboxApiKey(layout)).toBe(key);
     expect(readFileSync(data, 'utf8')).toBe('keep this');
+    expect(existsSync(unit)).toBe(false);
+  });
+
+  test('linux: --no-at-login removes the unit after disable times out and bounds daemon-reload', async () => {
+    const { deps } = fakeDeps();
+    await installSandbox({ home, defaultHome, atLogin: true, start: false }, deps);
+    const { systemdUnit } = sandboxUnitNames(home, defaultHome);
+    const unit = join(userHome, '.config', 'systemd', 'user', systemdUnit);
+    let signalDisable = () => {};
+    const disabling = new Promise<void>((resolve) => {
+      signalDisable = resolve;
+    });
+    const run = deps.run;
+    const managerRun = mock<SandboxDeps['run']>(async (cmd, opts) => {
+      if (cmd[2] !== 'disable') return run(cmd, opts);
+      signalDisable();
+      return new Promise((resolve) => {
+        setTimeout(() => resolve({ code: 124, stdout: '', stderr: '', timedOut: true }), opts.timeoutMs);
+      });
+    });
+    deps.run = managerRun;
+    jest.useFakeTimers();
+    try {
+      const optedOut = installSandbox({ home, defaultHome, atLogin: false, start: false }, deps);
+      await disabling;
+      expect(managerRun).toHaveBeenCalledWith(
+        ['systemctl', '--user', 'disable', '--now', systemdUnit],
+        expect.objectContaining({ timeoutMs: 10_000 }),
+      );
+      jest.advanceTimersByTime(9_999);
+      expect(existsSync(unit)).toBe(true);
+      jest.advanceTimersByTime(1);
+      await optedOut;
+      expect(existsSync(unit)).toBe(false);
+      expect(managerRun).toHaveBeenCalledWith(
+        ['systemctl', '--user', 'daemon-reload'],
+        expect.objectContaining({ timeoutMs: 10_000 }),
+      );
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('linux: a second --no-at-login removes the unit left by an interrupted opt-out', async () => {
+    const { deps } = fakeDeps();
+    await installSandbox({ home, defaultHome, atLogin: true, start: false }, deps);
+    const layout = sandboxLayout(home);
+    const { systemdUnit } = sandboxUnitNames(home, defaultHome);
+    const unit = join(userHome, '.config', 'systemd', 'user', systemdUnit);
+    // The interrupted install wrote the state before it could unlink the unit.
+    writeFileSync(layout.statePath, JSON.stringify({ ...readSandboxState(layout), atLogin: false }));
+    expect(readSandboxState(layout)?.atLogin).toBe(false);
+    expect(existsSync(unit)).toBe(true);
+    const run = deps.run;
+    deps.run = async (cmd, opts) => {
+      if (cmd[0] === 'systemctl') throw new SandboxInstallerStillRunningError('Manager process did not close');
+      return run(cmd, opts);
+    };
+
+    await installSandbox({ home, defaultHome, atLogin: false, start: false }, deps);
     expect(existsSync(unit)).toBe(false);
   });
 
@@ -2484,11 +2548,11 @@ describe('command wiring', () => {
   test.each([
     {
       args: ['--sandbox', '--at-login', '--no-at-login'],
-      message: '--at-login and --no-at-login cannot be used together',
+      message: CONFLICTING_AT_LOGIN_ERROR,
     },
     {
       args: ['--sandbox', '--no-at-login', '--at-login'],
-      message: '--at-login and --no-at-login cannot be used together',
+      message: CONFLICTING_AT_LOGIN_ERROR,
     },
     {
       args: ['--no-at-login'],
@@ -2504,14 +2568,50 @@ describe('command wiring', () => {
       throw exit;
     });
     const stderr = spyOn(console, 'error').mockImplementation(() => {});
+    const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
     try {
       await expect(createInstallCommand(sandboxInstall).parseAsync(args, { from: 'user' })).rejects.toBe(exit);
       expect(exitSpy).toHaveBeenCalledWith(1);
       expect(stderr).toHaveBeenCalledWith(expect.any(String), message);
+      expect(stdout).not.toHaveBeenCalled();
       expect(sandboxInstall).not.toHaveBeenCalled();
     } finally {
+      stdout.mockRestore();
       stderr.mockRestore();
       exitSpy.mockRestore();
+    }
+  });
+
+  test.each([
+    { flags: ['--at-login', '--no-at-login'], installed: false },
+    { flags: ['--no-at-login', '--at-login'], installed: true },
+  ])('JSON install reports conflicting $flags with installed=$installed', async ({ flags, installed }) => {
+    if (installed) {
+      const { deps } = fakeDeps();
+      await installSandbox({ home, defaultHome, start: false }, deps);
+    }
+    const sandboxInstall = mock(() => {
+      throw new Error('unexpected sandbox install');
+    });
+    await expectJsonInstallRefusal(['--sandbox', ...flags, '--home', home, '--json'], sandboxInstall, {
+      installed,
+      error: CONFLICTING_AT_LOGIN_ERROR,
+    });
+    expect(sandboxInstall).not.toHaveBeenCalled();
+  });
+
+  test('omni install tracks at-login flags separately on successive parses of the same command', async () => {
+    const { deps } = fakeDeps();
+    const sandboxInstall = mock((options: SandboxInstallOptions) => installSandbox(options, deps));
+    const command = createInstallCommand(sandboxInstall);
+    const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
+    try {
+      const args = ['--sandbox', '--home', home, '--no-start', '--json'];
+      await command.parseAsync([...args, '--at-login'], { from: 'user' });
+      await command.parseAsync([...args, '--no-at-login'], { from: 'user' });
+      expect(sandboxInstall.mock.calls.map(([options]) => options.atLogin)).toEqual([true, false]);
+    } finally {
+      stdout.mockRestore();
     }
   });
 

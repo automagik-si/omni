@@ -353,7 +353,7 @@ export function install(rt, options = {}) {
   const endpoints = {
     // Where a sandboxed Omni would go, so the page can say before setting one up.
     'omni-discover': async () => {
-      const atLogin = atLoginUsable(options)
+      const atLogin = unfoldHost(options.env) ? false : atLoginUsable(options)
       return {
         omnis: await discover({ ...options, atLogin }),
         sandbox: { home: sandboxHome(options), minimum: options.minimum ?? OMNI_MINIMUM, atLogin: await atLogin },

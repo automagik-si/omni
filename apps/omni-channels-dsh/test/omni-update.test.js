@@ -42,7 +42,7 @@ function host(t, answer) {
   }
   const rt = { home, config: {}, ctx: { effect: run => run() }, omniLink: () => ({ url: 'https://omni.example.com', key: LINK_KEY }) }
   installHooks(rt)
-  installDiscover(rt)
+  installDiscover(rt, { platform: 'linux', spawn: () => { throw new Error('No user manager in this fixture') } })
   install(rt)
   return { rt, sent }
 }
