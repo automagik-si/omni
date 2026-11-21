@@ -46,7 +46,7 @@ import { buildEmbeddedDatabaseUrl, buildRuntimeEnv } from '../runtime-env.js';
 import { getServerBundlePath, getServerLauncherPath } from '../server-bundle.js';
 import { generateApiKey, maskApiKey } from '../utils/keys.js';
 import { VERSION } from '../version.js';
-import { withSandboxInstall } from './sandbox.js';
+import { type SandboxInstaller, withSandboxInstall } from './sandbox.js';
 
 const DEFAULT_DATA_DIR = join(homedir(), '.omni', 'data');
 
@@ -385,7 +385,7 @@ async function runInstall(options: InstallOptions): Promise<void> {
   output.raw(buildAgentHandoffBlock(cfg, apiKeyDisplay));
 }
 
-export function createInstallCommand(): Command {
+export function createInstallCommand(sandboxInstall?: SandboxInstaller): Command {
   const command = new Command('install')
     .description('Bootstrap Omni server (non-interactive, reinstall-safe, agent-first)')
     .option('--port <port>', `API port to use (default: ${DEFAULT_API_PORT})`)
@@ -394,5 +394,5 @@ export function createInstallCommand(): Command {
     .option('--systemd', 'Write systemd units instead of using pm2 (requires sudo)')
     .option('--force-cleanup', 'Allow pgserve startup to kill orphan postgres processes on the internal port')
     .option('--non-interactive', '[deprecated] silent no-op — install is always non-interactive');
-  return withSandboxInstall(command, runInstall);
+  return withSandboxInstall(command, runInstall, sandboxInstall);
 }

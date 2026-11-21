@@ -19,6 +19,13 @@ const PAIRING_EVENT = 'omni:pairing'
 const REMOTE = 'remote'
 const LOCAL = 'local'
 
+function sandboxRunText(sandbox, mac) {
+  if (sandbox?.atLogin === true) {
+    return mac ? t('It starts with your Mac, stays on it, and never touches another Omni.') : t('It starts with your computer, stays on it, and never touches another Omni.')
+  }
+  return t('It runs until this computer restarts.')
+}
+
 /**
  * An omni://connect link the person confirmed in the desktop app. One with a grant (the
  * owner texted "connect" and tapped the link their Omni sent) links at once. One without
@@ -363,7 +370,7 @@ export function ConnectOmni({ onPaired, embedded = false } = {}) {
     else if (terminal?.row === omni.id) body = terminalOn(omni.id)
     else {
       const action = view.action === 'update' ? h('div', null, primary(t('Update and connect'), () => openTerminal(omni.id, 'update', omni.id)), whatRuns('omni update --yes'))
-        : view.action === 'reinstall' ? h('div', null, primary(t('Update and connect'), () => openTerminal(omni.id, 'install')), whatRuns(`bun x --bun @automagik/omni@${omni.updateTo} install --sandbox --at-login`))
+        : view.action === 'reinstall' ? h('div', null, primary(t('Update and connect'), () => openTerminal(omni.id, 'install')), omni.installCommand ? whatRuns(omni.installCommand) : null)
           : view.action === 'use' ? primary(busy === omni.id ? t('Connecting…') : t('Use it'), () => run(omni.id, 'omni-discover-use', { id: omni.id }))
             : view.action === 'connect' ? primary(busy === omni.id ? t('Connecting…') : t('Connect'), () => run(omni.id, 'omni-discover-use', { id: omni.id }))
               : view.action === 'elsewhere' && !hasSandbox ? h('button', { type: 'button', className: 'oc-ghost', onClick: () => setOpen(LOCAL) }, mac ? t('Run Omni on this Mac') : t('Run Omni on this computer'))
@@ -403,7 +410,7 @@ export function ConnectOmni({ onPaired, embedded = false } = {}) {
       ? h(Linked, { text: linked.version ? t('Connected to Omni {version}', { version: linked.version }) : t('Connected to {origin}', { origin: linked.origin }) })
       : terminal?.row === LOCAL ? terminalOn(LOCAL)
         : h('div', null,
-          h('p', { className: 'ox-muted' }, mac ? t('It starts with your Mac, stays on it, and never touches another Omni.') : t('It starts with your computer, stays on it, and never touches another Omni.')),
+          h('p', { className: 'ox-muted' }, sandboxRunText(sandbox, mac)),
           h('div', { className: 'ox-row ox-act' }, primary(t('Set it up'), () => openTerminal(LOCAL, 'install'))),
           sandbox?.home ? h('details', { className: 'ox-more' }, h('summary', null, t('Where it lives')), t('{home}, with its own database, NATS and ports.', { home: sandbox.home })) : null)))
   }
