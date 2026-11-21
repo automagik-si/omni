@@ -394,7 +394,7 @@ async function resolveMediaPath(
 ): Promise<MediaResolution | MediaDownloadFailure | null> {
   // Wait briefly for message-persistence to create the DB row (race condition:
   // both media-processor and message-persistence subscribe to message.received)
-  const maxWaitMs = 5_000;
+  const maxWaitMs = 20_000;
   const pollMs = 250;
   const deadline = Date.now() + maxWaitMs;
 
