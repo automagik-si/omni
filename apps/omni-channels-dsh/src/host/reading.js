@@ -293,7 +293,7 @@ async function omni(rt, method, path, link) {
 export async function chatOf(rt, chatId, link = rt.omniLink?.()) {
   const reply = await omni(rt, 'GET', `/chats/${encodeURIComponent(chatId)}`, link)
   const parsed = Chat.safeParse(reply.json)
-  if (reply.status === 404) throw invalid(NO_CHAT)
+  if (reply.status === 404) throw Object.assign(invalid(NO_CHAT), { status: reply.status })
   if (!reply.ok || !parsed.success || (parsed.data.data.id !== undefined && parsed.data.data.id !== chatId)) {
     throw Object.assign(invalid(`omni answered ${reply.status} for that chat`), { status: reply.status })
   }
@@ -310,7 +310,10 @@ export async function readableRows(rt, rows, mayRead, link = rt.omniLink?.()) {
   const chats = new Map()
   const concurrency = 8
   for (let at = 0; at < chatIds.length; at += concurrency) {
-    const batch = await Promise.all(chatIds.slice(at, at + concurrency).map(id => chatOf(rt, id, link).catch(() => null)))
+    const batch = await Promise.all(chatIds.slice(at, at + concurrency).map(id => chatOf(rt, id, link).catch(error => {
+      if (error?.status === 404 || error?.status === 401 || error?.status === 403) return null
+      throw error
+    })))
     for (const chat of batch) if (chat !== null) chats.set(chat.id, chat)
   }
   if (!sameReadingLink(rt, link)) return []

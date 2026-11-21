@@ -1,6 +1,6 @@
 import { createElement as h } from 'react'
 import { omni } from '@automagik/bots-dsh/client'
-import { CommitmentsCard, ConversationsCard, HISTORY_CARD_CSS } from './history-cards.js'
+import { CommitmentsCard, ConversationsCard, HISTORY_CARD_CSS, isReadOnlyRefusal, readOnlyNote } from './history-cards.js'
 import { registerConnectStep } from './connect-step.js'
 import { registerSettings } from './omni-settings.js'
 import { WizardHost } from './wizard.js'
@@ -77,16 +77,16 @@ const toolCard = ({ tool, arg, content, done }) => h(OmniToolCard, { tool, arg, 
 
 const backfillId = '[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}'
 const proposed = new RegExp(`^Proposed a backfill \\(proposal (${backfillId})\\):`, 'i')
-const reviewed = new RegExp(`^Review backfill (${backfillId}), from [^\\n]+ to [^\\n]+:$`, 'im')
+const reviewed = new RegExp(`^Review backfill run (${backfillId}):(?:\\n|$)`)
 const listed = /^[0-9a-f]{16} \| (?:candidate|open|done|cancelled|dismissed)(?: \(verified\))? \| chat /u
 const historyCards = {
   propose_backfill: ({ roster, content }) => {
     const Card = omni.genui?.BackfillCard
     const id = proposed.exec(content)?.[1]
-    return Card && id ? h(Card, { roster, proposalId: id }) : null
+    return Card?.binds === true && id ? h(Card, { roster, proposalId: id }) : null
   },
   backfill_status: ({ roster, content }) => {
-    // The tool prints review sections from the newest run to the oldest.
+    // Only the host's leading marker binds a saved result to its newest reviewed run.
     const runId = reviewed.exec(content)?.[1]
     return runId ? h(ConversationsCard, { roster, runId }) : null
   },
@@ -104,7 +104,8 @@ function historyRenderer(render) {
     const viewer = globalThis.__AUTOMAGIK_VIEW__
     const owner = viewer === undefined || (viewer?.version === 1 && viewer.role === 'owner')
     const card = owner && !props.call?.isError ? render(props) : null
-    return card ?? h('p', { className: 'bt-event bt-genui-text', role: 'status' }, props.content)
+    return card ?? h('p', { className: 'bt-event bt-genui-text', role: 'status' },
+      isReadOnlyRefusal(props.content, props.roster?.readOnly) ? readOnlyNote() : props.content)
   }
 }
 
@@ -155,7 +156,7 @@ export function apply(ctx) {
   // replace the conversation in the center, and opening a Bot brings it back.
   ctx.effect(() => onShell(({ face, shadow, installCompiledStyles }) => [
     () => installCompiledStyles(CHANNELS_CSS + BOT_CHANNELS_CSS + OMNI_TREE_CSS + SUBSCRIPTIONS_CSS + AUTOMATIONS_CSS + OMNI_LIVE_CSS + OMNI_PEEK_CSS + OMNI_CONNECT_CSS + PERMISSIONS_CSS + OMNI_PHONE_CSS, 'channels'),
-    () => installCompiledStyles(HISTORY_CARD_CSS, 'omni-history-cards'),
+    ...(!omni.genui ? [() => installCompiledStyles(HISTORY_CARD_CSS, 'omni-history-cards')] : []),
     () => shadow('conversation.input.dock', { id: 'omni-consent', order: -80, inject: face }, ConsentDock),
     // A chat thread's Session is not a Bot's: it marks the page so the Bot controls stay hidden there.
     () => shadow('conversation.input.dock', { id: 'omni-thread', order: -200, inject: face }, ThreadDock),

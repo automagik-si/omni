@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { afterEach, test } from 'node:test'
 import { COMMITMENTS_FILE } from '../src/host/commitments.js'
 import { LINK_FILE } from '../src/host/omni-link.js'
-import { ANSWER_MASTER, answerState, boot, CHAT, ELSEWHERE, fakeOmni, GROUP, homeFor, INSTANCE, OMNI, OTHER_INSTANCE, readOnlyPresets, record as threadRecord, resetFetch, saved, teamState, until, use } from './thread-fixture.js'
+import { ANSWER_MASTER, answerState, boot, CHAT, CHATS, ELSEWHERE, fakeOmni, GROUP, homeFor, INSTANCE, OMNI, OTHER_INSTANCE, readOnlyPresets, record as threadRecord, resetFetch, saved, teamState, until, use } from './thread-fixture.js'
 
 afterEach(resetFetch)
 
@@ -62,8 +62,10 @@ const close = (run, id, fields = {}, session = 'm1') => use(run, 'close_commitme
 const list = (run, fields = {}, session = 'm1') => use(run, 'list_commitments', session, fields)
 const review = (run, id, decision) => run.http('review_commitment', { id, decision })
 const read = (run, fields = {}) => run.call('omni-commitments', fields).then(value => value.commitments)
-const displayFields = ({ origin, sourceMessageId, quotes, recordedBy, reviewedAt, closing, ...fields }) =>
-  closing ? { ...fields, closing: { at: closing.at } } : fields
+const displayFields = ({ origin, sourceMessageId, quotes, recordedBy, reviewedAt, closing, ...fields }) => ({
+  ...fields, chatName: CHATS[fields.chatId].name,
+  ...(closing && { closing: { at: closing.at } }),
+})
 function idOf(text) {
   assert.match(text, /^Commitment [0-9a-f]{16}: /)
   return text.split(' ')[1].slice(0, -1)
@@ -102,7 +104,16 @@ test('a record requires a verifiable canonical source and replays by normalized,
   assert.deepEqual(item.quotes, ['I will\t send the revised sketch', 'send the revised sketch', `${QUOTE}.`])
   const second = idOf(await record(run, { quote: OTHER_QUOTE }))
   assert.notEqual(second, id)
-  assert.equal((await read(run)).length, 2)
+  const displayName = 'Renamed chat'
+  let lookups = 0
+  env.controls.onRead = async route => {
+    if (route !== `/chats/${CHAT}`) return undefined
+    lookups++
+    return Response.json({ data: { ...CHATS[CHAT], name: displayName } })
+  }
+  assert.deepEqual((await read(run)).map(row => row.chatName), [displayName, displayName])
+  assert.equal(lookups, 1)
+  assert.equal(Object.hasOwn(env.file().items[id], 'chatName'), false)
 })
 
 test('a quote spanning two commitments is refused and an exact replay keeps its own id', async (t) => {
@@ -456,7 +467,7 @@ test('the read endpoint and conversation counts use current, readable chats, and
   assert.equal(conversations.summary.total, 2)
   const closedRow = (await read(run, { status: 'done' }))[0]
   assert.deepEqual(closedRow, {
-    id: closedId, chatId: CHAT, channelId: INSTANCE, text: PRIVATE, owner: 'user',
+    id: closedId, chatId: CHAT, chatName: CHATS[CHAT].name, channelId: INSTANCE, text: PRIVATE, owner: 'user',
     deadline: null,
     sourceAt: '2026-11-11T12:00:00.000Z', status: 'done', verified: false,
     createdAt: env.file().items[closedId].createdAt, updatedAt: env.file().items[closedId].updatedAt,
@@ -465,9 +476,38 @@ test('the read endpoint and conversation counts use current, readable chats, and
   assert.equal((await review(run, candidate, 'dismiss')).ok, true)
   assert.deepEqual(ids(await read(run)), [open, closedId])
   assert.deepEqual(ids(await read(run, { status: 'dismissed', verified: false })), [candidate])
+  assert.deepEqual((await list(run)).split('\n').map(line => line.split(' | ')[0]), [open, closedId])
+  assert.match(await list(run, { status: 'dismissed', verified: false }), new RegExp(`^${candidate} \\| dismissed \\| chat ${CHAT} \\| ${PRIVATE}$`))
   rmSync(join(env.home, LINK_FILE), { force: true })
   assert.deepEqual(await read(run), [])
   assert.equal(await list(run), 'No visible commitments match.')
+})
+
+test('history card endpoints fail on an Omni outage and drop missing or denied chats', async (t) => {
+  const backfill = { id: uuid(14), from: AT, to: AFTER, startedAt: 1, rows: [
+    { chatId: CHAT, channelId: INSTANCE, outcome: 'done', state: 'done', counts: { stored: 1 } },
+  ] }
+  const env = fake(t, teamState({ omniBackfillRuns: [backfill] }))
+  const run = await env.start()
+  await record(run)
+  let upstream
+  env.controls.onRead = async route => route === `/chats/${CHAT}` ? upstream() : undefined
+  for (const [endpoint, rows] of [['omni-conversations', 'chats'], ['omni-commitments', 'commitments']]) {
+    upstream = () => { throw new TypeError('fetch failed') }
+    assert.equal((await run.http(endpoint, {})).ok, false, `${endpoint} transport failure`)
+    upstream = () => new Response(null, { status: 503 })
+    assert.equal((await run.http(endpoint, {})).ok, false, `${endpoint} HTTP 503`)
+    for (const status of [404, 403]) {
+      upstream = () => new Response(null, { status })
+      const reply = await run.http(endpoint, {})
+      assert.equal(reply.ok, true, `${endpoint} HTTP ${status}`)
+      assert.deepEqual(reply.value[rows], [])
+    }
+    upstream = () => undefined
+    const recovered = await run.http(endpoint, {})
+    assert.equal(recovered.ok, true)
+    assert.equal(recovered.value[rows].length, 1)
+  }
 })
 
 test('two links that resolve the same chat and channel ids keep commitments separate', async (t) => {

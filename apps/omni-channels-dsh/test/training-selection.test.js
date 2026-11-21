@@ -4,7 +4,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, test } from 'node:test'
 import { LINK_FILE } from '../src/host/omni-link.js'
-import { boot, CHAT, ELSEWHERE, fakeOmni, GROUP, homeFor, INSTANCE, OMNI, readOnlyPresets, record, resetFetch, saved, teamState, until } from './thread-fixture.js'
+import { boot, CHAT, ELSEWHERE, fakeOmni, GROUP, homeFor, INSTANCE, OMNI, OTHER_INSTANCE, readOnlyPresets, record, resetFetch, saved, teamState, until } from './thread-fixture.js'
 
 afterEach(resetFetch)
 
@@ -203,6 +203,78 @@ test('a failed deselection reports the restored selection only while the owner r
   loseOwner = true
   const [closed] = await selection(run, [CHAT], false)
   assert.deepEqual(closed, { chatId: CHAT, selected: false, threadId: null, sendingMode: null, refusal: 'This chat needs a channel with the same explicit Bot owner.' })
+})
+
+test('a bound training batch rejects an old link and stops applying when the link changes between chats', async (t) => {
+  const omni = fakeOmni()
+  const ownership = owners()
+  ownership.channels[OTHER_INSTANCE] = 'm1'
+  const home = homeFor(t, omni, answering({}, { omniOwnership: ownership }))
+  const run = await start(t, home)
+  const linkPath = join(home, LINK_FILE)
+  const link = JSON.parse(readFileSync(linkPath, 'utf8'))
+  const nextLink = 'https://other.example.com'
+  const chats = [CHAT, ELSEWHERE]
+  const payload = { chats, selected: true, link: OMNI }
+  const refused = 'The Omni link changed while selecting this chat.'
+  const askedBefore = omni.asked.length
+  const stale = await run.http(action, { ...payload, link: nextLink })
+  assert.equal(stale.ok, false)
+  assert.equal(stale.error.message, refused)
+  assert.deepEqual(omni.asked.slice(askedBefore).filter(call => chats.some(id => call.endsWith(`/chats/${id}`))), [])
+  assert.equal(omni.children().length, 0)
+  assert.deepEqual(run.made, [])
+
+  const saveTransition = run.channels.saveOmniTransition
+  run.channels.saveOmniTransition = async (name, origin, channelId, fields, apply) => {
+    const value = await saveTransition(name, origin, channelId, fields, apply)
+    if (fields.chatId === CHAT) writeFileSync(linkPath, JSON.stringify({ ...link, url: nextLink }), { mode: 0o600 })
+    return value
+  }
+  const reply = await run.http(action, payload)
+  assert.equal(reply.ok, true)
+  const [first, second] = reply.value.results
+  assert.deepEqual(first, { chatId: CHAT, selected: true, threadId: first.threadId, sendingMode: 'training', refusal: null })
+  assert.deepEqual(second, { chatId: ELSEWHERE, selected: false, threadId: null, sendingMode: null, refusal: refused })
+  const threads = saved(home).omniThreads
+  assert.deepEqual(Object.keys(threads), [first.threadId])
+  assert.equal(threads[first.threadId].origin, OMNI)
+  assert.ok(!omni.asked.includes(`GET /chats/${ELSEWHERE}`))
+  assert.equal(omni.children().length, 1)
+})
+
+test('a training mint queued behind a relink refuses before writing to Omni', async (t) => {
+  const omni = fakeOmni()
+  const home = homeFor(t, omni, answering())
+  const run = await start(t, home)
+  const linkPath = join(home, LINK_FILE)
+  const link = { ...JSON.parse(readFileSync(linkPath, 'utf8')), url: 'https://other.example.com' }
+  const changing = Promise.withResolvers()
+  const canRelink = Promise.withResolvers()
+  const relink = run.channels.handOverThreadKeys(link, async () => {
+    changing.resolve()
+    await canRelink.promise
+    writeFileSync(linkPath, JSON.stringify(link), { mode: 0o600 })
+  })
+  await changing.promise
+  const mintReached = Promise.withResolvers()
+  const mint = run.channels.threadKeys.mint
+  run.channels.threadKeys.mint = (...args) => {
+    mintReached.resolve()
+    return mint(...args)
+  }
+  const pending = run.http(action, { chats: [CHAT], selected: true, link: OMNI })
+  await mintReached.promise
+  canRelink.resolve()
+  await relink
+
+  const reply = await pending
+  assert.equal(reply.ok, true)
+  assert.deepEqual(reply.value.results, [{
+    chatId: CHAT, selected: false, threadId: null, sendingMode: null, refusal: 'The Omni link changed while selecting this chat.',
+  }])
+  assert.ok(!omni.asked.includes('POST /keys/children'))
+  assert.deepEqual(run.made, [])
 })
 
 for (const first of ['inbound', 'selection']) {

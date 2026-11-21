@@ -388,7 +388,7 @@ export function install(rt) {
   rt.threadKeys = {
     // A thread's key, made with the link key. On a failure nothing is written and the reason
     // comes back: the thread then has no key, and nothing runs on the link key for it.
-    mint: async (threadId, input) => {
+    mint: async (threadId, input, { check } = {}) => {
       const chatIds = Array.isArray(input) ? input : [input]
       if (typeof threadId !== 'string' || threadId === '') return { ok: false, reason: 'Unknown thread.' }
       if (chatIds.length === 0 || !chatIds.every(id => typeof id === 'string' && ID.test(id)) || new Set(chatIds).size !== chatIds.length) return { ok: false, reason: 'Unknown chat.' }
@@ -399,6 +399,11 @@ export function install(rt) {
         return { ok: false, reason: KEEP_FAILED }
       }
       return serial(async () => {
+        // A relink can hold the key lock while a training selection waits to mint.
+        try { check?.() } catch (error) {
+          if (error?.code !== 'bot/refused') throw error
+          return { ok: false, reason: error.message }
+        }
         const link = rt.omniLink?.() ?? null
         if (link === null) return { ok: false, reason: NOT_LINKED }
         const file = read()

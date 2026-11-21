@@ -359,6 +359,7 @@ test('review status uses canonical ids for duplicate labels and is read-only for
   const home = homeWith(teamState({ omniBackfillRuns: [{ id: runId, from: FROM, to: TO, startedAt: 1, rows }] }))
   const dsh = await start(t, home)
   const status = await dsh.run('backfill_status', {})
+  assert.equal(status.split('\n')[0], `Review backfill run ${runId}:`)
   assert.ok(status.includes(`Review backfill ${runId}, from ${FROM} to ${TO}:`))
   assert.ok(status.includes(`- Same label (chat ${ANA}): done; Omni holds 91 messages in this window.`))
   assert.ok(status.includes(`- Same label (chat ${BRUNO}): done; Omni holds 92 messages in this window.`))
@@ -408,6 +409,7 @@ test('omni-conversations returns the newest run and counts only chats readable o
   const commitments = { candidate: 0, open: 0 }
   const newest = await detail({})
   assert.deepEqual(newest.run, run)
+  assert.equal(newest.link, OMNI)
   assert.equal(newest.chats.length, 3)
   assert.deepEqual(newest.chats[0], {
     id: ANA, name: 'Ana', channelId: INSTANCE, state: 'done', outcome: 'done', coverage: activity,
@@ -422,7 +424,7 @@ test('omni-conversations returns the newest run and counts only chats readable o
   assert.equal(newest.chats[2].summary, null)
   assert.deepEqual(newest.summary, { total: 3, running: 0, done: 2, phoneDidNotAnswer: 0, stopped: 0, failed: 0, notStarted: 1 })
   assert.equal((await detail({ runId: oldId })).summary.failed, 1)
-  assert.deepEqual(await detail({ runId: 'pruned' }), { run: null, chats: [] })
+  assert.deepEqual(await detail({ runId: 'pruned' }), { run: null, chats: [], link: OMNI })
   await assert.rejects(detail({ extra: true }))
   const status = await dsh.run('backfill_status', {})
   assert.ok(status.includes(`(job ${jobId}): done`))
@@ -436,6 +438,7 @@ test('omni-conversations returns the newest run and counts only chats readable o
   assert.equal(linkRevision(), originalRevision)
   writeFileSync(linkPath, JSON.stringify({ ...link, url: secondOrigin }), { mode: 0o600 })
   const otherLink = await detail({})
+  assert.equal(otherLink.link, secondOrigin)
   assert.equal(otherLink.chats[0].id, ANA)
   assert.equal(otherLink.chats[0].summary, null)
   assert.match(await dsh.run('save_reading_note', { chat: ANA, note: 'A reading note', readThrough: TO, summary: 'Second link summary' }), /^Reading note saved/)
@@ -446,6 +449,7 @@ test('omni-conversations returns the newest run and counts only chats readable o
   rmSync(join(home, LINK_FILE))
   assert.equal(linkRevision(), null)
   const disconnected = await detail({})
+  assert.equal(disconnected.link, null)
   assert.deepEqual(disconnected.chats, [])
   assert.equal(disconnected.summary.total, 0)
   assert.match(await dsh.run('backfill_status', {}), /^No backfill here yet\./)

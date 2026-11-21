@@ -8976,7 +8976,7 @@ module.exports = __toCommonJS(index_exports);
 
 // src/client/core.js
 var import_client = require("@automagik/bots-dsh/client");
-var { call, t, hostText, dateLocale, addStrings, onShell, toolCards, nav, badges, botChildren, botChannels, headerButtons, botSettings, chatSuggestions, face } = import_client.omni;
+var { call, t, hostText, dateLocale, addStrings, onShell, toolCards, nav, badges, botChildren, botChannels, headerButtons, botSettings, chatSuggestions, face, genui } = import_client.omni;
 var { OmniMark, BotMark, MAIN_LOOK, CHARACTERS, relativeShort, createSource } = import_client.omni.ui;
 var icons = import_client.omni.ui.icons;
 
@@ -9037,6 +9037,7 @@ var trainingFields = {
   sendingMode: nullable(choice("training", "sending"))
 };
 var readRunConversations = readObject({
+  link: nullableText,
   run: readObject({ id: readText, from: day, to: day, startedAt: checked(Number.isFinite) }),
   chats: readArray(readObject({
     id: guid,
@@ -9058,7 +9059,8 @@ var readRunConversations = readObject({
 function readConversations(value) {
   if (isObject(value) && value.run === null) {
     const { chats } = value;
-    return Array.isArray(chats) && chats.length === 0 ? { run: null, chats: [] } : invalid;
+    const link = nullableText(value.link);
+    return link !== invalid && Array.isArray(chats) && chats.length === 0 ? { run: null, chats: [], link } : invalid;
   }
   return readRunConversations(value);
 }
@@ -9069,6 +9071,7 @@ var readCommitments = readObject({
   commitments: readArray(readObject({
     ...decisionFields,
     chatId: guid,
+    chatName: optional(readText),
     channelId: guid,
     text: readText,
     owner: choice("user", "counterpart", "other"),
@@ -9129,7 +9132,27 @@ function useHistoryRead(endpoint, readReply, request, roster, query) {
 function action(label, onClick, disabled, className = "bt-genui-cancel") {
   return (0, import_react.createElement)("button", { type: "button", className, onClick, disabled }, label);
 }
-var utcDay = (value) => new Date(value).toISOString().slice(0, 10);
+var dateOptions = { day: "numeric", month: "short", year: "numeric" };
+var shortDate = genui?.model?.shortDate ?? ((value) => {
+  const instant = Date.parse(value);
+  return Number.isFinite(instant) ? new Intl.DateTimeFormat(dateLocale(), dateOptions).format(instant) : "";
+});
+var backfillRange = genui?.model?.backfillRange ?? ((from, to2) => {
+  const format = new Intl.DateTimeFormat(dateLocale(), { ...dateOptions, timeZone: "UTC" });
+  const start = format.format(Date.parse(from));
+  const end = format.format(Date.parse(to2));
+  return start === end ? start : `${start} – ${end}`;
+});
+var readOnlyNote = () => t("This window only reads the team; open the team where it runs to act.");
+function isReadOnlyRefusal(message, readOnly) {
+  if (typeof message !== "string" || !message) return false;
+  return message === readOnly || /^The Bot team in [\s\S]+ is open in another dsh \(/u.test(message) || /^The Bot team file [\s\S]+ could not be read \(/u.test(message) || message === "The Bot team is read-only while the update is being checked.";
+}
+function actionError(failure, readOnly, fallback) {
+  const { code, message } = failure ?? {};
+  if (code === "bot/read-only" || isReadOnlyRefusal(message, readOnly)) return readOnlyNote();
+  return typeof code === "string" && code.startsWith("bot/") && message ? hostText(message) : fallback;
+}
 var errorLine = (text) => text ? (0, import_react.createElement)("span", { className: "bt-genui-error", role: "status" }, text) : null;
 var muted = (text) => (0, import_react.createElement)("span", { className: "bt-genui-muted" }, text);
 function HistoryCard({ title, read, readOnly, loadError, children, foot, busy = false }) {
@@ -9148,7 +9171,7 @@ function HistoryCard({ title, read, readOnly, loadError, children, foot, busy = 
       read.loading ? muted(t("Loading…")) : null,
       read.failed ? errorLine(loadError) : null,
       read.failed ? action(t("Refresh"), read.reload, read.loading, "bt-genui-retry") : null,
-      readOnly ? muted(typeof readOnly === "string" ? hostText(readOnly) : t("Make changes from the host that owns this team.")) : null,
+      readOnly ? muted(readOnlyNote()) : null,
       foot
     )
   );
@@ -9165,14 +9188,16 @@ var conversationStates = /* @__PURE__ */ new Map([
   ["failed", ["failed", () => t("Failed")]]
 ]);
 function coverageSpan({ oldest, newest }, locale) {
-  const dates = [oldest, newest].map(Date.parse).filter(Number.isFinite).map((value) => new Date(value));
-  if (dates.length === 0) return "";
-  const options = { month: "short" };
-  if (dates.length === 1) options.day = "numeric";
-  const sameYear = dates.length === 2 && dates[0].getFullYear() === dates[1].getFullYear();
-  if (!sameYear) options.year = "numeric";
-  const format = new Intl.DateTimeFormat(locale, options);
-  return dates.map((date) => format.format(date)).join(sameYear ? "–" : " – ");
+  const start = new Date(Date.parse(oldest));
+  const end = new Date(Date.parse(newest));
+  if (Number.isNaN(start.getTime())) return shortDate(newest);
+  if (Number.isNaN(end.getTime())) return shortDate(oldest);
+  const sameYear = start.getFullYear() === end.getFullYear();
+  const monthAndYear = new Intl.DateTimeFormat(locale, { month: "short", year: "numeric" });
+  if (!sameYear) return `${monthAndYear.format(start)} – ${monthAndYear.format(end)}`;
+  if (start.getMonth() === end.getMonth()) return monthAndYear.format(start);
+  const month = new Intl.DateTimeFormat(locale, { month: "short" });
+  return `${month.format(start)}–${month.format(end)}`;
 }
 function coverageText(coverage, locale) {
   const { count: count2, deletedCount, mediaMissing } = coverage;
@@ -9183,8 +9208,10 @@ function coverageText(coverage, locale) {
     mediaMissing > 0 ? t("{count} missing media", { count: mediaMissing.toLocaleString(locale) }) : null
   ].filter(Boolean).join(" · ");
 }
+var CoverageRow = genui?.CoverageRow ?? (({ coverage }) => (0, import_react.createElement)("div", { className: "bt-genui-what" }, coverageText(coverage, dateLocale())));
 function ConversationRow({ chat, checked: checked2, disabled, change, refusal }) {
   const locale = dateLocale();
+  const lastActivity = shortDate(chat.lastActivity);
   const [state, word] = conversationStates.get(chat.outcome) ?? conversationStates.get(chat.state) ?? [];
   const checkbox = (0, import_react.createElement)(
     "label",
@@ -9222,33 +9249,38 @@ function ConversationRow({ chat, checked: checked2, disabled, change, refusal })
       )
     ),
     chat.summary ? (0, import_react.createElement)("p", { className: "bt-genui-text" }, chat.summary) : null,
-    chat.coverage ? (0, import_react.createElement)("div", { className: "bt-genui-what" }, coverageText(chat.coverage, locale)) : null,
+    chat.coverage ? (0, import_react.createElement)(CoverageRow, { coverage: chat.coverage }) : null,
     (0, import_react.createElement)(
       "div",
       { className: "bt-genui-line bt-genui-sub" },
+      lastActivity ? muted(t("Last activity {date}", { date: lastActivity })) : null,
       chat.inWindow === null ? null : muted(t("{count} messages in this window", { count: chat.inWindow })),
       chat.training.sendingMode === null ? null : muted(chat.training.sendingMode === "training" ? t("Training") : t("Sending")),
       chat.commitments.candidate > 0 || chat.commitments.open > 0 ? muted(t("{candidate} candidate and {open} open commitments", chat.commitments)) : null
     ),
-    errorLine(refusal ? hostText(refusal) : null)
+    errorLine(refusal)
   );
 }
 var TRAINING_BATCH = 50;
-var noSelection = { draft: /* @__PURE__ */ new Map(), refusals: /* @__PURE__ */ new Map(), failed: false, busy: false };
-async function applyTraining(changes, read, request, results, refusals) {
+var noSelection = { draft: /* @__PURE__ */ new Map(), refusals: /* @__PURE__ */ new Map(), error: null, busy: false };
+async function applyTraining(changes, link, read, request, results, refusals) {
   for (const selected of [true, false]) {
     const ids = changes.filter((chat) => chat.selected === selected).map((chat) => chat.id);
     for (let start = 0; start < ids.length; start += TRAINING_BATCH) {
       if (!read.canWrite()) return true;
       const chats = ids.slice(start, start + TRAINING_BATCH);
-      const reply = readTrainingReply(await request("select_conversation_training", { chats, selected }));
+      const reply = readTrainingReply(await request("select_conversation_training", { chats, selected, link }));
       if (reply === invalid) return false;
       const byChat = new Map(reply.results.map((result) => [result.chatId, result]));
       for (const chatId of chats) {
         const result = byChat.get(chatId);
-        if (!result) refusals.set(chatId, t("No training decision came back for this chat."));
-        else if (result.refusal !== null) refusals.set(chatId, result.refusal);
-        else results.set(chatId, { selected: result.selected, threadId: result.threadId, sendingMode: result.sendingMode });
+        if (!result) {
+          refusals.set(chatId, t("No training decision came back for this chat."));
+          continue;
+        }
+        const { selected: selected2, threadId, sendingMode, refusal } = result;
+        results.set(chatId, { selected: selected2, threadId, sendingMode });
+        if (refusal !== null) refusals.set(chatId, refusal);
       }
     }
   }
@@ -9262,7 +9294,8 @@ function ConversationsCard({ roster, runId, request = call }) {
   const chats = read.data?.chats ?? [];
   const checked2 = (chat) => shown.draft.get(chat.id) ?? chat.training.selected;
   const changes = chats.flatMap((chat) => checked2(chat) === chat.training.selected ? [] : [{ id: chat.id, selected: checked2(chat) }]);
-  const blocked = Boolean(roster?.readOnly) || shown.busy || read.loading;
+  const link = read.data?.link;
+  const blocked = Boolean(roster?.readOnly) || shown.busy || read.loading || !link;
   const edit = (change) => setSelection((previous) => {
     const before = previous.scope === read.scope ? previous : noSelection;
     const draft = new Map(before.draft);
@@ -9272,19 +9305,20 @@ function ConversationsCard({ roster, runId, request = call }) {
   const apply2 = async () => {
     if (blocked || !read.canWrite() || pending.current === read.scope || changes.length === 0) return;
     pending.current = read.scope;
-    setSelection({ ...shown, scope: read.scope, busy: true, failed: false, refusals: /* @__PURE__ */ new Map() });
+    setSelection({ ...shown, scope: read.scope, busy: true, error: null, refusals: /* @__PURE__ */ new Map() });
     const results = /* @__PURE__ */ new Map();
     const refusals = /* @__PURE__ */ new Map();
-    let failed = false;
+    let error = null;
+    const applyError = t("Could not finish applying the training selection.");
     try {
-      failed = !await applyTraining(changes, read, request, results, refusals);
-    } catch {
-      failed = true;
+      if (!await applyTraining(changes, link, read, request, results, refusals)) error = applyError;
+    } catch (failure) {
+      error = actionError(failure, roster?.readOnly, applyError);
     } finally {
       if (pending.current === read.scope) pending.current = null;
       if (read.current()) {
         read.update((data) => ({ ...data, chats: data.chats.map((chat) => results.has(chat.id) ? { ...chat, training: results.get(chat.id) } : chat) }));
-        setSelection({ ...noSelection, scope: read.scope, refusals, failed });
+        setSelection({ ...noSelection, scope: read.scope, refusals, error });
         read.reload();
       }
     }
@@ -9298,8 +9332,13 @@ function ConversationsCard({ roster, runId, request = call }) {
     (0, import_react.createElement)("span", { key: "apply" }, action(t("Apply"), apply2, blocked || changes.length === 0, "bt-genui-start")),
     (0, import_react.createElement)("span", { key: "select" }, action(t("Select all"), () => setAll(true), blocked || chats.every(checked2))),
     (0, import_react.createElement)("span", { key: "clear" }, action(t("Clear"), () => setAll(false), blocked || !chats.some(checked2))),
-    (0, import_react.createElement)("span", { key: "error" }, errorLine(shown.failed ? t("Could not finish applying the training selection.") : null))
+    (0, import_react.createElement)("span", { key: "error" }, errorLine(shown.error))
   ];
+  const refusalOf = (id) => {
+    const message = shown.refusals.get(id);
+    if (!message) return null;
+    return isReadOnlyRefusal(message, roster?.readOnly) ? readOnlyNote() : hostText(message);
+  };
   return (0, import_react.createElement)(
     HistoryCard,
     {
@@ -9314,7 +9353,7 @@ function ConversationsCard({ roster, runId, request = call }) {
     run ? (0, import_react.createElement)(
       "div",
       { className: "bt-genui-run-head" },
-      (0, import_react.createElement)("span", { className: "bt-genui-run-range" }, `${utcDay(run.from)} – ${utcDay(run.to)}`),
+      (0, import_react.createElement)("span", { className: "bt-genui-run-range" }, backfillRange(run.from, run.to)),
       muted(t("{count} chats", { count: summary.total })),
       summary.notStarted ? muted(t("{count} not started", { count: summary.notStarted })) : null
     ) : null,
@@ -9324,7 +9363,7 @@ function ConversationsCard({ roster, runId, request = call }) {
       chat,
       checked: checked2(chat),
       disabled: blocked,
-      refusal: shown.refusals.get(chat.id),
+      refusal: refusalOf(chat.id),
       change: (selected) => edit((draft) => draft.set(chat.id, selected))
     }))) : null
   );
@@ -9360,10 +9399,11 @@ function CommitmentRow({ item, busy, readOnly, error, decide }) {
       (0, import_react.createElement)(
         "div",
         { className: "bt-genui-line bt-genui-sub" },
+        item.chatName ? (0, import_react.createElement)("span", null, t("Chat: {name}", { name: item.chatName })) : null,
         (0, import_react.createElement)("span", null, t("Owner: {name}", { name: item.ownerName ?? commitmentOwner[item.owner]() })),
         item.counterpart ? (0, import_react.createElement)("span", null, t("Counterpart: {name}", { name: item.counterpart })) : null,
-        item.deadline ? (0, import_react.createElement)("span", null, t("Due {date}", { date: utcDay(item.deadline) })) : null,
-        (0, import_react.createElement)("span", null, t("Source on {date}", { date: utcDay(item.sourceAt) }))
+        item.deadline ? (0, import_react.createElement)("span", null, t("Due {date}", { date: shortDate(item.deadline) })) : null,
+        (0, import_react.createElement)("span", null, t("Source on {date}", { date: shortDate(item.sourceAt) }))
       ),
       item.nextAction ? (0, import_react.createElement)("p", { className: "bt-genui-note" }, t("Next action: {action}", { action: item.nextAction })) : null,
       (0, import_react.createElement)(
@@ -9405,7 +9445,7 @@ function CommitmentsCard({ roster, chat, status, verified, request = call }) {
         commitments: data.commitments.map((item) => item.id === id ? { ...item, ...result } : item).filter((item) => matches(item, filters))
       }));
     } catch (failure) {
-      error = failure?.code?.startsWith("bot/") && failure.message ? hostText(failure.message) : saveError();
+      error = actionError(failure, roster?.readOnly, saveError());
     } finally {
       ids.delete(id);
       if (read.current()) {
@@ -18868,7 +18908,7 @@ var PERMISSIONS_CSS = `
 // src/client/strings.js
 var STRINGS = {
   // History review cards (history-cards.js).
-  "Make changes from the host that owns this team.": "请从持有此团队的主机进行更改。",
+  "This window only reads the team; open the team where it runs to act.": "此窗口只能查看团队。请在团队运行的位置打开它以执行操作。",
   "Waiting": "等待中",
   "Reading": "阅读中",
   "Fetching": "获取中",
@@ -18878,6 +18918,7 @@ var STRINGS = {
   "{count} deleted": "已删除 {count} 条",
   "{count} missing media": "缺少 {count} 个媒体文件",
   "Select {chat} for Answer Mode training": "选择「{chat}」进行应答模式训练",
+  "Last activity {date}": "最近活动：{date}",
   "{count} messages in this window": "此时间范围内有 {count} 条消息",
   "Training": "训练中",
   "Sending": "可直接发送",
@@ -18894,6 +18935,7 @@ var STRINGS = {
   "Candidate": "待确认",
   "Open commitment": "未完成",
   "Counterpart": "对方",
+  "Chat: {name}": "聊天：{name}",
   "Owner: {name}": "负责人：{name}",
   "Counterpart: {name}": "对方：{name}",
   "Due {date}": "{date} 到期",
@@ -19778,13 +19820,13 @@ var callCard = ({ arg, content, done }) => (0, import_react22.createElement)(Omn
 var toolCard = ({ tool, arg, content, done }) => (0, import_react22.createElement)(OmniToolCard, { tool, arg, content, done });
 var backfillId = "[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}";
 var proposed = new RegExp(`^Proposed a backfill \\(proposal (${backfillId})\\):`, "i");
-var reviewed = new RegExp(`^Review backfill (${backfillId}), from [^\\n]+ to [^\\n]+:$`, "im");
+var reviewed = new RegExp(`^Review backfill run (${backfillId}):(?:\\n|$)`);
 var listed = /^[0-9a-f]{16} \| (?:candidate|open|done|cancelled|dismissed)(?: \(verified\))? \| chat /u;
 var historyCards = {
   propose_backfill: ({ roster, content }) => {
     const Card = import_client2.omni.genui?.BackfillCard;
     const id = proposed.exec(content)?.[1];
-    return Card && id ? (0, import_react22.createElement)(Card, { roster, proposalId: id }) : null;
+    return Card?.binds === true && id ? (0, import_react22.createElement)(Card, { roster, proposalId: id }) : null;
   },
   backfill_status: ({ roster, content }) => {
     const runId = reviewed.exec(content)?.[1];
@@ -19801,7 +19843,11 @@ function historyRenderer(render) {
     const viewer = globalThis.__AUTOMAGIK_VIEW__;
     const owner = viewer === void 0 || viewer?.version === 1 && viewer.role === "owner";
     const card = owner && !props.call?.isError ? render(props) : null;
-    return card ?? (0, import_react22.createElement)("p", { className: "bt-event bt-genui-text", role: "status" }, props.content);
+    return card ?? (0, import_react22.createElement)(
+      "p",
+      { className: "bt-event bt-genui-text", role: "status" },
+      isReadOnlyRefusal(props.content, props.roster?.readOnly) ? readOnlyNote() : props.content
+    );
   };
 }
 function apply(ctx) {
@@ -19836,7 +19882,7 @@ function apply(ctx) {
   ctx.effect(() => nav.register({ id: "automations", label: () => t("Automations"), icon: ClockIcon3, run: (actions) => actions.selectPanel(AUTOMATIONS_PANEL) }), "ds-bot: automations nav");
   ctx.effect(() => onShell(({ face: face2, shadow, installCompiledStyles }) => [
     () => installCompiledStyles(CHANNELS_CSS + BOT_CHANNELS_CSS + OMNI_TREE_CSS + SUBSCRIPTIONS_CSS + AUTOMATIONS_CSS + OMNI_LIVE_CSS + OMNI_PEEK_CSS + OMNI_CONNECT_CSS + PERMISSIONS_CSS + OMNI_PHONE_CSS, "channels"),
-    () => installCompiledStyles(HISTORY_CARD_CSS, "omni-history-cards"),
+    ...!import_client2.omni.genui ? [() => installCompiledStyles(HISTORY_CARD_CSS, "omni-history-cards")] : [],
     () => shadow("conversation.input.dock", { id: "omni-consent", order: -80, inject: face2 }, ConsentDock),
     // A chat thread's Session is not a Bot's: it marks the page so the Bot controls stay hidden there.
     () => shadow("conversation.input.dock", { id: "omni-thread", order: -200, inject: face2 }, ThreadDock),

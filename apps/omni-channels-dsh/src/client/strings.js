@@ -3,7 +3,7 @@
 // text. Words the team shows too (Channels, connected, Plugins…) are in its own copy.
 export const STRINGS = {
   // History review cards (history-cards.js).
-  'Make changes from the host that owns this team.': '请从持有此团队的主机进行更改。',
+  'This window only reads the team; open the team where it runs to act.': '此窗口只能查看团队。请在团队运行的位置打开它以执行操作。',
   'Waiting': '等待中',
   'Reading': '阅读中',
   'Fetching': '获取中',
@@ -13,6 +13,7 @@ export const STRINGS = {
   '{count} deleted': '已删除 {count} 条',
   '{count} missing media': '缺少 {count} 个媒体文件',
   'Select {chat} for Answer Mode training': '选择「{chat}」进行应答模式训练',
+  'Last activity {date}': '最近活动：{date}',
   '{count} messages in this window': '此时间范围内有 {count} 条消息',
   'Training': '训练中',
   'Sending': '可直接发送',
@@ -29,6 +30,7 @@ export const STRINGS = {
   'Candidate': '待确认',
   'Open commitment': '未完成',
   'Counterpart': '对方',
+  'Chat: {name}': '聊天：{name}',
   'Owner: {name}': '负责人：{name}',
   'Counterpart: {name}': '对方：{name}',
   'Due {date}': '{date} 到期',

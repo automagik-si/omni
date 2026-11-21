@@ -1,5 +1,5 @@
 import { createElement as h, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { call, dateLocale, hostText, t } from './core.js'
+import { call, dateLocale, genui, hostText, t } from './core.js'
 
 const invalid = Symbol('invalid history reply')
 const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -54,6 +54,7 @@ const trainingFields = {
   selected: bool, threadId: nullableText, sendingMode: nullable(choice('training', 'sending')),
 }
 const readRunConversations = readObject({
+  link: nullableText,
   run: readObject({ id: readText, from: day, to: day, startedAt: checked(Number.isFinite) }),
   chats: readArray(readObject({
     id: guid, name: readText, channelId: readText, state: readText, outcome: nullableText,
@@ -65,7 +66,8 @@ const readRunConversations = readObject({
 function readConversations(value) {
   if (isObject(value) && value.run === null) {
     const { chats } = value
-    return Array.isArray(chats) && chats.length === 0 ? { run: null, chats: [] } : invalid
+    const link = nullableText(value.link)
+    return link !== invalid && Array.isArray(chats) && chats.length === 0 ? { run: null, chats: [], link } : invalid
   }
   return readRunConversations(value)
 }
@@ -75,7 +77,7 @@ const readDecisionReply = readObject(decisionFields)
 const readCommitments = readObject({
   commitments: readArray(readObject({
     ...decisionFields,
-    chatId: guid, channelId: guid, text: readText, owner: choice('user', 'counterpart', 'other'),
+    chatId: guid, chatName: optional(readText), channelId: guid, text: readText, owner: choice('user', 'counterpart', 'other'),
     ownerName: optional(readText), counterpart: optional(readText), deadline: nullable(day),
     nextAction: optional(readText), sourceAt: day, createdAt: day, updatedAt: day,
     closing: optional(readObject({ at: day })),
@@ -126,7 +128,34 @@ function action(label, onClick, disabled, className = 'bt-genui-cancel') {
   return h('button', { type: 'button', className, onClick, disabled }, label)
 }
 
-const utcDay = value => new Date(value).toISOString().slice(0, 10)
+const dateOptions = { day: 'numeric', month: 'short', year: 'numeric' }
+const shortDate = genui?.model?.shortDate ?? (value => {
+  const instant = Date.parse(value)
+  return Number.isFinite(instant) ? new Intl.DateTimeFormat(dateLocale(), dateOptions).format(instant) : ''
+})
+const backfillRange = genui?.model?.backfillRange ?? ((from, to) => {
+  const format = new Intl.DateTimeFormat(dateLocale(), { ...dateOptions, timeZone: 'UTC' })
+  const start = format.format(Date.parse(from))
+  const end = format.format(Date.parse(to))
+  return start === end ? start : `${start} – ${end}`
+})
+
+export const readOnlyNote = () => t('This window only reads the team; open the team where it runs to act.')
+
+export function isReadOnlyRefusal(message, readOnly) {
+  if (typeof message !== 'string' || !message) return false
+  // Older hosts also return the team-lock or unreadable-file reason as plain text.
+  return message === readOnly || /^The Bot team in [\s\S]+ is open in another dsh \(/u.test(message)
+    || /^The Bot team file [\s\S]+ could not be read \(/u.test(message)
+    || message === 'The Bot team is read-only while the update is being checked.'
+}
+
+function actionError(failure, readOnly, fallback) {
+  const { code, message } = failure ?? {}
+  if (code === 'bot/read-only' || isReadOnlyRefusal(message, readOnly)) return readOnlyNote()
+  return typeof code === 'string' && code.startsWith('bot/') && message ? hostText(message) : fallback
+}
+
 const errorLine = text => text ? h('span', { className: 'bt-genui-error', role: 'status' }, text) : null
 const muted = text => h('span', { className: 'bt-genui-muted' }, text)
 
@@ -139,8 +168,7 @@ function HistoryCard({ title, read, readOnly, loadError, children, foot, busy = 
       read.loading ? muted(t('Loading…')) : null,
       read.failed ? errorLine(loadError) : null,
       read.failed ? action(t('Refresh'), read.reload, read.loading, 'bt-genui-retry') : null,
-      readOnly ? muted(typeof readOnly === 'string'
-        ? hostText(readOnly) : t('Make changes from the host that owns this team.')) : null,
+      readOnly ? muted(readOnlyNote()) : null,
       foot))
 }
 
@@ -157,14 +185,16 @@ const conversationStates = new Map([
 ])
 
 function coverageSpan({ oldest, newest }, locale) {
-  const dates = [oldest, newest].map(Date.parse).filter(Number.isFinite).map(value => new Date(value))
-  if (dates.length === 0) return ''
-  const options = { month: 'short' }
-  if (dates.length === 1) options.day = 'numeric'
-  const sameYear = dates.length === 2 && dates[0].getFullYear() === dates[1].getFullYear()
-  if (!sameYear) options.year = 'numeric'
-  const format = new Intl.DateTimeFormat(locale, options)
-  return dates.map(date => format.format(date)).join(sameYear ? '–' : ' – ')
+  const start = new Date(Date.parse(oldest))
+  const end = new Date(Date.parse(newest))
+  if (Number.isNaN(start.getTime())) return shortDate(newest)
+  if (Number.isNaN(end.getTime())) return shortDate(oldest)
+  const sameYear = start.getFullYear() === end.getFullYear()
+  const monthAndYear = new Intl.DateTimeFormat(locale, { month: 'short', year: 'numeric' })
+  if (!sameYear) return `${monthAndYear.format(start)} – ${monthAndYear.format(end)}`
+  if (start.getMonth() === end.getMonth()) return monthAndYear.format(start)
+  const month = new Intl.DateTimeFormat(locale, { month: 'short' })
+  return `${month.format(start)}–${month.format(end)}`
 }
 
 function coverageText(coverage, locale) {
@@ -177,8 +207,12 @@ function coverageText(coverage, locale) {
   ].filter(Boolean).join(' · ')
 }
 
+const CoverageRow = genui?.CoverageRow ?? (({ coverage }) =>
+  h('div', { className: 'bt-genui-what' }, coverageText(coverage, dateLocale())))
+
 function ConversationRow({ chat, checked, disabled, change, refusal }) {
   const locale = dateLocale()
+  const lastActivity = shortDate(chat.lastActivity)
   const [state, word] = conversationStates.get(chat.outcome) ?? conversationStates.get(chat.state) ?? []
   const checkbox = h('label', { className: 'bt-genui-pick-label' },
     h('input', { type: 'checkbox', checked, disabled, onChange: event => change(event.target.checked),
@@ -194,32 +228,37 @@ function ConversationRow({ chat, checked, disabled, change, refusal }) {
             h('span', { className: 'bt-genui-num' }, t('{count} stored', { count: chat.stored.toLocaleString(locale) })))),
         h('div', { className: 'bt-genui-action' }, checkbox))),
     chat.summary ? h('p', { className: 'bt-genui-text' }, chat.summary) : null,
-    chat.coverage ? h('div', { className: 'bt-genui-what' }, coverageText(chat.coverage, locale)) : null,
+    chat.coverage ? h(CoverageRow, { coverage: chat.coverage }) : null,
     h('div', { className: 'bt-genui-line bt-genui-sub' },
+      lastActivity ? muted(t('Last activity {date}', { date: lastActivity })) : null,
       chat.inWindow === null ? null : muted(t('{count} messages in this window', { count: chat.inWindow })),
       chat.training.sendingMode === null ? null : muted(chat.training.sendingMode === 'training' ? t('Training') : t('Sending')),
       chat.commitments.candidate > 0 || chat.commitments.open > 0
         ? muted(t('{candidate} candidate and {open} open commitments', chat.commitments)) : null),
-    errorLine(refusal ? hostText(refusal) : null))
+    errorLine(refusal))
 }
 
 const TRAINING_BATCH = 50
-const noSelection = { draft: new Map(), refusals: new Map(), failed: false, busy: false }
+const noSelection = { draft: new Map(), refusals: new Map(), error: null, busy: false }
 
-async function applyTraining(changes, read, request, results, refusals) {
+async function applyTraining(changes, link, read, request, results, refusals) {
   for (const selected of [true, false]) {
     const ids = changes.filter(chat => chat.selected === selected).map(chat => chat.id)
     for (let start = 0; start < ids.length; start += TRAINING_BATCH) {
       if (!read.canWrite()) return true
       const chats = ids.slice(start, start + TRAINING_BATCH)
-      const reply = readTrainingReply(await request('select_conversation_training', { chats, selected }))
+      const reply = readTrainingReply(await request('select_conversation_training', { chats, selected, link }))
       if (reply === invalid) return false
       const byChat = new Map(reply.results.map(result => [result.chatId, result]))
       for (const chatId of chats) {
         const result = byChat.get(chatId)
-        if (!result) refusals.set(chatId, t('No training decision came back for this chat.'))
-        else if (result.refusal !== null) refusals.set(chatId, result.refusal)
-        else results.set(chatId, { selected: result.selected, threadId: result.threadId, sendingMode: result.sendingMode })
+        if (!result) {
+          refusals.set(chatId, t('No training decision came back for this chat.'))
+          continue
+        }
+        const { selected, threadId, sendingMode, refusal } = result
+        results.set(chatId, { selected, threadId, sendingMode })
+        if (refusal !== null) refusals.set(chatId, refusal)
       }
     }
   }
@@ -234,7 +273,8 @@ export function ConversationsCard({ roster, runId, request = call }) {
   const chats = read.data?.chats ?? []
   const checked = chat => shown.draft.get(chat.id) ?? chat.training.selected
   const changes = chats.flatMap(chat => checked(chat) === chat.training.selected ? [] : [{ id: chat.id, selected: checked(chat) }])
-  const blocked = Boolean(roster?.readOnly) || shown.busy || read.loading
+  const link = read.data?.link
+  const blocked = Boolean(roster?.readOnly) || shown.busy || read.loading || !link
   const edit = change => setSelection(previous => {
     const before = previous.scope === read.scope ? previous : noSelection
     const draft = new Map(before.draft)
@@ -244,20 +284,21 @@ export function ConversationsCard({ roster, runId, request = call }) {
   const apply = async () => {
     if (blocked || !read.canWrite() || pending.current === read.scope || changes.length === 0) return
     pending.current = read.scope
-    setSelection({ ...shown, scope: read.scope, busy: true, failed: false, refusals: new Map() })
+    setSelection({ ...shown, scope: read.scope, busy: true, error: null, refusals: new Map() })
     const results = new Map()
     const refusals = new Map()
-    let failed = false
+    let error = null
+    const applyError = t('Could not finish applying the training selection.')
     try {
-      failed = !await applyTraining(changes, read, request, results, refusals)
-    } catch {
-      failed = true
+      if (!await applyTraining(changes, link, read, request, results, refusals)) error = applyError
+    } catch (failure) {
+      error = actionError(failure, roster?.readOnly, applyError)
     } finally {
       if (pending.current === read.scope) pending.current = null
       if (read.current()) {
         read.update(data => ({ ...data, chats: data.chats.map(chat =>
           results.has(chat.id) ? { ...chat, training: results.get(chat.id) } : chat) }))
-        setSelection({ ...noSelection, scope: read.scope, refusals, failed })
+        setSelection({ ...noSelection, scope: read.scope, refusals, error })
         read.reload()
       }
     }
@@ -269,18 +310,23 @@ export function ConversationsCard({ roster, runId, request = call }) {
     h('span', { key: 'apply' }, action(t('Apply'), apply, blocked || changes.length === 0, 'bt-genui-start')),
     h('span', { key: 'select' }, action(t('Select all'), () => setAll(true), blocked || chats.every(checked))),
     h('span', { key: 'clear' }, action(t('Clear'), () => setAll(false), blocked || !chats.some(checked))),
-    h('span', { key: 'error' }, errorLine(shown.failed ? t('Could not finish applying the training selection.') : null)),
+    h('span', { key: 'error' }, errorLine(shown.error)),
   ]
+  const refusalOf = id => {
+    const message = shown.refusals.get(id)
+    if (!message) return null
+    return isReadOnlyRefusal(message, roster?.readOnly) ? readOnlyNote() : hostText(message)
+  }
   return h(HistoryCard, { title: t('Review conversations'), read, readOnly: roster?.readOnly, busy: shown.busy,
     loadError: t('Could not load conversations for this run.'), foot },
     run === null ? h('p', { className: 'bt-genui-muted' }, t('This run is no longer listed.')) : null,
     run ? h('div', { className: 'bt-genui-run-head' },
-      h('span', { className: 'bt-genui-run-range' }, `${utcDay(run.from)} – ${utcDay(run.to)}`),
+      h('span', { className: 'bt-genui-run-range' }, backfillRange(run.from, run.to)),
       muted(t('{count} chats', { count: summary.total })),
       summary.notStarted ? muted(t('{count} not started', { count: summary.notStarted })) : null) : null,
     run && chats.length === 0 ? h('p', { className: 'bt-genui-muted' }, t('There are no chats to review in this run.')) : null,
     chats.length ? h('ul', { className: 'bt-genui-picks' }, chats.map(chat => h(ConversationRow, {
-      key: chat.id, chat, checked: checked(chat), disabled: blocked, refusal: shown.refusals.get(chat.id),
+      key: chat.id, chat, checked: checked(chat), disabled: blocked, refusal: refusalOf(chat.id),
       change: selected => edit(draft => draft.set(chat.id, selected)),
     }))) : null)
 }
@@ -303,10 +349,11 @@ function CommitmentRow({ item, busy, readOnly, error, decide }) {
       h('div', { className: 'bt-genui-line' },
         h('span', { className: 'bt-genui-word' }, commitmentStatus[item.status]()), item.verified ? muted(t('Verified')) : null),
       h('div', { className: 'bt-genui-line bt-genui-sub' },
+        item.chatName ? h('span', null, t('Chat: {name}', { name: item.chatName })) : null,
         h('span', null, t('Owner: {name}', { name: item.ownerName ?? commitmentOwner[item.owner]() })),
         item.counterpart ? h('span', null, t('Counterpart: {name}', { name: item.counterpart })) : null,
-        item.deadline ? h('span', null, t('Due {date}', { date: utcDay(item.deadline) })) : null,
-        h('span', null, t('Source on {date}', { date: utcDay(item.sourceAt) }))),
+        item.deadline ? h('span', null, t('Due {date}', { date: shortDate(item.deadline) })) : null,
+        h('span', null, t('Source on {date}', { date: shortDate(item.sourceAt) }))),
       item.nextAction ? h('p', { className: 'bt-genui-note' }, t('Next action: {action}', { action: item.nextAction })) : null,
       h('div', { className: 'bt-genui-line' },
         !item.verified && item.status !== 'dismissed' ? action(t('Verify'), () => decide('verify'), disabled, 'bt-genui-start') : null,
@@ -345,8 +392,7 @@ export function CommitmentsCard({ roster, chat, status, verified, request = call
           .filter(item => matches(item, filters)),
       }))
     } catch (failure) {
-      error = failure?.code?.startsWith('bot/') && failure.message
-        ? hostText(failure.message) : saveError()
+      error = actionError(failure, roster?.readOnly, saveError())
     } finally {
       ids.delete(id)
       if (read.current()) {

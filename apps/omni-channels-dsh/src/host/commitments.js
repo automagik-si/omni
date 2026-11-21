@@ -47,13 +47,16 @@ const INVALID_ARGS = 'Give valid commitment tool arguments. Quotes must be 6 to 
 const invalid = message => Object.assign(new Error(message), { code: 'bot/invalid' })
 const active = item => item.status === 'candidate' || item.status === 'open'
 const result = ({ id, status, verified }) => ({ id, status, verified })
-const display = ({ id, chatId, channelId, text, owner, ownerName, counterpart, deadline, nextAction, sourceAt, status, verified, createdAt, updatedAt, closing }) => ({
-  id, chatId, channelId, text, owner, deadline, sourceAt, status, verified, createdAt, updatedAt,
-  ...(ownerName !== undefined && { ownerName }),
-  ...(counterpart !== undefined && { counterpart }),
-  ...(nextAction !== undefined && { nextAction }),
-  ...(closing && { closing: { at: closing.at } }),
-})
+const display = ({ row, chat }) => {
+  const { id, chatId, channelId, text, owner, ownerName, counterpart, deadline, nextAction, sourceAt, status, verified, createdAt, updatedAt, closing } = row
+  return {
+    id, chatId, chatName: chat.name, channelId, text, owner, deadline, sourceAt, status, verified, createdAt, updatedAt,
+    ...(ownerName !== undefined && { ownerName }),
+    ...(counterpart !== undefined && { counterpart }),
+    ...(nextAction !== undefined && { nextAction }),
+    ...(closing && { closing: { at: closing.at } }),
+  }
+}
 const listOrder = { open: 0, candidate: 1, done: 2, cancelled: 2, dismissed: 3 }
 
 async function evidenceOf(rt, link, chatId, messageId, quote) {
@@ -208,16 +211,17 @@ export function install(rt) {
     const link = rt.omniLink?.()
     if (!link) return []
     const candidates = store.all().filter(item => item.origin === link.url && (chat === undefined || item.chatId === chat)
-      && (status === undefined || item.status === status) && (verified === undefined || item.verified === verified))
+      && (status === undefined ? item.status !== 'dismissed' : item.status === status)
+      && (verified === undefined || item.verified === verified))
     const visible = await readableRows(rt, candidates, channelId => ownerMayRead(channelId) && mayRead(channelId), link)
     if (!sameReadingLink(rt, link)) return []
-    return visible.map(({ row }) => row).sort((a, b) => listOrder[a.status] - listOrder[b.status]
+    return visible.sort(({ row: a }, { row: b }) => listOrder[a.status] - listOrder[b.status]
       || b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id))
   }
 
   async function list(args, exec, botId) {
     const items = await visibleItems(args, botMay(exec, botId, 'read'))
-    return items.slice(0, 100).map(item => `${item.id} | ${item.status}${item.verified ? ' (verified)' : ''} | chat ${item.chatId} | ${normalized(item.text)}${item.deadline ? ` | due ${item.deadline}` : ''}`).join('\n')
+    return items.slice(0, 100).map(({ row: item }) => `${item.id} | ${item.status}${item.verified ? ' (verified)' : ''} | chat ${item.chatId} | ${normalized(item.text)}${item.deadline ? ` | due ${item.deadline}` : ''}`).join('\n')
       || 'No visible commitments match.'
   }
 
@@ -283,6 +287,6 @@ export function install(rt) {
     await rt.load()
     const filters = ListBody.parse(body ?? {})
     const items = await visibleItems(filters, ownerMayRead)
-    return { commitments: items.filter(item => filters.status !== undefined || item.status !== 'dismissed').map(display) }
+    return { commitments: items.map(display) }
   }, { read: true }), 'omni-channels: omni-commitments')
 }
