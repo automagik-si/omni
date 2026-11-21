@@ -252,6 +252,7 @@ export const STRINGS = {
   'A private Omni just for this computer · about 1 GB': '只属于这台电脑的私人 Omni · 约 1 GB',
   'It starts with your Mac, stays on it, and never touches another Omni.': '它随你的 Mac 启动，只留在这台 Mac 上，不会动到其他 Omni。',
   'It starts with your computer, stays on it, and never touches another Omni.': '它随你的电脑启动，只留在这台电脑上，不会动到其他 Omni。',
+  'It runs until this computer restarts.': '它会一直运行到这台电脑重启。',
   'Set it up': '设置',
   'Where it lives': '它在哪里',
   '{home}, with its own database, NATS and ports.': '{home}，有自己的数据库、NATS 和端口。',
