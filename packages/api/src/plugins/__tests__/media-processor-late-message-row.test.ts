@@ -80,11 +80,11 @@ function makeHarness(rowVisibleAfterMs: number) {
   return { ctx, processed, published, dbSets };
 }
 
-function audioEvent(): OmniEvent {
+function audioEvent(timestamp = START): OmniEvent {
   return {
     id: '00000000-0000-4000-8000-000000002111',
     type: 'message.received',
-    timestamp: START,
+    timestamp,
     payload: {
       externalId: 'ext-late-row-1',
       chatId: 'chat-ext-1',
@@ -114,6 +114,15 @@ describe('media-processor when message persistence is slower than five seconds',
     const h = makeHarness(60_000);
 
     await handleMessageReceived(h.ctx, audioEvent());
+
+    expect(h.processed).toEqual([]);
+    expect(h.dbSets).toEqual([]);
+  });
+
+  it('keeps the five second wait for a delivery that starts fifteen seconds or more after its event', async () => {
+    const h = makeHarness(8_000);
+
+    await handleMessageReceived(h.ctx, audioEvent(START - 20_000));
 
     expect(h.processed).toEqual([]);
     expect(h.dbSets).toEqual([]);

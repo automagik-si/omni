@@ -378,6 +378,9 @@ interface MediaDownloadFailure {
   downloadError: string;
 }
 
+const MESSAGE_ROW_MIN_WAIT_MS = 5_000;
+const MESSAGE_ROW_WAIT_FROM_EVENT_MS = 15_000;
+
 /**
  * Resolve media file path for a message
  * Handles both local paths and URL downloads
@@ -391,12 +394,15 @@ async function resolveMediaPath(
   mimeType: string,
   channelType?: ChannelType,
   trustedTenantId?: string,
+  eventTimestamp?: number,
 ): Promise<MediaResolution | MediaDownloadFailure | null> {
   // Wait briefly for message-persistence to create the DB row (race condition:
   // both media-processor and message-persistence subscribe to message.received)
-  const maxWaitMs = 20_000;
   const pollMs = 250;
-  const deadline = Date.now() + maxWaitMs;
+  const deadline = Math.max(
+    Date.now() + MESSAGE_ROW_MIN_WAIT_MS,
+    (eventTimestamp ?? Date.now()) + MESSAGE_ROW_WAIT_FROM_EVENT_MS,
+  );
 
   // Use smart lookup to handle LID/phone JID resolution
   let chat = await runMediaDb(ctx, trustedTenantId, () => ctx.services.chats.findByExternalIdSmart(instanceId, chatId));
@@ -737,7 +743,7 @@ async function processMessageMedia(
   // Its trusted tenant (or `legacy`, flag-off) scopes every DB write below via
   // `runConsumerInTenantContext`; the media download/AI work stays OUTSIDE the
   // tenant transaction so no transaction is held across network I/O.
-  envelope: Pick<OmniEvent, 'metadata'>,
+  envelope: Pick<OmniEvent, 'metadata'> & Partial<Pick<OmniEvent, 'timestamp'>>,
 ): Promise<void> {
   const { instanceId, eventId } = metadata;
   const { content, externalId } = payload;
@@ -761,6 +767,7 @@ async function processMessageMedia(
     mimeType,
     metadata.channelType,
     trustedTenantId,
+    envelope.timestamp,
   );
   if (!media) return;
   if ('downloadError' in media) {
