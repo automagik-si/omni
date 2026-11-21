@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { afterEach, test } from 'node:test'
 import { COMMITMENTS_FILE } from '../src/host/commitments.js'
 import { LINK_FILE } from '../src/host/omni-link.js'
-import { ANSWER_MASTER, answerState, boot, CHAT, ELSEWHERE, fakeOmni, GROUP, homeFor, INSTANCE, OTHER_INSTANCE, readOnlyPresets, record as threadRecord, resetFetch, saved, teamState, until, use } from './thread-fixture.js'
+import { ANSWER_MASTER, answerState, boot, CHAT, ELSEWHERE, fakeOmni, GROUP, homeFor, INSTANCE, OMNI, OTHER_INSTANCE, readOnlyPresets, record as threadRecord, resetFetch, saved, teamState, until, use } from './thread-fixture.js'
 
 afterEach(resetFetch)
 
@@ -281,7 +281,7 @@ test('the private file holds evidence, and the text-free outbox persists, retrie
     idempotencyKey: `commitment.recorded:${id}:${env.events[0].saved.revision}`,
     payload: { commitmentId: id, chatId: CHAT, sourceMessageId: SOURCE, status: 'candidate', verified: false, updatedAt: item.updatedAt },
   })
-  assert.deepEqual(env.events[0].saved.omniEventOutbox, [first])
+  assert.deepEqual(env.events[0].saved.omniEventOutbox, [{ origin: OMNI, event: first }])
   await run.stop()
   env.controls.eventStatus = 201
   const restarted = await env.start()
@@ -305,6 +305,43 @@ test('the private file holds evidence, and the text-free outbox persists, retrie
   assert.deepEqual(saved(env.home).subscriptionRuns ?? [], before.subscriptionRuns ?? [])
   assert.deepEqual(restarted.made, [])
   assert.equal(deliveries, 0)
+})
+
+test('a failed commitment replacement preserves the old item and the saved event for startup to deliver', async (t) => {
+  const env = fake(t)
+  const run = await env.start()
+  const id = idOf(await record(run))
+  await run.channels.flushOmniEventOutbox()
+  const previous = env.file()
+  const save = run.channels.save
+  run.channels.save = async options => {
+    await save(options)
+    if (!options?.required) return
+    assert.deepEqual(env.file(), previous)
+    const staged = readdirSync(env.home).filter(file => file.startsWith(`${COMMITMENTS_FILE}.`) && file.endsWith('.tmp'))
+    assert.equal(staged.length, 1)
+    rmSync(join(env.home, staged[0]))
+  }
+  run.channels.flushOmniEventOutbox = async () => {}
+
+  const failed = await review(run, id, 'verify')
+  assert.equal(failed.ok, false)
+  assert.match(failed.error.message, /ENOENT/)
+  assert.deepEqual(env.file(), previous)
+  const pending = saved(env.home).omniEventOutbox
+  assert.equal(pending.length, 1)
+  assert.deepEqual(run.team.state.omniEventOutbox, pending)
+  const [entry] = pending
+  assert.equal(entry.origin, OMNI)
+  assert.equal(entry.event.eventType, 'custom.omni-channels.commitment.verified')
+  assert.equal(entry.event.payload.commitmentId, id)
+  assert.equal(env.events.length, 1)
+  await run.stop()
+
+  await env.start()
+  await until(() => env.events.length === 2 && saved(env.home).omniEventOutbox?.length === 0)
+  assert.deepEqual(env.events[1].body, entry.event)
+  assert.deepEqual(env.file(), previous)
 })
 
 test('the read endpoint and conversation counts use current, readable chats, and the list filters and orders visible items', async (t) => {

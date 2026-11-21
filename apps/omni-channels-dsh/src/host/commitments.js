@@ -129,10 +129,11 @@ export function install(rt) {
   const botMay = (exec, botId, action) => channelId => ownBot(exec) === botId && rt.canChannel(botId, channelId, action)
   const ownerMayRead = channelId => readByAnyBot(rt, channelId)
 
-  function save(name, item, check) {
+  function save(name, item, link, check) {
     const { id, channelId, chatId, sourceMessageId, closing, status, verified, updatedAt } = item
     const payload = { commitmentId: id, chatId, sourceMessageId, status, verified, updatedAt, ...(closing && { closingMessageId: closing.messageId }) }
-    return store.set(id, item, check, apply => rt.saveOmniTransition(`commitment.${name}`, channelId, payload, apply))
+    return store.set(id, item, check, commit =>
+      rt.saveOmniTransition(`commitment.${name}`, link.url, channelId, payload, check, commit))
   }
 
   const record = (args, exec, botId) => serial(async () => {
@@ -147,7 +148,7 @@ export function install(rt) {
       && item.sourceMessageId === sourceMessageId && matchingQuote(item, quote))
     if (existing !== undefined) {
       const item = replay(existing, quote, refresh)
-      if (item !== existing) await save('recorded', item, check)
+      if (item !== existing) await save('recorded', item, link, check)
       return `Commitment ${item.id}: ${item.status}.`
     }
     const id = createHash('sha256').update([chat.id, sourceMessageId, normalized(quote)].join('\0')).digest('hex').slice(0, 16)
@@ -158,7 +159,7 @@ export function install(rt) {
       owner, ownerName, counterpart, deadline: instant ?? null, status: 'candidate', verified: false,
       recordedBy: botId, createdAt: now, updatedAt: now,
     }
-    await save('recorded', item, check)
+    await save('recorded', item, link, check)
     return `Commitment ${item.id}: ${item.status}.`
   })
 
@@ -172,7 +173,7 @@ export function install(rt) {
     const at = await evidenceOf(rt, link, chat.id, closingMessageId, quote)
     if (Date.parse(at) <= Date.parse(item.sourceAt)) throw invalid('The closing message must be later than the source message.')
     check()
-    await save('closed', { ...item, status, closing: { messageId: closingMessageId, quote, at }, updatedAt: new Date().toISOString() }, check)
+    await save('closed', { ...item, status, closing: { messageId: closingMessageId, quote, at }, updatedAt: new Date().toISOString() }, link, check)
     return `Commitment ${id}: ${status}.`
   })
 
@@ -180,9 +181,9 @@ export function install(rt) {
     requireWritable()
     const item = store.get(id)
     if (item === null) throw invalid(NO_ACCESS)
-    const { check } = await writableChat(item.chatId, item.channelId, ownerMayRead)
+    const { link, check } = await writableChat(item.chatId, item.channelId, ownerMayRead)
     const next = reviewDecision(item, decision)
-    if (next !== item) await save(decision === 'verify' ? 'verified' : 'dismissed', next, check)
+    if (next !== item) await save(decision === 'verify' ? 'verified' : 'dismissed', next, link, check)
     return result(next)
   })
 
