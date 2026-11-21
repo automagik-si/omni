@@ -45,7 +45,6 @@ import {
   openSync,
   readFileSync,
   rmSync,
-  unlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { createConnection } from 'node:net';
@@ -656,6 +655,7 @@ export interface SandboxDeps {
   bun: string;
   bunVersion: string;
   env: Record<string, string | undefined>;
+  userManagerReachable(): Promise<boolean>;
   run(cmd: string[], opts: { cwd?: string; env: Record<string, string>; timeoutMs?: number }): Promise<RunResult>;
   spawnDetached(cmd: string[], opts: { cwd: string; env: Record<string, string>; logPath: string }): number;
   isPortFree(port: number): Promise<boolean>;
@@ -747,17 +747,21 @@ export function processAlive(pid: number): boolean {
 }
 
 function defaultSandboxDeps(): SandboxDeps {
+  const platform = process.platform;
+  const env = process.env;
+  const uid = process.getuid?.() ?? 0;
   return {
-    platform: process.platform,
+    platform,
     arch: process.arch,
     libc: detectLibc(),
     autopgPin: AUTOPG_PIN,
     download: downloadRelease,
-    uid: process.getuid?.() ?? 0,
+    uid,
     userHome: homedir(),
     bun: process.execPath,
     bunVersion: Bun.version,
-    env: process.env,
+    env,
+    userManagerReachable: () => atLoginReachable({ platform, env, uid }),
     run: runCommand,
     spawnDetached: spawnDetachedProcess,
     isPortFree: isLoopbackPortFree,
@@ -997,8 +1001,52 @@ function serviceManagerEnv(deps: Pick<SandboxDeps, 'env' | 'platform' | 'uid'>):
   return env;
 }
 
+export async function atLoginReachable(
+  deps: Pick<SandboxDeps, 'env' | 'platform' | 'uid'>,
+  spawnProbe: (
+    options: Bun.Spawn.SpawnOptions<'ignore', 'ignore', 'ignore'> & { cmd: string[] },
+  ) => Pick<Bun.Subprocess<'ignore', 'ignore', 'ignore'>, 'exited' | 'kill' | 'signalCode'> = Bun.spawn,
+): Promise<boolean> {
+  if (deps.platform !== 'linux') return deps.platform === 'darwin';
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const child = spawnProbe({
+      cmd: ['systemctl', '--user', 'show-environment'],
+      env: serviceManagerEnv(deps),
+      stdin: 'ignore',
+      stdout: 'ignore',
+      stderr: 'ignore',
+    });
+    const timeout = new Promise<false>((resolve) => {
+      timer = setTimeout(() => {
+        resolve(false);
+        try {
+          child.kill('SIGKILL');
+        } catch {
+          // The process may already have exited.
+        }
+      }, 5000);
+    });
+    return await Promise.race([child.exited.then((code) => code === 0 && child.signalCode === null), timeout]);
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function atLoginSupported(deps: SandboxDeps): boolean {
   return deps.platform === 'darwin' || deps.platform === 'linux';
+}
+
+async function assertAtLoginReachable(previous: SandboxState | null, deps: SandboxDeps): Promise<void> {
+  if (deps.platform !== 'linux' || (await deps.userManagerReachable())) return;
+  throw new SandboxError(
+    previous?.atLogin
+      ? 'This sandbox starts at login, but the systemd user manager could not be reached here (it is missing in a container, for example). Run the install again with --no-at-login on the same --home to keep Omni for this session only, or try again once the user manager is running.'
+      : '--at-login needs the systemd user manager, which could not be reached here (it is missing in a container, for example). Install without --at-login: Omni then runs for this session only.',
+  );
 }
 
 async function writeAtLoginUnit(
@@ -1030,18 +1078,27 @@ async function writeAtLoginUnit(
   }
 }
 
-async function removeAtLoginUnit(layout: SandboxLayout, defaultHome: string, deps: SandboxDeps): Promise<void> {
+async function removeAtLoginUnit(
+  layout: SandboxLayout,
+  defaultHome: string,
+  deps: SandboxDeps,
+  { onlyIfPresent = false } = {},
+): Promise<void> {
+  if (!atLoginSupported(deps)) return;
   const names = sandboxUnitNames(layout.home, defaultHome);
   const paths = unitPaths(names, deps);
-  const env = serviceManagerEnv(deps);
-  if (deps.platform === 'darwin') {
-    await deps.run(['launchctl', 'bootout', `gui/${deps.uid}/${names.label}`], { env });
-    if (existsSync(paths.plist)) unlinkSync(paths.plist);
-  } else if (deps.platform === 'linux') {
-    await deps.run(['systemctl', '--user', 'disable', '--now', names.systemdUnit], { env });
-    if (existsSync(paths.unit)) unlinkSync(paths.unit);
-    await deps.run(['systemctl', '--user', 'daemon-reload'], { env });
-  }
+  const mac = deps.platform === 'darwin';
+  const path = mac ? paths.plist : paths.unit;
+  if (onlyIfPresent && !existsSync(path)) return;
+
+  const manager = { env: serviceManagerEnv(deps), timeoutMs: 10_000 };
+  const disable = mac
+    ? ['launchctl', 'bootout', `gui/${deps.uid}/${names.label}`]
+    : ['systemctl', '--user', 'disable', '--now', names.systemdUnit];
+  // The manager may be unavailable. Still remove the file that would load at the next login.
+  await deps.run(disable, manager).catch(() => undefined);
+  rmSync(path, { force: true });
+  if (!mac) await deps.run(['systemctl', '--user', 'daemon-reload'], manager).catch(() => undefined);
 }
 
 /**
@@ -1197,7 +1254,9 @@ export async function startSandbox(
       const names = sandboxUnitNames(layout.home, defaultHome);
       const result = await deps.run(['systemctl', '--user', 'enable', '--now', names.systemdUnit], { env });
       if (result.code !== 0)
-        throw new SandboxError(`systemctl could not start ${names.systemdUnit}: ${result.stderr.trim()}`);
+        throw new SandboxError(
+          `systemctl could not start ${names.systemdUnit}: ${result.stderr.trim()} (reinstall with --no-at-login to run Omni for this session only)`,
+        );
     } else {
       await startSessionSupervisor(layout, state, defaultHome, deps);
     }
@@ -1323,6 +1382,7 @@ export async function installSandbox(
   const previous = readSandboxState(layout);
   const packageSpec = opts.packageSpec?.trim() || VERSION;
   const atLogin = opts.atLogin ?? previous?.atLogin ?? false;
+  if (atLogin) await assertAtLoginReachable(previous, deps);
   const defaultHome = unitDefaultHome(previous, opts.defaultHome);
   const pg = resolveSandboxPg(layout, previous, opts, deps);
   ensureLayout(layout);
@@ -1379,7 +1439,9 @@ export async function installSandbox(
   writeSandboxConfig(layout, state, readSandboxApiKey(layout) ?? generateApiKey());
 
   if (state.atLogin) await writeAtLoginUnit(layout, state, { ...opts, defaultHome }, deps);
-  else if (previous?.atLogin) await removeAtLoginUnit(layout, defaultHome, deps);
+  else if (opts.atLogin === false) {
+    await removeAtLoginUnit(layout, defaultHome, deps, { onlyIfPresent: !previous?.atLogin });
+  }
 
   if (opts.start === false) return report(layout, deps, 0);
   return startSandbox({ home: opts.home, defaultHome, healthTimeoutMs: opts.healthTimeoutMs }, deps);

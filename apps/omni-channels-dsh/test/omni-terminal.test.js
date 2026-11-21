@@ -64,6 +64,7 @@ function start(t, deps = {}) {
     platform: 'linux',
     version: '9.9.9',
     findBun: () => '/opt/bun/bin/bun',
+    atLoginUsable: () => true,
     fetch: async () => new Response(JSON.stringify({ version: '9.9.9' }), { status: 200 }),
     linkWithKey: async (url, key) => { links.push([url, key]); return { status: 'paired', origin: new URL(url).host } },
     foundOmni: id => (id === FOUND_ID ? { id, url: 'http://localhost:8882', key: FOUND_KEY } : undefined),
@@ -104,6 +105,32 @@ test('the install terminal waits at a prompt with the command typed, and runs no
   assert.equal(before.command, command)
   await call('omni-terminal-write', { terminal: opened.terminal, data: '\r' })
   assert.deepEqual(handle.writes, ['\r'])
+})
+
+test('the install terminal leaves out the login flag when the user manager is unavailable', async (t) => {
+  const subprocess = fakeSubprocess()
+  const atLoginUsable = t.mock.fn(async () => false)
+  const { call, rt } = start(t, { subprocess, atLoginUsable })
+  const opened = await call('omni-terminal-open', { kind: 'install' })
+  await rt.omniTerminalReady(opened.terminal)
+  const reply = await call('omni-terminal-read', { terminal: opened.terminal })
+  assert.equal(reply.state, 'ready')
+  assert.equal(reply.command, 'bun x --bun @automagik/omni@9.9.9 install --sandbox')
+  assert.equal(subprocess.spawned[0].spec.env.OMNI_TERMINAL_COMMAND, reply.command)
+  assert.equal(atLoginUsable.mock.callCount(), 1)
+})
+
+test('the server image still opens the terminal without probing or offering the login flag', async (t) => {
+  const subprocess = fakeSubprocess()
+  const spawn = t.mock.fn()
+  const { call, rt } = start(t, { subprocess, atLoginUsable: undefined, spawn, env: { AUTOMAGIK_GATE_IMAGE: '1' } })
+  const opened = await call('omni-terminal-open', { kind: 'install' })
+  await rt.omniTerminalReady(opened.terminal)
+  const reply = await call('omni-terminal-read', { terminal: opened.terminal })
+  assert.equal(reply.state, 'ready')
+  assert.equal(reply.command, 'bun x --bun @automagik/omni@9.9.9 install --sandbox')
+  assert.equal(subprocess.spawned[0].spec.env.OMNI_TERMINAL_COMMAND, reply.command)
+  assert.equal(spawn.mock.callCount(), 0)
 })
 
 test('the install terminal downloads the pinned Bun when an existing Bun has another version', async (t) => {
