@@ -399,10 +399,9 @@ async function resolveMediaPath(
   // Wait briefly for message-persistence to create the DB row (race condition:
   // both media-processor and message-persistence subscribe to message.received)
   const pollMs = 250;
-  const deadline = Math.max(
-    Date.now() + MESSAGE_ROW_MIN_WAIT_MS,
-    (eventTimestamp ?? Date.now()) + MESSAGE_ROW_WAIT_FROM_EVENT_MS,
-  );
+  const minDeadline = Date.now() + MESSAGE_ROW_MIN_WAIT_MS;
+  const deadline =
+    eventTimestamp === undefined ? minDeadline : Math.max(minDeadline, eventTimestamp + MESSAGE_ROW_WAIT_FROM_EVENT_MS);
 
   // Use smart lookup to handle LID/phone JID resolution
   let chat = await runMediaDb(ctx, trustedTenantId, () => ctx.services.chats.findByExternalIdSmart(instanceId, chatId));

@@ -6,7 +6,7 @@ import type { Services } from '../../services';
 import type { MediaStorageService } from '../../services/media-storage';
 import { type MediaProcessorContext, __test__ } from '../media-processor';
 
-const { handleMessageReceived } = __test__;
+const { handleMessageReceived, processMessageMedia } = __test__;
 
 const START = new Date('2026-11-20T20:06:00.000Z').getTime();
 
@@ -123,6 +123,25 @@ describe('media-processor when message persistence is slower than five seconds',
     const h = makeHarness(8_000);
 
     await handleMessageReceived(h.ctx, audioEvent(START - 20_000));
+
+    expect(h.processed).toEqual([]);
+    expect(h.dbSets).toEqual([]);
+  });
+
+  it('keeps the five second wait when the caller has no event timestamp', async () => {
+    const h = makeHarness(8_000);
+    const event = audioEvent();
+
+    await processMessageMedia(
+      h.ctx,
+      event.payload as Parameters<typeof processMessageMedia>[1],
+      {
+        instanceId: 'inst-1',
+        eventId: event.id,
+        channelType: 'gupshup' as Parameters<typeof processMessageMedia>[2]['channelType'],
+      },
+      { metadata: event.metadata },
+    );
 
     expect(h.processed).toEqual([]);
     expect(h.dbSets).toEqual([]);
