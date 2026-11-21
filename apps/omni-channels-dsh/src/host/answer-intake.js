@@ -34,6 +34,9 @@ function tooOld(raw, minutes) {
 export const lidAddressed = (row, raw, primary) => primary.endsWith('@lid') || raw.addressingMode === 'lid' || raw.senderIsLid === true
   || [row.chatId, raw.key?.remoteJid].some(jid => typeof jid === 'string' && jid.endsWith('@lid'))
 
+const forbiddenJid = jid => typeof jid === 'string' && (jid.endsWith('@g.us') || jid === 'status@broadcast')
+export const isCanonicalDirectChat = chat => chat.chatType === 'dm' && !forbiddenJid(chat.externalId)
+
 export function answerIntake(rt) {
   const cache = new Map(), warned = new Set()
   async function cached(key, read, cacheWhen = () => true) {
@@ -72,7 +75,6 @@ export function answerIntake(rt) {
     const raw = parsed.data
     if (raw.isHistorySync === true || raw.ingestMode === 'history-sync'
       || row.ingestMode === 'history-sync' || row.metadata?.ingestMode === 'history-sync') return false
-    const forbiddenJid = jid => typeof jid === 'string' && (jid.endsWith('@g.us') || jid === 'status@broadcast')
     if (forbiddenJid(row.chatId) || forbiddenJid(raw.key?.remoteJid)
       || (row.chatType != null && row.chatType !== 'dm')) return false
     try {
@@ -83,7 +85,7 @@ export function answerIntake(rt) {
       if (instance.channel === 'whatsapp-baileys' && raw.upsertType !== 'notify') return false
       if (tooOld(raw, instance.inboundMaxAgeMinutes)) { refusal('stale', instance.inboundMaxAgeMinutes); return false }
       const chat = await cached(`chat:${row.chatUuid}`, () => read('GET', `/chats/${encodeURIComponent(row.chatUuid)}`, chatReply))
-      if (chat.instanceId !== row.instanceId || chat.chatType !== 'dm' || forbiddenJid(chat.externalId)) return false
+      if (chat.instanceId !== row.instanceId || !isCanonicalDirectChat(chat)) return false
       // Proven staff receipts are checked separately against the canonical message.
       // Staff is not the external sender and must not depend on the person's allowlist.
       if (raw.isFromMe === true) return { staff: true }

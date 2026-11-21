@@ -76,6 +76,8 @@ describe("Omni's plugins and the Omni they need", () => {
   test('the scan sees the calls the channels plugin makes, with their methods', () => {
     const uses = pluginUses(join(root, 'apps/omni-channels-dsh'), here).map((use) => `${use.method} ${use.path}`);
     expect(uses).toContain('POST /api/v2/messages/send');
+    expect(uses).toContain('GET /api/v2/messages/{}');
+    expect(uses).toContain('POST /api/v2/events/trigger');
     expect(uses).toContain('GET /api/v2/instances/{}/status');
     expect(uses).toContain('POST /api/v2/login/connect');
     expect(uses).toContain('POST /api/auth/device/token');
