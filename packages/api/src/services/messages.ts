@@ -565,6 +565,21 @@ export class MessageService {
     return result ?? null;
   }
 
+  /** The Slack adapter stores each upload under <message ts>-file-<file id>. */
+  async getSlackMessageParts(chatId: string, ts: string): Promise<Pick<Message, 'id' | 'deletedAt'>[]> {
+    return this.db
+      .select({ id: messages.id, deletedAt: messages.deletedAt })
+      .from(messages)
+      .where(
+        and(
+          eq(messages.chatId, chatId),
+          or(eq(messages.externalId, ts), sql`starts_with(${messages.externalId}, ${`${ts}-file-`})`),
+        ),
+      )
+      .orderBy(messages.id)
+      .for('update');
+  }
+
   /**
    * Get an outbound message by provider alias captured in raw_payload.
    *
