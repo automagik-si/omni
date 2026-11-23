@@ -7,7 +7,7 @@
 
 import { createHash } from 'node:crypto'
 import { z } from 'zod'
-import { OPERATOR_RULES } from './omni-rules.js'
+import { OPERATOR_RULES, OPERATOR_RULES_NATIVE } from './omni-rules.js'
 
 export const KEY = 'OMNI_API_KEY'
 const TIMEOUT_MS = 10_000
@@ -473,6 +473,9 @@ export function install(rt) {
   for (const name of ['omni-overview', 'omni-messages']) ctx.effect(() => rt.hooks.endpoint(name, body => rt.omniEndpoint(name, body), { read: true }), `ds-bot: ${name}`)
   ctx.effect(() => rt.hooks.endpoint('omni-media', body => rt.omniMedia(body), { read: true }), 'ds-bot: omni-media')
   // With an Omni named here, a Main Bot operates it. A non-Main Omni Bot gets these rules once the
-  // Bot team gives plugin rules to kind 'omni' Bots too (bots-dsh prompt.js).
-  ctx.effect(() => rt.hooks.mainRules(() => (rt.omniNamed() ? OPERATOR_RULES : null), { order: 100 }), 'ds-bot: operator rules')
+  // Bot team gives plugin rules to kind 'omni' Bots too (bots-dsh prompt.js). A Bot whose
+  // Native tools switch the Bot team says is on (its rt.nativeToolsBotOn; a plain true only)
+  // gets the rules that allow computer work in its own chat.
+  const operatorRules = self => (rt.nativeToolsBotOn?.(self) === true ? OPERATOR_RULES_NATIVE : OPERATOR_RULES)
+  ctx.effect(() => rt.hooks.mainRules(self => (rt.omniNamed() ? operatorRules(self) : null), { order: 100 }), 'ds-bot: operator rules')
 }

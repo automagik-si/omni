@@ -203,3 +203,51 @@ test('the Omni Bot\'s Session has the thread tools trimmed one name at a time, w
     assert.equal(ours(omniBot.denied).length, (named ? COMPUTER_TOOLS.length + 1 : 0) + THREAD_TOOLS.length - 1)
   }
 })
+
+// The Bot team's Native tools switch (its rt.nativeToolsFor, read per Session). ON: the Bot
+// works with its agent's own shell and files, so its Session keeps DSH's computer tools and
+// the team's start_task, an Omni named or not; the thread tools still go. Off, any answer
+// that is not a plain true, or a team with no such switch: trimmed and refused, as before.
+test('with an Omni named, the Omni Bot\'s Session keeps the computer tools and start_task while the Bot team says its native tools are on there, and loses them otherwise', async (t) => {
+  const { THREAD_TOOLS } = await import('../src/host/threads.js')
+  const { COMPUTER_TOOLS } = await import('../src/host/omni-api.js')
+  const threadTools = THREAD_TOOLS.filter(name => name !== 'thread_picture').map(name => [name])
+  const computer = [...COMPUTER_TOOLS, 'start_task'].map(name => [name])
+  const REFUSAL = 'Omni has no computer: it works only through its own tools. Tell the user what the work needs, so they can give it to a Bot that has one.'
+  const cases = [
+    { label: 'on', getter: () => sessionId => sessionId === 'omni-chat', kept: true },
+    { label: 'off', getter: () => () => false, kept: false },
+    { label: 'not a plain true', getter: () => () => 'true', kept: false },
+    { label: 'no switch on the team', getter: () => undefined, kept: false },
+  ]
+  for (const { label, getter, kept } of cases) {
+    const home = mkdtempSync(join(tmpdir(), 'ds-bot-native-'))
+    writeFileSync(join(home, 'state.json'), JSON.stringify({
+      version: 1, mainBotIds: ['m1'], revision: 1,
+      bots: { m1: { id: 'm1', name: 'Omni', role: 'Orchestrator', instructions: '', createdAt: 1, sessionId: 'omni-chat' }, w1: { id: 'w1', name: 'Dev', role: '', instructions: '', createdAt: 2, sessionId: 'dev-chat' } },
+      rooms: {}, agents: {}, exchanges: [], exchangeTurns: {},
+    }))
+    const ctx = fakeContext()
+    const { team } = applyBoth(ctx, { home }, { omni: { url: OMNI } })
+    t.after(async () => {
+      await ctx.dispose()
+      rmSync(home, { recursive: true, force: true, maxRetries: 5 })
+    })
+    team.nativeToolsFor = getter()
+    ctx.tools.schemas = () => [...THREAD_TOOLS, ...COMPUTER_TOOLS, 'start_task', 'web_search'].map(name => ({ name }))
+    const denied = []
+    const omniBot = { id: 'omni-chat', session: { id: 'omni-chat' }, ctx: { effect: () => {}, tools: { restrict: ({ deny }) => {
+      if (deny?.includes('thread_picture')) throw new Error('tools.restrict() names unknown global tool "thread_picture"')
+      denied.push(deny)
+      return () => {}
+    } } } }
+    for (const listener of ctx.listeners.get('agent/created') ?? []) await listener({ agent: omniBot })
+    const ours = () => denied.filter(([name]) => THREAD_TOOLS.includes(name) || COMPUTER_TOOLS.includes(name) || name === 'start_task')
+    assert.deepEqual(ours(), [...(kept ? [] : computer), ...threadTools], label)
+    // The guard of the computer tools follows the same answer, and a silent guard trims nothing.
+    for (const name of COMPUTER_TOOLS) {
+      assert.equal(ctx.guards.map(guard => guard({ name, callId: `call-${name}`, agent: omniBot })).find(Boolean), kept ? undefined : REFUSAL, `${label}: ${name}`)
+    }
+    assert.deepEqual(ours(), [...(kept ? [] : computer), ...threadTools], label)
+  }
+})

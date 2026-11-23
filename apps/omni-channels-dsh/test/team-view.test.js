@@ -158,6 +158,62 @@ test('a Main Bot\'s prompt with an Omni named is the text it was before the spli
   assert.equal(prompt(plain), readFileSync(teamFile('test/fixtures/main-prompt.txt'), 'utf8'))
 })
 
+// The Bot team's Native tools switch, read per Bot for the prompt (its rt.nativeToolsBotOn): a
+// Bot with the switch on works with its agent's own shell and files, so its rules say so, and
+// say it conditionally, since one Session of that Bot can still run without them. Only a plain
+// true picks the variant; the rules of every other Bot, and of a team with no such switch, are
+// OPERATOR_RULES to the byte.
+test('the rules of a Main Bot whose native tools the Bot team says are on are the variant that allows computer work in its own chat; every other case keeps OPERATOR_RULES', async (t) => {
+  const { OPERATOR_RULES_NATIVE } = await import('../src/host/omni-rules.js')
+  const state = {
+    version: 1, mainBotIds: ['m1', 'm2'], revision: 1, rooms: {}, exchanges: [], exchangeTurns: {},
+    bots: { m1: { id: 'm1', name: 'Omni', role: 'Channel orchestrator', instructions: '', createdAt: 1 }, m2: { id: 'm2', name: 'Second', role: 'Main', instructions: '', createdAt: 2 } },
+  }
+  const named = composed(state, { channelsConfig: { omni: { url: 'https://omni.example.com' } } })
+  const plain = composed(state)
+  t.after(() => Promise.all([named.stop(), plain.stop()]))
+  await Promise.all([named.team.load(), plain.team.load()])
+  const prompt = (run, id) => run.ctx.sections.get('bot-identity').text({ agent: { id } })
+
+  // The variant is OPERATOR_RULES with its two "own chat, computer" lines replaced.
+  const [was, now] = [OPERATOR_RULES.split('\n'), OPERATOR_RULES_NATIVE.split('\n')]
+  assert.equal(now.length, was.length)
+  assert.deepEqual(was.flatMap((line, index) => (line === now[index] ? [] : [index])), [8, 9])
+  assert.equal(was[8], '## In the Omni Bot\'s own chat, work that needs a computer is not yours')
+  assert.equal(now[8], '## In the Omni Bot\'s own chat, computer work needs native tools')
+  assert.equal(now[9], '- In the Omni Bot\'s own chat: when native tools are on in this chat, you have your agent\'s own shell and files and may start tasks; use them for what the user asks. Otherwise you have no shell and no files, and you start no tasks: for code, a repository, a document, research or a long investigation, tell the user in a line what the work needs, so they can give it to a Bot that has a computer.')
+  assert.doesNotMatch(OPERATOR_RULES_NATIVE, /\bTasks\b|start_task|hand.?off/)
+
+  // No switch on the team: both Main Bots get OPERATOR_RULES.
+  const before = { m1: prompt(named, 'm1'), m2: prompt(named, 'm2') }
+  for (const id of ['m1', 'm2']) {
+    assert.ok(before[id].includes(OPERATOR_RULES), id)
+    assert.ok(!before[id].includes(now[8]), id)
+  }
+
+  // On for one Bot: that Bot's rules are the variant, and nothing else in its prompt moves.
+  const asked = []
+  named.team.nativeToolsBotOn = (botId) => {
+    asked.push(botId)
+    return botId === 'm1'
+  }
+  assert.equal(prompt(named, 'm1'), before.m1.replace(OPERATOR_RULES, OPERATOR_RULES_NATIVE))
+  assert.equal(prompt(named, 'm2'), before.m2)
+  assert.deepEqual(asked, ['m1', 'm2'])
+
+  // Off, or an answer that is not a plain true: OPERATOR_RULES to the byte.
+  for (const off of [false, undefined, 1, 'true', {}]) {
+    named.team.nativeToolsBotOn = () => off
+    assert.equal(prompt(named, 'm1'), before.m1, String(off))
+  }
+
+  // With no Omni named there are no operator rules, whatever the switch says.
+  const unnamed = prompt(plain, 'm1')
+  plain.team.nativeToolsBotOn = () => true
+  assert.equal(prompt(plain, 'm1'), unnamed)
+  assert.ok(!unnamed.includes('## You operate Omni for the user'))
+})
+
 test('with an omni to operate, the Main Bot alone learns the API tools and automations', async (t) => {
   const team = {
     version: 1, mainBotIds: ['m1'], revision: 1, rooms: {}, exchanges: [], exchangeTurns: {},

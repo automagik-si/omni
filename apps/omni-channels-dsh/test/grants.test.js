@@ -149,6 +149,52 @@ test("start_task for a Bot that operates the named Omni is denied before any car
   assert.equal(stops.length, 2)
 })
 
+// The Bot team's Native tools switch (its rt.nativeToolsFor, read per Session): ON gives the
+// Bot its agent's own shell and files, so Omni no longer takes the team's start_task from it.
+// Only `true` counts; a team without the getter keeps today's refusal.
+test("start_task for a Bot that operates the named Omni is allowed while the Bot team says its native tools are on in that Session, and refused when they are off, not a plain true, or the team has no such switch", async (t) => {
+  const { ctx, team } = setup(t)
+  await team.load()
+  const stops = []
+  team.noteStop = (sessionId, detail) => stops.push({ sessionId, detail })
+  const gate = (sessionId, callId) => {
+    const chain = [...(ctx.listeners.get('tools/pre-execute') ?? [])]
+    const exec = { name: 'start_task', arguments: {}, callId, agent: { id: sessionId, session: { id: sessionId } } }
+    const step = index => (index < chain.length ? chain[index](exec, () => step(index + 1)) : Promise.resolve({ kind: 'allow' }))
+    return step(0)
+  }
+  const guard = (sessionId, callId) => ctx.guards.map(check => check({ name: 'start_task', callId, agent: { id: sessionId } })).find(Boolean)
+  const asked = []
+  const answers = value => (sessionId) => {
+    asked.push(sessionId)
+    return sessionId === 'm1' ? value : false
+  }
+
+  team.nativeToolsFor = answers(true)
+  assert.deepEqual(await gate('m1', 'call-on'), { kind: 'allow' })
+  assert.equal(guard('m1', 'call-on'), undefined)
+  assert.deepEqual(stops, [])
+  // It is asked about the Session the call runs in.
+  assert.deepEqual(asked, ['m1', 'm1'])
+
+  for (const off of [false, undefined, 1, 'true', {}]) {
+    stops.length = 0
+    team.nativeToolsFor = answers(off)
+    assert.deepEqual(await gate('m1', 'call-off'), { kind: 'deny', reason: START_TASK_REFUSAL }, String(off))
+    assert.equal(guard('m1', 'call-off'), START_TASK_REFUSAL, String(off))
+    assert.equal(stops.length, 2, String(off))
+  }
+
+  // An older Bot team has no switch to read.
+  stops.length = 0
+  team.nativeToolsFor = undefined
+  assert.deepEqual(await gate('m1', 'call-absent'), { kind: 'deny', reason: START_TASK_REFUSAL })
+  assert.equal(guard('m1', 'call-absent'), START_TASK_REFUSAL)
+  assert.equal(stops.length, 2)
+  // Another Bot keeps the team's tool either way.
+  assert.deepEqual(await gate('digest', 'call-other'), { kind: 'allow' })
+})
+
 test('grants cover their Bot, action and chat; a channel grant covers its chats; expired ones nothing', () => {
   const group = { type: 'group', id: GROUP, name: 'g', channelId: 'wa-1' }
   const grant = { botId: 'digest', resource: { type: 'group', id: GROUP }, actions: ['read', 'send'], approval: 'auto' }

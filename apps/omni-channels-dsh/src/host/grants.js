@@ -21,8 +21,9 @@ const TOLD_MAX = 6000
 const invalid = message => Object.assign(new Error(message), { code: 'bot/invalid' })
 
 // The Bot team's start_task is refused to a Bot that operates the Omni named here, which has
-// no computer: a task would give it one by another door. Every other Bot, and every Bot while
-// no Omni is named, keeps the team's tool.
+// no computer: a task would give it one by another door. Every other Bot, every Bot while
+// no Omni is named, and a Session the Bot team runs with native tools on (operatesHere),
+// keeps the team's tool.
 export const START_TASK_REFUSAL = 'Omni has no computer: it works only through its own tools. Tell the user what the work needs, so they can give it to a Bot that has one.'
 export const EVENT_RUN_REFUSAL = 'This Session handles an automation event, so it only reads omni. Tell the user what you would change instead.'
 
@@ -38,10 +39,14 @@ export function noteOmniStop(rt, sessionId, detail, agent) {
 export const operatesOmni = (rt, botId) => botId !== undefined && (rt.isMain(botId) || rt.botOf(botId)?.kind === 'omni')
 
 /**
- * Whether a Session is a Bot that operates the Omni named here: such a Bot has lost DSH's
- * computer tools (omni-api.js) and the team's start_task.
+ * Whether a Session is a Bot that operates the Omni named here, without a computer: such a
+ * Session has lost DSH's computer tools (omni-api.js) and the team's start_task. Not when the
+ * Bot team says the Bot's Native tools switch is on in this Session (its rt.nativeToolsFor):
+ * the user gave that Bot its agent's own shell and files, so Omni takes nothing from it. Only
+ * a plain true counts; a Bot team without the switch answers nothing, and the Session stays
+ * without a computer.
  */
-export const operatesHere = (rt, sessionId) => (rt.omniNamed?.() ?? Boolean(rt.config?.omni?.url)) && operatesOmni(rt, rt.selfOf(sessionId))
+export const operatesHere = (rt, sessionId) => (rt.omniNamed?.() ?? Boolean(rt.config?.omni?.url)) && operatesOmni(rt, rt.selfOf(sessionId)) && rt.nativeToolsFor?.(sessionId) !== true
 
 /**
  * Whether a Session is a chat thread's (threads.js): it works on Omni as the Omni Bot does,
@@ -272,9 +277,9 @@ export function install(rt) {
   for (const name of Object.keys(endpoints)) ctx.effect(() => rt.hooks.endpoint(name, body => rt.grantEndpoint(name, body)), `ds-bot: ${name}`)
   ctx.effect(() => rt.hooks.view(() => ({ omniGrants: state.omniGrants ?? [], omniConsents: state.omniConsents ?? {} })), 'ds-bot: Omni permissions view')
 
-  // A Bot that operates the Omni named here has no computer, so never the team's start_task:
-  // denied before any card asks for it (DSH's gates run before its guards), and
-  // refused by the guard whatever a gate said.
+  // A Bot that operates the Omni named here has no computer (operatesHere), so never the
+  // team's start_task: denied before any card asks for it (DSH's gates run before its guards),
+  // and refused by the guard whatever a gate said.
   const refusesStartTask = exec => exec.name === 'start_task' && operatesHere(rt, exec.agent?.id ?? exec.agent?.session?.id)
   const noteStartTask = exec => noteOmniStop(rt, exec.agent?.id ?? exec.agent?.session?.id,
     { why: 'rule', tool: 'start_task', callId: exec.callId, text: START_TASK_REFUSAL }, exec.agent)
