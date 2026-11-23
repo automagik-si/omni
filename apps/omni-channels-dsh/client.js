@@ -13885,9 +13885,12 @@ function ChannelsFooter({ wide, actions }) {
   ));
 }
 var CHANNELS_CSS = `
-.bt-channels-foot{gap:8px;justify-content:flex-start;padding:0 12px 0 8px}
-/* The control keeps the bar's own row height, so the mark and the update button sit on one line. */
-.bt-channels-foot{display:flex;align-items:center;min-height:36px;gap:8px}
+.bt-channels-foot{gap:13px;justify-content:flex-start;padding:0 12px 0 9px}
+/* The control keeps the bar's own row height, so the mark and the update button sit on one line. It is a
+   full-width flex row: a button does not stretch on its own, and the count or the dot needs the free space to
+   sit at the right. The mark and the label start where the Account row's icon and name start, below it: the
+   icon 9px in, the name 46px in (9 + the 24px mark + the 13px gap). */
+.bt-channels-foot{display:flex;align-items:center;box-sizing:border-box;width:100%;min-height:36px;gap:13px}
 .bt-channels-mark{display:inline-flex;align-items:center;justify-content:center;flex:none;width:24px;height:24px}
 .bt-channels-mark .oc-vortex{display:block;width:24px;height:24px}
 .bt-channels-mark .oc-vortex-cream{display:none}

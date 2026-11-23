@@ -43,7 +43,12 @@ test('the Channels control draws the brand vortex, never the triskle or the chan
     assert.match(ui.CHANNELS_CSS, /\.bt-channels-mark[^}]*width:24px;height:24px/)
     assert.match(ui.CHANNELS_CSS, /\.bt-channels-mark \.oc-vortex\{display:block;width:24px;height:24px\}/)
     assert.match(ui.CHANNELS_CSS, /body\[data-ds-dark-theme\] \.bt-channels-mark \.oc-vortex-cream\{display:block\}/)
-    assert.match(ui.CHANNELS_CSS, /\.bt-channels-foot\{display:flex;align-items:center;min-height:36px/)
+    // A flex row as wide as its cell (a button does not stretch on its own), so the count sits at the right;
+    // the mark 9px in and the label 46px in, where the Account row below starts its icon and its name.
+    assert.match(ui.CHANNELS_CSS, /\.bt-channels-foot\{display:flex;align-items:center;box-sizing:border-box;width:100%;min-height:36px;gap:13px\}/)
+    assert.match(ui.CHANNELS_CSS, /\.bt-channels-foot\{[^}]*padding:0 12px 0 9px\}/)
+    assert.match(ui.CHANNELS_CSS, /\.bt-channels-count\{margin-left:auto/)
+    assert.match(ui.CHANNELS_CSS, /\.bt-channels-foot \.oc-warn-dot\{margin-left:auto\}/)
     assert.equal(/bt-channels-tiles/.test(ui.CHANNELS_CSS), false, 'the tile stack CSS is gone')
   } finally {
     view.unmount()
