@@ -102,6 +102,7 @@ import { scopedHandle } from '../tenancy/tenant-scope';
 import { runInWorkerTenantScope } from '../tenancy/worker-tenant-context';
 import { fetchMediaUrl } from '../utils/safe-media-fetch';
 import { AgentDispatchLimiter, loadAgentDispatchLimiterConfig } from './agent-dispatch-limiter';
+import { extractAgentOptions } from './agent-options';
 import { getPlugin } from './loader';
 import {
   type BufferedMessage,
@@ -573,9 +574,20 @@ async function sendTextMessage(
   const sanitized = sanitizeOutboundText(text);
   if (!sanitized) return; // Entire message was internal metadata — nothing to send
 
+  // An option block inside the reply becomes native buttons/list (GH #1818);
+  // channels without canSendButtons get the text exactly as before.
+  const reply = extractAgentOptions(sanitized, {
+    buttonsSupported: plugin.capabilities?.canSendButtons === true,
+  });
+
   await plugin.sendMessage(instanceId, {
     to: chatId,
-    content: { type: 'text', text: sanitized },
+    content: {
+      type: 'text',
+      text: reply.text,
+      ...(reply.buttons ? { buttons: reply.buttons } : {}),
+      ...(reply.list ? { list: reply.list } : {}),
+    },
     replyTo,
     metadata: {
       messageFormatMode,
