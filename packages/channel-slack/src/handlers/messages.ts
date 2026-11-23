@@ -208,7 +208,9 @@ const mutationEnvelope = z.object({
   channel: z.string().min(1),
   ts: timestamp,
   channel_type: z.string().optional(),
-  previous_message: z.object({ user: z.string().optional(), text: z.string().optional() }).optional(),
+  previous_message: z
+    .object({ user: z.string().optional(), bot_id: z.string().optional(), text: z.string().optional() })
+    .optional(),
 });
 const messageMutationSchema = z.discriminatedUnion('subtype', [
   mutationEnvelope.extend({
@@ -247,7 +249,7 @@ async function recordMutation(
   const isEdit = mutation.subtype === 'message_changed';
   const userId = (isEdit ? mutation.message.user : undefined) ?? mutation.previous_message?.user;
   const isDm = mutation.channel_type === 'im' || mutation.channel_type === 'mpim' || channelId.startsWith('D');
-  if (isEdit && !isAuthorizingUser(mutation.message.user, mutation.message.bot_id)) {
+  if (isEdit && !isAuthorizingUser(userId, mutation.message.bot_id ?? mutation.previous_message?.bot_id)) {
     const channelConfig = resolveChannelConfig({ channels: filterConfig?.channels }, channelId);
     if (
       isDroppedByChannelConfig(channelConfig, userId ?? '', isDm, true) ||

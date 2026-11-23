@@ -121,6 +121,21 @@ describe('passive Slack message recording', () => {
     );
   });
 
+  test('uses the prior message author on a sparse edit and respects its app identity', async () => {
+    const h = await recordingHarness({ dmPolicy: 'pairing', dmAllowlist: ['U_ALLOWED'] });
+    for (const prior of [{ user: USER }, { user: USER, bot_id: 'B_OMNI' }, { user: 'U_STRANGER' }]) {
+      await h.receive({
+        subtype: 'message_changed',
+        channel: CHAT,
+        ts: CHANGE_TS,
+        previous_message: prior,
+        message: { ts: ORIGINAL_TS, text: 'Replacement' },
+      });
+    }
+    expect(h.publish).toHaveBeenCalledTimes(1);
+    expect(h.publish.mock.calls[0]?.[1]).toMatchObject({ from: USER, content: { type: 'edit', text: 'Replacement' } });
+  });
+
   test('records a deletion without requiring Slack to send the old message', async () => {
     const h = await recordingHarness();
     await h.receive({ subtype: 'message_deleted', channel: CHAT, ts: CHANGE_TS, deleted_ts: ORIGINAL_TS });
