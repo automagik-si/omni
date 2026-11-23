@@ -38,11 +38,18 @@ test('the Channels control draws the brand vortex, never the triskle or the chan
     const src = image => String(image.props?.src ?? '')
     assert.equal(images.some(image => src(image).startsWith('data:image/svg+xml')), true, 'both are the brand files, inlined')
     assert.deepEqual(images.map(image => String(image.props?.className)).sort(), ['oc-vortex oc-vortex-cream', 'oc-vortex oc-vortex-ink'])
-    assert.equal(images.every(image => image.props?.width === 32 && image.props?.height === 32), true, 'the 32px drawing, at its own size')
+    assert.equal(images.every(image => image.props?.width === 24 && image.props?.height === 24), true, 'the 32px drawing, drawn at 24px')
     // And the stylesheet switches them by ground, at that size, over the control's own row height.
-    assert.match(ui.CHANNELS_CSS, /\.bt-channels-mark[^}]*width:32px;height:32px/)
+    assert.match(ui.CHANNELS_CSS, /\.bt-channels-mark[^}]*width:24px;height:24px/)
+    assert.match(ui.CHANNELS_CSS, /\.bt-channels-mark \.oc-vortex\{display:block;width:24px;height:24px\}/)
     assert.match(ui.CHANNELS_CSS, /body\[data-ds-dark-theme\] \.bt-channels-mark \.oc-vortex-cream\{display:block\}/)
-    assert.match(ui.CHANNELS_CSS, /\.bt-channels-foot\{min-height:36px/)
+    // A flex row as wide as its cell (a button does not stretch on its own), so the count sits at the right;
+    // the mark's centre 18px in and the label 46px in: the centre of the Account row's icon, below, and the start
+    // of its name.
+    assert.match(ui.CHANNELS_CSS, /\.bt-channels-foot\{display:flex;align-items:center;box-sizing:border-box;width:100%;min-height:36px;gap:16px\}/)
+    assert.match(ui.CHANNELS_CSS, /\.bt-channels-foot\{[^}]*padding:0 12px 0 6px\}/)
+    assert.match(ui.CHANNELS_CSS, /\.bt-channels-count\{margin-left:auto/)
+    assert.match(ui.CHANNELS_CSS, /\.bt-channels-foot \.oc-warn-dot\{margin-left:auto\}/)
     assert.equal(/bt-channels-tiles/.test(ui.CHANNELS_CSS), false, 'the tile stack CSS is gone')
   } finally {
     view.unmount()
