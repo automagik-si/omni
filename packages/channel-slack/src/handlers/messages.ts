@@ -216,12 +216,17 @@ const messageMutationSchema = z.discriminatedUnion('subtype', [
     message: z.object({
       ts: timestamp,
       user: z.string().optional(),
+      bot_id: z.string().optional(),
       text: z.string(),
       edited: z.object({ ts: timestamp }).optional(),
     }),
   }),
   mutationEnvelope.extend({ subtype: z.literal('message_deleted'), deleted_ts: timestamp }),
 ]);
+
+function acceptsMutationSender(isDm: boolean, userId: string | undefined, policy: DmPolicyConfig): boolean {
+  return !isDm || shouldAcceptDm(userId ?? '', policy).accepted;
+}
 
 /** A mutation changes a stored message without starting a new conversation turn. */
 async function recordMutation(
@@ -231,6 +236,7 @@ async function recordMutation(
   logger: Logger,
   filterConfig: ChannelFilterConfig | undefined,
   dmPolicyConfig: DmPolicyConfig,
+  isAuthorizingUser: (user: unknown, botId: unknown) => boolean,
 ): Promise<void> {
   const parsed = messageMutationSchema.safeParse(msg);
   if (!parsed.success) return;
@@ -240,10 +246,15 @@ async function recordMutation(
 
   const isEdit = mutation.subtype === 'message_changed';
   const userId = (isEdit ? mutation.message.user : undefined) ?? mutation.previous_message?.user;
-  const channelConfig = resolveChannelConfig({ channels: filterConfig?.channels }, channelId);
   const isDm = mutation.channel_type === 'im' || mutation.channel_type === 'mpim' || channelId.startsWith('D');
-  if (isEdit && isDroppedByChannelConfig(channelConfig, userId ?? '', isDm, true)) return;
-  if (isEdit && isDm && !shouldAcceptDm(userId ?? '', dmPolicyConfig).accepted) return;
+  if (isEdit && !isAuthorizingUser(mutation.message.user, mutation.message.bot_id)) {
+    const channelConfig = resolveChannelConfig({ channels: filterConfig?.channels }, channelId);
+    if (
+      isDroppedByChannelConfig(channelConfig, userId ?? '', isDm, true) ||
+      !acceptsMutationSender(isDm, userId, dmPolicyConfig)
+    )
+      return;
+  }
 
   const eventTimestamp = slackTsToMs(mutation.ts);
   const eventId = `${channelId}:${mutation.subtype}:${mutation.ts}`;
@@ -479,21 +490,21 @@ export function setupMessageHandlers(
 
   // Handle all messages (channels, groups, DMs, mpim)
   const handle = async (msg: Record<string, unknown>): Promise<void> => {
-    if (msg.subtype === 'message_changed' || msg.subtype === 'message_deleted') {
-      await recordMutation(instanceId, msg, callbacks, logger, filterConfig, dmPolicyConfig);
-      return;
-    }
-
     const currentBotUserId = resolveBotUserId();
     const currentActingUserId = resolveActingUserId();
     const currentOwnBotId = resolveOwnBotId();
-    const userId = msg.user as string;
-    const recordOwnMessage =
+    const isAuthorizingUser = (user: unknown, botId: unknown) =>
       currentActingUserId !== undefined &&
-      userId === currentActingUserId &&
-      userId !== currentBotUserId &&
-      (!msg.bot_id || (currentOwnBotId !== undefined && msg.bot_id !== currentOwnBotId)) &&
-      ownMessageSchema.safeParse(msg).success;
+      user === currentActingUserId &&
+      user !== currentBotUserId &&
+      (!botId || (currentOwnBotId !== undefined && botId !== currentOwnBotId));
+    if (msg.subtype === 'message_changed' || msg.subtype === 'message_deleted') {
+      await recordMutation(instanceId, msg, callbacks, logger, filterConfig, dmPolicyConfig, isAuthorizingUser);
+      return;
+    }
+
+    const userId = msg.user as string;
+    const recordOwnMessage = isAuthorizingUser(userId, msg.bot_id) && ownMessageSchema.safeParse(msg).success;
     if (!recordOwnMessage && shouldSkipMessage(msg, [currentBotUserId, currentActingUserId], currentOwnBotId)) {
       logger.debug('Message skipped: bot/self/edit', {
         instanceId,

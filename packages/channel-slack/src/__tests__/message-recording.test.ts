@@ -11,7 +11,7 @@ const CHAT = 'D_CHAT';
 const ORIGINAL_TS = '1700000000.000001';
 const CHANGE_TS = '1700000002.000001';
 
-async function recordingHarness() {
+async function recordingHarness(config: Record<string, unknown> = {}) {
   const publish = mock(async (_type: string, _payload: unknown, _metadata: unknown) => 'evt');
   const plugin = new SlackPlugin();
   await plugin.initialize({ eventBus: { publish, subscribe: noop }, logger, config: {} } as unknown as PluginContext);
@@ -30,7 +30,7 @@ async function recordingHarness() {
     actingUserId: USER,
     botId: 'B_OMNI',
     botUserId: 'U_OMNI',
-    config: { channels: { C_BLOCKED: { allowedUsers: ['U_ALLOWED'] } }, channelBlocklist: ['C_BLOCKED'] },
+    config: { channels: { C_BLOCKED: { allowedUsers: ['U_ALLOWED'] } }, channelBlocklist: ['C_BLOCKED'], ...config },
   } as unknown as SlackAttachment);
   const receive = internal.inboundHandlers.get(INSTANCE);
   if (!receive) throw new Error('Slack message handler not registered');
@@ -91,6 +91,34 @@ describe('passive Slack message recording', () => {
     expect(h.trackActiveThread).not.toHaveBeenCalled();
     expect(h.addAckReaction).not.toHaveBeenCalled();
     expect(h.fetchUserProfile).not.toHaveBeenCalled();
+  });
+
+  test('retains edits by the authorizing user in a paired DM and a restricted channel', async () => {
+    const h = await recordingHarness({
+      dmPolicy: 'pairing',
+      dmAllowlist: ['U_ALLOWED'],
+      channels: { C_RESTRICTED: { allowedUsers: ['U_ALLOWED'] } },
+    });
+    for (const channel of [CHAT, 'C_RESTRICTED', 'C_BLOCKED']) {
+      for (const user of [USER, 'U_STRANGER']) {
+        await h.receive({
+          subtype: 'message_changed',
+          channel,
+          ts: CHANGE_TS,
+          message: { ts: ORIGINAL_TS, user, text: 'Revised' },
+        });
+      }
+    }
+    expect(h.publish.mock.calls.map((call) => call[1])).toEqual(
+      [CHAT, 'C_RESTRICTED'].map((chatId) =>
+        expect.objectContaining({
+          chatId,
+          from: USER,
+          content: { type: 'edit', text: 'Revised' },
+          rawPayload: expect.objectContaining({ noAgentDispatch: true }),
+        }),
+      ),
+    );
   });
 
   test('records a deletion without requiring Slack to send the old message', async () => {
