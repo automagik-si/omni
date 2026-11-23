@@ -13877,8 +13877,8 @@ function ChannelsFooter({ wide, actions }) {
     (0, import_react6.createElement)(
       "span",
       { className: "bt-channels-mark", "aria-hidden": true },
-      (0, import_react6.createElement)("img", { className: "oc-vortex oc-vortex-ink", src: VORTEX.ink, alt: "", width: 32, height: 32 }),
-      (0, import_react6.createElement)("img", { className: "oc-vortex oc-vortex-cream", src: VORTEX.cream, alt: "", width: 32, height: 32 })
+      (0, import_react6.createElement)("img", { className: "oc-vortex oc-vortex-ink", src: VORTEX.ink, alt: "", width: 24, height: 24 }),
+      (0, import_react6.createElement)("img", { className: "oc-vortex oc-vortex-cream", src: VORTEX.cream, alt: "", width: 24, height: 24 })
     ),
     t("Channels"),
     summary.attention > 0 ? (0, import_react6.createElement)("span", { className: "oc-warn-dot", "aria-hidden": true }) : (0, import_react6.createElement)("span", { className: "bt-channels-count" }, `${summary.connected}/${summary.total}`)
@@ -13887,9 +13887,9 @@ function ChannelsFooter({ wide, actions }) {
 var CHANNELS_CSS = `
 .bt-channels-foot{gap:8px;justify-content:flex-start;padding:0 12px 0 8px}
 /* The control keeps the bar's own row height, so the mark and the update button sit on one line. */
-.bt-channels-foot{min-height:36px;gap:8px}
-.bt-channels-mark{display:inline-flex;align-items:center;justify-content:center;flex:none;width:32px;height:32px}
-.bt-channels-mark .oc-vortex{display:block;width:32px;height:32px}
+.bt-channels-foot{display:flex;align-items:center;min-height:36px;gap:8px}
+.bt-channels-mark{display:inline-flex;align-items:center;justify-content:center;flex:none;width:24px;height:24px}
+.bt-channels-mark .oc-vortex{display:block;width:24px;height:24px}
 .bt-channels-mark .oc-vortex-cream{display:none}
 body[data-ds-dark-theme] .bt-channels-mark .oc-vortex-ink{display:none}
 body[data-ds-dark-theme] .bt-channels-mark .oc-vortex-cream{display:block}

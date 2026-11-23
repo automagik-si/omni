@@ -710,8 +710,8 @@ export function ChannelsFooter({ wide, actions }) {
   const label = summary.attention > 0 ? t('{n} channel needs attention', { n: summary.attention }) : t('Channels and their health')
   return h('span', { className: 'bt-connect-wrap' }, h('button', { type: 'button', className: 'bt-connect bt-connect-foot bt-channels-foot', title: label, 'aria-label': `${t('Channels')}, ${label}`, onClick: () => actions.selectPanel(CHANNELS_PANEL) },
     h('span', { className: 'bt-channels-mark', 'aria-hidden': true },
-      h('img', { className: 'oc-vortex oc-vortex-ink', src: VORTEX.ink, alt: '', width: 32, height: 32 }),
-      h('img', { className: 'oc-vortex oc-vortex-cream', src: VORTEX.cream, alt: '', width: 32, height: 32 })),
+      h('img', { className: 'oc-vortex oc-vortex-ink', src: VORTEX.ink, alt: '', width: 24, height: 24 }),
+      h('img', { className: 'oc-vortex oc-vortex-cream', src: VORTEX.cream, alt: '', width: 24, height: 24 })),
     t('Channels'),
     summary.attention > 0 ? h('span', { className: 'oc-warn-dot', 'aria-hidden': true }) : h('span', { className: 'bt-channels-count' }, `${summary.connected}/${summary.total}`)))
 }
@@ -719,9 +719,9 @@ export function ChannelsFooter({ wide, actions }) {
 export const CHANNELS_CSS = `
 .bt-channels-foot{gap:8px;justify-content:flex-start;padding:0 12px 0 8px}
 /* The control keeps the bar's own row height, so the mark and the update button sit on one line. */
-.bt-channels-foot{min-height:36px;gap:8px}
-.bt-channels-mark{display:inline-flex;align-items:center;justify-content:center;flex:none;width:32px;height:32px}
-.bt-channels-mark .oc-vortex{display:block;width:32px;height:32px}
+.bt-channels-foot{display:flex;align-items:center;min-height:36px;gap:8px}
+.bt-channels-mark{display:inline-flex;align-items:center;justify-content:center;flex:none;width:24px;height:24px}
+.bt-channels-mark .oc-vortex{display:block;width:24px;height:24px}
 .bt-channels-mark .oc-vortex-cream{display:none}
 body[data-ds-dark-theme] .bt-channels-mark .oc-vortex-ink{display:none}
 body[data-ds-dark-theme] .bt-channels-mark .oc-vortex-cream{display:block}
