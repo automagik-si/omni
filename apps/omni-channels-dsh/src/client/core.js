@@ -4,6 +4,6 @@
 // one roster, one set of the registries this plugin adds to.
 import { omni } from '@automagik/bots-dsh/client'
 
-export const { call, t, hostText, addStrings, onShell, toolCards, nav, badges, botChildren, headerButtons, botSettings, chatSuggestions } = omni
+export const { call, t, hostText, dateLocale, addStrings, onShell, toolCards, nav, badges, botChildren, botChannels, headerButtons, botSettings, chatSuggestions, face, genui } = omni
 export const { OmniMark, BotMark, MAIN_LOOK, CHARACTERS, relativeShort, createSource } = omni.ui
 export const icons = omni.ui.icons

@@ -4,7 +4,7 @@
 |-------|-------|
 | **Status** | PROPOSED (v2 — corrected after plan review) |
 | **Scope** | `packages/api` (message-debouncer + agent-dispatcher), `packages/db` (config), docs/CLI |
-| **Author** | Felipe + Genie |
+| **Author** | Owner + Genie |
 | **Date** | 2026-07-03 |
 | **Grounded in** | omni source (file:line refs below), verified by independent plan review |
 

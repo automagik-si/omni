@@ -7,7 +7,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { z } from 'zod'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import { isThreadSession, omniActorOf, operatesHere, operatesOmni } from './grants.js'
+import { EVENT_RUN_REFUSAL, isThreadSession, noteOmniStop, omniActorOf, operatesHere, operatesOmni } from './grants.js'
 import { output } from './output.js'
 import { SOURCE_ROUTES } from './omni-routes.js'
 import { THREAD_TOOLS } from './threads.js'
@@ -35,14 +35,29 @@ const COMPUTER_REFUSAL = 'Omni has no computer: it works only through its own to
 const KEY_ROUTE = /^\/keys\/children(\/|$)/
 export const KEY_ROUTE_REFUSAL = 'Chat keys are not an operation for a Bot: this app mints and revokes them itself, and their answers carry key text.'
 
-/** Whether a path, as fetch and omni would route it (percent-decoded, slashes collapsed, dot segments resolved), is a chat-key route. */
-export function isKeyRoute(path) {
+// A chat backfill starts only from the user's Start on its card (backfill.js), never from a
+// model's call, even one the user confirms on a card.
+const BACKFILL_START = /^\/chats\/[^/]+\/backfill\/?$/
+export const BACKFILL_START_REFUSAL = 'A chat backfill starts only from the user\'s Start on its card: put one before them with propose_backfill.'
+
+// A path as fetch and omni would route it: percent-decoded, slashes collapsed, dot segments resolved.
+function routedForms(path) {
   let decoded = String(path ?? '')
   try { decoded = decodeURIComponent(decoded) } catch { /* malformed: test it as written */ }
   const collapsed = decoded.replace(/\/{2,}/g, '/')
   let resolved = collapsed
   try { resolved = new URL(collapsed, 'http://omni.invalid').pathname } catch { /* test it as collapsed */ }
-  return KEY_ROUTE.test(collapsed) || KEY_ROUTE.test(resolved)
+  return [collapsed, resolved]
+}
+
+/** Whether a path, as fetch and omni would route it (percent-decoded, slashes collapsed, dot segments resolved), is a chat-key route. */
+export function isKeyRoute(path) {
+  return routedForms(path).some(form => KEY_ROUTE.test(form))
+}
+
+/** Whether a call starts a chat backfill, its path read as isKeyRoute reads one. */
+export function startsBackfill(method, path) {
+  return String(method ?? '').toUpperCase() === 'POST' && routedForms(path).some(form => BACKFILL_START.test(form))
 }
 
 // "/instances/{id}/qr" → /^\/instances\/[^/]+\/qr$/
@@ -111,9 +126,25 @@ const QUIET_WRITES = [
   /^POST \/messages\/[^/]+\/(read|star)$/,
   /^POST \/media\/(tts|stt|vision|imagine|music|film)$/,
 ]
-const SENDS = /^\/messages\/send(\/(media|contact|location|sticker|tts|forward|poll|embed))?$/
+export const SENDS = /^\/messages\/send(\/(media|contact|location|sticker|tts|forward|poll|embed))?$/
 // Where many people read one shared room, not a person's inbox: a WhatsApp group or channel.
 const SHARED_ROOM = /@(g\.us|newsletter)$/
+
+const nonEmptyText = value => typeof value === 'string' && value.length > 0
+
+/** Whether a normalized omni_call can post to a shared room or show custom presence text. */
+export function postsToRoom(method, path, body) {
+  if (method !== 'POST') return false
+  if (SENDS.test(path)) {
+    const to = body?.to
+    return typeof to === 'string' && SHARED_ROOM.test(to)
+  }
+  if (path !== '/messages/send/presence' || body?.hold === true) return false
+  if (body?.type !== 'typing' && body?.type !== 'recording') return false
+  const { status, loadingMessages } = body
+  return nonEmptyText(status) || (Array.isArray(loadingMessages) && loadingMessages.length > 0
+    && Array.from(loadingMessages).every(nonEmptyText))
+}
 
 /** What an omni_call is when it asks first (send, delete, disconnect, change); null when it runs quietly. */
 export function sensitiveCall(method, path, body) {
@@ -244,7 +275,7 @@ export function install(rt) {
   // A Main Bot or an Omni Bot operates omni, and a chat thread as the Omni Bot. In a Session
   // that handles an automation's event, whose text came from other people, it only reads; a
   // thread's automation turns ask first instead (standing-runs.js).
-  async function allowed(exec, method) {
+  async function allowed(exec, method, tool) {
     await rt.load()
     const answerRefusal = rt.answerToolRefusal?.(exec)
     if (answerRefusal) return answerRefusal
@@ -252,7 +283,10 @@ export function install(rt) {
     const self = omniActorOf(rt, id)
     if (!operatesOmni(rt, self)) return 'Only an Omni Bot or a Main Bot operates omni. Ask one in its chat.'
     const eventRun = !isThreadSession(rt, id) && (state.subscriptionRuns ?? []).some(run => run.sessionId === id)
-    if (eventRun && method !== 'GET') return 'This Session handles an automation event, so it only reads omni. Tell the user what you would change instead.'
+    if (eventRun && method !== 'GET') {
+      noteOmniStop(rt, id, { why: 'rule', tool, callId: exec.callId, text: EVENT_RUN_REFUSAL }, exec.agent)
+      return EVENT_RUN_REFUSAL
+    }
     return null
   }
 
@@ -322,7 +356,7 @@ export function install(rt) {
     parameters: { search: { type: 'string', required: true, description: 'Words for what you want to do, e.g. "connect whatsapp qr" or "send message"' } },
     output,
     async execute(args, exec) {
-      const refusal = await allowed(exec, 'GET')
+      const refusal = await allowed(exec, 'GET', 'omni_endpoints')
       if (refusal) return refusal
       try {
         const found = search(await operations(), args.search).slice(0, FOUND_MAX)
@@ -353,13 +387,14 @@ export function install(rt) {
       const answerRefusal = rt.answerToolRefusal?.({ ...exec, name: 'omni_call' })
       if (answerRefusal) return answerRefusal
       const method = String(args.method ?? '').toUpperCase()
-      const refusal = await allowed(exec, method)
+      const refusal = await allowed(exec, method, 'omni_call')
       if (refusal) return refusal
       try {
         if (!METHODS.includes(method)) throw invalid(`method must be one of ${METHODS.join(', ')}`)
         const path = String(args.path ?? '').trim().replace(/^\/api\/v2(?=\/)/, '')
         if (!/^\/[A-Za-z0-9/_\-.~%:@]*$/.test(path)) throw invalid('path must be an API path such as /instances/<id>, without the host or a query string')
         if (isKeyRoute(path)) throw invalid(KEY_ROUTE_REFUSAL)
+        if (startsBackfill(method, path)) throw invalid(BACKFILL_START_REFUSAL)
         const op = findOperation(await operations(), method, path)
         if (!op) throw invalid(`${method} ${path} is not an omni API operation. Find it with omni_endpoints.`)
         const query = parse(args.query, 'query')
@@ -398,6 +433,7 @@ export function install(rt) {
     if (ownership) return fitted({ status: 403, error: ownership })
     // A confirmed card runs here too: it never reaches a chat-key route either.
     if (isKeyRoute(path)) return fitted({ status: 0, error: KEY_ROUTE_REFUSAL })
+    if (startsBackfill(method, path)) return fitted({ status: 0, error: BACKFILL_START_REFUSAL })
     const qs = query && typeof query === 'object' ? new URLSearchParams(Object.entries(query).filter(([, value]) => value !== undefined && value !== null).map(([key, value]) => [key, typeof value === 'object' ? JSON.stringify(value) : String(value)])).toString() : ''
     const result = await call(method, `${path}${qs ? `?${qs}` : ''}`, body, bot)
     return fitted({ status: result.status, operation: op?.summary ?? `${method} ${path}`, data: result.data })
@@ -431,7 +467,7 @@ export function install(rt) {
     ...definition,
     output,
     async execute(args, exec) {
-      const refusal = await allowed(exec, method)
+      const refusal = await allowed(exec, method, definition.name)
       if (refusal) return refusal
       try {
         return await execute(args, exec)

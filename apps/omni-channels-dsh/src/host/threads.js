@@ -16,6 +16,7 @@ import { randomUUID } from 'node:crypto'
 import { realpath, stat } from 'node:fs/promises'
 import { isAbsolute } from 'node:path'
 import { z } from 'zod'
+import { isCanonicalDirectChat } from './answer-intake.js'
 import { chatOf } from './omni.js'
 import { OPERATOR_RULES } from './omni-rules.js'
 import { NEEDS_NEWER_TEAM, TEAM_CONTRACT } from './resume-hook.js'
@@ -102,6 +103,7 @@ const CreatePayload = z.object({
 })
 const AddPayload = z.union([CreatePayload, Member])
 const RemovePayload = z.object({ threadId: id, automations: z.enum(['keep', 'pause', 'delete']).optional() })
+const TrainingPayload = z.object({ chats: z.array(id).min(1).max(50), selected: z.boolean(), link: z.url().optional() }).strict()
 // A thread's own choice for each, or null to follow the global default again; a field left
 // out stays as it is.
 const PermissionsPayload = z.object({
@@ -182,6 +184,8 @@ const chatOfRecord = thread => ({ name: thread.title, externalId: thread.chatJid
 const unnamed = thread => ownNameOf(chatOfRecord(thread)) === '' || (kindOf(thread) === 'direct' && BARE_PHONE.test(thread.title ?? ''))
 // What a thread is told it works on, and its DSH Session's title: its name, else the word.
 const labelOf = (name, kind) => name ?? (kind === 'group' ? 'Group' : 'Chat')
+/** A thread's chat label on one line, bounded for notices and asks. */
+export const threadLabelOf = thread => (thread == null ? '' : thread.chatName ?? chatNameOf(chatOfRecord(thread)) ?? '').replace(/\s+/g, ' ').trim().slice(0, NAME_MAX)
 // A search that reads as a phone number ("+55 (11) 98888-7777", "11.98888.7777") goes to Omni as its digits,
 // the way a WhatsApp id writes them, so it finds the chat by its id; any other goes as typed.
 const PHONE_QUERY = /^\+?[\d\s().-]+$/
@@ -435,10 +439,10 @@ export function install(rt) {
   const ready = () => rt.teamResume?.ready === true
 
   // Omni's answer, read with the link key; `null` when no Omni is linked here.
-  async function ask(path) {
+  async function ask(path, link) {
     let response
     try {
-      response = await rt.omniRequest('GET', path)
+      response = await rt.omniRequest('GET', path, link)
     } catch {
       throw refused('Could not reach Omni. Try again in a moment.')
     }
@@ -523,9 +527,10 @@ export function install(rt) {
     if (byAutomation && list().filter(thread => thread.madeBy === 'automation').length >= AUTOMATION_THREADS_MAX) return { ok: false, reason: THREADS_FULL }
     return makeResolved(resolved.chats, byAutomation)
   }
-  async function makeResolved(chats, byAutomation, title, notes = '') {
+  async function makeResolved(chats, byAutomation, title, notes = '', { trainingOnly = false, check } = {}) {
     const chat = chats[0]
-    const answer = answerSettingsOf(rt.botOf(explicitOwnerOf(chat.instanceId)))
+    const owner = explicitOwnerOf(chat.instanceId)
+    const answer = answerSettingsOf(rt.botOf(owner))
     const answerChild = answer.enabled
     if (answerChild && chats.length !== 1) return { ok: false, reason: 'An answer child belongs to exactly one chat.' }
     const channelId = chat.instanceId
@@ -533,30 +538,46 @@ export function install(rt) {
     const chatIds = chats.map(member => member.id)
     const link = rt.omniLink?.() ?? null
     const threadId = randomUUID()
-    const minted = await rt.threadKeys.mint(threadId, chatIds.length === 1 ? chatId : chatIds)
+    if (trainingOnly) check()
+    const minted = await rt.threadKeys.mint(threadId, chatIds.length === 1 ? chatId : chatIds, { check })
     if (!minted.ok) return minted
     const name = title ?? chatNameOf(chat)
     const kind = chat.chatType === 'dm' ? 'direct' : 'group'
     const chatName = labelOf(name, kind)
     let sessionId
     try {
+      if (trainingOnly) check()
       sessionId = await rt.createSession(chatName.slice(0, TITLE_MAX))
     } catch (error) {
       await rt.threadKeys.revoke(threadId).catch(cut => rt.warn('omni-channels: the key minted for %s could not be cut: %s', chatName, cut?.message ?? cut))
-      return { ok: false, reason: `The thread's Session could not be made: ${error?.message ?? error}` }
+      return { ok: false, reason: trainingOnly && error?.code === 'bot/refused' ? error.message : `The thread's Session could not be made: ${error?.message ?? error}` }
     }
     const thread = {
-      id: threadId, sessionId, ownerBotId: rt.channelOwner?.(channelId) ?? rt.eventsBotId?.(), chatId, chatIds, notes, ...(title === undefined ? {} : { namedSet: true }), ...(chats.length === 1 ? {} : { members: chats.map(member => ({ chatId: member.id, channelId: member.instanceId })) }), chatJid: chat.externalId, chatName, channelId, origin: link?.url ?? '',
+      id: threadId, sessionId, ownerBotId: trainingOnly ? owner : rt.channelOwner?.(channelId) ?? rt.eventsBotId?.(), chatId, chatIds, notes, ...(title === undefined ? {} : { namedSet: true }), ...(chats.length === 1 ? {} : { members: chats.map(member => ({ chatId: member.id, channelId: member.instanceId })) }), chatJid: chat.externalId, chatName, channelId, origin: link?.url ?? '',
       self: minted.self ?? null, title: name?.slice(0, TITLE_MAX) ?? null, kind, status: 'idle', turnOpenAt: null, at: Date.now(),
       ...(byAutomation ? { madeBy: 'automation' } : {}),
       // Only a newly made child takes the bot's default; converted threads keep their own.
-      ...(answerChild ? { answerChild: true, sendingMode: answer.newChildMode, approvedStreak: 0 } : {}),
+      ...(answerChild ? { answerChild: true, sendingMode: trainingOnly ? 'training' : answer.newChildMode, approvedStreak: 0 } : {}),
+      ...(trainingOnly ? { trainingSelectedAt: Date.now() } : {}),
     }
     if (!answerChild) await selectOmniModel(rt, sessionId, thread.ownerBotId).catch(error => rt.warn('omni-channels: the thread %s keeps DSH\'s model, the Omni Bot\'s was not applied: %s', chatName, error?.message ?? error))
-    threads()[threadId] = thread
+    if (!trainingOnly) threads()[threadId] = thread
     try {
-      if (answerChild) { await rt.prepareAnswerThread(thread); await selectOmniModel(rt, sessionId, thread.ownerBotId) }
-      await rt.save()
+      if (trainingOnly) check()
+      if (answerChild) {
+        await rt.prepareAnswerThread(thread)
+        if (trainingOnly) check()
+        await selectOmniModel(rt, sessionId, thread.ownerBotId)
+      }
+      if (trainingOnly) {
+        await saveTrainingSelection(thread, true, thread.trainingSelectedAt, () => {
+          check()
+          threads()[threadId] = thread
+          return () => { delete threads()[threadId] }
+        })
+      } else {
+        await rt.save()
+      }
     } catch (error) {
       // Undone: the Session archived with its work stopped, then the key cut. A key that can be
       // neither cut nor marked keeps the record (in memory), so a remove finishes it.
@@ -565,13 +586,109 @@ export function install(rt) {
       try {
         await rt.threadKeys.revoke(threadId)
       } catch (cut) {
+        if (trainingOnly) return { ok: false, reason: 'The training selection could not be kept, and its chat key could not be cut.' }
         return { ok: false, reason: `The thread could not be kept, and its chat key could not be cut, so it stays until it is removed: ${cut?.message ?? cut}` }
       }
-      delete threads()[threadId]
+      if (!trainingOnly) delete threads()[threadId]
       return { ok: false, reason: `The thread could not be kept: ${error?.message ?? error}` }
     }
     await tell(added, thread, 'added')
     return { ok: true, thread }
+  }
+
+  const isSelected = thread => Number.isFinite(thread?.trainingSelectedAt)
+  const matchesTrainingThread = (thread, chatId, channelId, owner, link) =>
+    isAnswerChild(thread) && thread.chatIds.length === 1 && thread.chatIds[0] === chatId &&
+    thread.channelId === channelId && ownsExplicitly(owner, channelId) && thread.ownerBotId === owner && thread.origin === link?.url
+
+  const trainingState = thread => ({
+    selected: isSelected(thread), threadId: thread?.id ?? null, sendingMode: thread ? sendingModeOf(thread) : null,
+  })
+  const trainingRefusal = error => error?.message ?? 'The training selection could not be saved.'
+  const trainingLinkChanged = () => refused('The Omni link changed while selecting this chat.')
+  function checkExpectedTrainingLink(expected, current) {
+    if (expected !== undefined && current?.url !== expected) throw trainingLinkChanged()
+  }
+  function trainingOf(chat) {
+    const thread = byChat(chat.id)
+    return trainingState(matchesTrainingThread(thread, chat.id, chat.channelId, explicitOwnerOf(chat.channelId), rt.omniLink?.()) ? thread : undefined)
+  }
+
+  function saveTrainingSelection(thread, selected, at, apply) {
+    const name = selected ? 'training.selected' : 'training.deselected'
+    const { chatId, channelId, id: threadId } = thread
+    return rt.saveOmniTransition(name, thread.origin, channelId, { chatId, threadId, selected, at }, apply)
+  }
+
+  function checkTrainingAuthority(chat, owner, link) {
+    const readOnly = rt.readOnly?.()
+    if (readOnly !== undefined) throw refused(readOnly)
+    const current = rt.omniLink?.()
+    if (current?.url !== link.url || current?.key !== link.key) throw trainingLinkChanged()
+    if (!ownsExplicitly(owner, chat.instanceId)) throw refused('This chat needs a channel with the same explicit Bot owner.')
+    const answer = answerSettingsOf(rt.botOf(owner))
+    if (!answer.enabled) throw refused('Answer Mode is off on the owning Bot.')
+    if (!rt.canChannel(owner, chat.instanceId, 'write')) throw refused('The owning Bot may not write to this channel.')
+    if (answer.needsStaffChatId === chat.id) throw refused(NEEDS_STAFF_CHAT_REFUSAL)
+  }
+
+  async function selectTrainingNow(chatId, selected, expectedLink) {
+    const readOnly = rt.readOnly?.()
+    if (readOnly !== undefined) throw refused(readOnly)
+    const link = rt.omniLink?.()
+    checkExpectedTrainingLink(expectedLink, link)
+    if (!link) throw refused(NOT_LINKED)
+    const answer = ChatAnswer.safeParse(await ask(`/chats/${chatId}`, link))
+    if (!answer.success || answer.data.data.id !== chatId) throw refused('Omni answered something else for that chat.')
+    const chat = answer.data.data
+    if (!isCanonicalDirectChat(chat)) throw refused('Answer Mode training requires a direct chat.')
+    const owner = explicitOwnerOf(chat.instanceId)
+    const check = () => checkTrainingAuthority(chat, owner, link)
+    check()
+    const thread = byChat(chatId)
+    if (!thread) {
+      if (!selected) return {}
+      if (!ready()) throw refused(rt.teamResume?.reason ?? NEEDS_NEWER_TEAM)
+      const named = await namedChat(chat, chat.instanceId, link)
+      const made = await makeResolved([named], false, undefined, '', { trainingOnly: true, check })
+      if (!made.ok) throw refused(made.reason)
+      return { thread: made.thread }
+    }
+    if (!isAnswerChild(thread)) throw refused('This chat already belongs to a non-answer thread.')
+    if (!matchesTrainingThread(thread, chatId, chat.instanceId, owner, link)) {
+      throw refused('This chat already belongs to a thread with a different owner, channel, Omni, or more than one chat.')
+    }
+    if (isSelected(thread) !== selected) {
+      const before = thread.trainingSelectedAt
+      const at = Date.now()
+      try {
+        await saveTrainingSelection(thread, selected, at, () => {
+          check()
+          if (selected) thread.trainingSelectedAt = at
+          else delete thread.trainingSelectedAt
+          return () => {
+            if (before === undefined) delete thread.trainingSelectedAt
+            else thread.trainingSelectedAt = before
+          }
+        })
+      } catch (error) {
+        if (selected) throw error
+        check()
+        return { thread, refusal: trainingRefusal(error) }
+      }
+    }
+    return { thread }
+  }
+
+  function provisionTraining(chatId, selected = true, expectedLink) {
+    return serial(async () => {
+      try {
+        const { thread, refusal = null } = await selectTrainingNow(chatId, selected, expectedLink)
+        return { chatId, ...trainingState(thread), refusal }
+      } catch (error) {
+        return { chatId, ...trainingState(), refusal: trainingRefusal(error) }
+      }
+    })
   }
 
   // A chat's thread for an automation's event (subscriptions.js): the one it has, else one made
@@ -1040,6 +1157,8 @@ export function install(rt) {
     add,
     ensure,
     answerFor,
+    provisionTraining,
+    trainingOf,
     remove,
     // Each returns its unsubscribe, as rt.threadKeys.onChange does.
     onAdded: (listener) => {
@@ -1076,6 +1195,7 @@ export function install(rt) {
         const waitingDraft = isAnswerChild(thread) && thread.status === 'waiting' ? rt.answerWaitingDraft?.(thread.id) : undefined
         return {
           ...(waitingDraft ? { waitingDraft } : {}),
+          trainingSelected: isSelected(thread),
           ...(isAnswerChild(thread) ? { answerChild: true, sendingMode: sendingModeOf(thread), approvedStreak: thread.approvedStreak ?? 0, graduateAfter: answerSettingsOf(rt.botOf(thread.ownerBotId)).graduateAfter } : {}),
           ...(isAnswerChild(thread) && thread.paused === true ? { paused: true, pausedUntil: Number.isFinite(pausedUntilOf(thread, rt.botOf(thread.ownerBotId))) ? pausedUntilOf(thread, rt.botOf(thread.ownerBotId)) : null } : {}),
           // #1707: the child asked for someone from the team (needs-staff.js); staff dismiss it.
@@ -1100,6 +1220,12 @@ export function install(rt) {
   ctx.effect(() => rt.hooks.view(() => rt.threadsView()), 'omni-channels: threads view')
   ctx.effect(() => rt.hooks.live(() => rt.threadsOffer()), 'omni-channels: threads offer')
 
+  // Names a thread's Session for the team's approval and stop notices only.
+  if (typeof rt.hooks?.sessionOwner === 'function') ctx.effect(() => rt.hooks.sessionOwner((sessionId) => {
+    const thread = bySession(sessionId)
+    return thread === undefined ? undefined : { botId: thread.ownerBotId ?? rt.eventsBotId?.(), label: threadLabelOf(thread) }
+  }), 'omni-channels: thread Session owners')
+
   const parse = (schema, value, what) => {
     const parsed = schema.safeParse(value ?? {})
     if (!parsed.success) throw invalid(what)
@@ -1113,12 +1239,12 @@ export function install(rt) {
   // their name ("54958418317348@lid") where its list resolves the contact's name, so
   // a chat named by an id is read again from the channel's list: the thread is then named as
   // the picker showed it, never by the LID, and by the number only when nothing names it.
-  async function namedChat(chat, channelId) {
+  async function namedChat(chat, channelId, link) {
     if (ownNameOf(chat) !== '') return chat
     const phone = phoneOf(chat)
     const query = new URLSearchParams({ instanceId: channelId, limit: String(CHATS_LIMIT), sort: 'activity', search: phone ?? chat.externalId })
     try {
-      const answer = ChatList.safeParse(await ask(`/chats?${query}`))
+      const answer = ChatList.safeParse(await ask(`/chats?${query}`, link))
       if (!answer.success) return chat
       // The list's row of this same chat, never another chat that shares its number.
       const row = answer.data.items.find(item => item.id === chat.id)
@@ -1200,6 +1326,14 @@ export function install(rt) {
   // host that only reads the team does not serve them.
   ctx.effect(() => rt.hooks.endpoint('omni-thread-chats', chats, { read: true }), 'omni-channels: omni-thread-chats')
   for (const [name, run] of Object.entries(ENDPOINTS)) ctx.effect(() => rt.hooks.endpoint(name, run), `omni-channels: ${name}`)
+  ctx.effect(() => rt.hooks.endpoint('select_conversation_training', async (body) => {
+    const { chats: chatIds, selected, link } = parse(TrainingPayload, body, 'Pick 1–50 chats and whether to select them for training.')
+    await rt.load()
+    if (link !== undefined) checkExpectedTrainingLink(link, rt.omniLink?.())
+    const results = []
+    for (const chatId of new Set(chatIds)) results.push(await provisionTraining(chatId, selected, link))
+    return { results }
+  }), 'omni-channels: select_conversation_training')
 
   // A thread's name again, from Omni: its record, the view's title and its DSH Session's title
   // (the conversation header's) follow the chat as Omni has it now; nothing is written when

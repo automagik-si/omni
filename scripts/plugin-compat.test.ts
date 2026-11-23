@@ -76,6 +76,8 @@ describe("Omni's plugins and the Omni they need", () => {
   test('the scan sees the calls the channels plugin makes, with their methods', () => {
     const uses = pluginUses(join(root, 'apps/omni-channels-dsh'), here).map((use) => `${use.method} ${use.path}`);
     expect(uses).toContain('POST /api/v2/messages/send');
+    expect(uses).toContain('GET /api/v2/messages/{}');
+    expect(uses).toContain('POST /api/v2/events/trigger');
     expect(uses).toContain('GET /api/v2/instances/{}/status');
     expect(uses).toContain('POST /api/v2/login/connect');
     expect(uses).toContain('POST /api/auth/device/token');
@@ -94,6 +96,9 @@ describe("Omni's plugins and the Omni they need", () => {
       'Omni 2.261023.14 serves no GET /api/v2/channels/whatsapp-business/kapso/numbers (src/host/omni-channel-actions.js): raise engines.omni',
       'Omni 2.261023.14 serves no POST /api/v2/channels/whatsapp-business/kapso/setup-link (src/host/omni-channel-actions.js): raise engines.omni',
       'Omni 2.261023.14 serves no GET /api/v2/channels/whatsapp-business/webhook-setup (src/host/omni-channel-actions.js): raise engines.omni',
+      'Omni 2.261023.14 serves no POST /api/v2/chats/{}/backfill (src/host/backfill.js): raise engines.omni',
+      'Omni 2.261023.14 serves no GET /api/v2/chats/{}/backfill/{} (src/host/backfill.js): raise engines.omni',
+      'Omni 2.261023.14 serves no POST /api/v2/chats/{}/backfill/{}/cancel (src/host/backfill.js): raise engines.omni',
       'Omni 2.261023.14 serves no GET /api/v2/chats/{}/coverage (src/host/reading.js): raise engines.omni',
       'Omni 2.261023.14 serves no POST /api/v2/instances/{}/whatsapp-business/kapso/connect (src/host/omni-channel-actions.js): raise engines.omni',
       'Omni 2.261023.14 serves no POST /api/v2/keys/children (src/host/thread-keys.js): raise engines.omni',

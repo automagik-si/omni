@@ -755,6 +755,14 @@ export async function setupEventPersistence(eventBus: EventBus, db: Database): P
       durable: 'event-persistence-agent-run-completed',
       startFrom: 'new',
     });
+    // A sync job's progress, end, failure or cancel (sync.progress / completed / failed /
+    // cancelled), journaled so a durable consumer can follow a chat backfill instead of
+    // polling its job. The payload is ids, counts, states and coverage times, never message text.
+    await eventBus.subscribePattern('sync.>', (event) => journalInternalEvent(db, event), {
+      ...CONSUMER_OPTIONS,
+      durable: 'event-persistence-sync',
+      startFrom: 'new',
+    });
 
     for (const family of CHANGE_JOURNAL_FAMILIES) {
       await eventBus.subscribePattern(

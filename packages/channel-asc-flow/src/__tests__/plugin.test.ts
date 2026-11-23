@@ -351,6 +351,75 @@ describe('outbound turn', () => {
     expect(ready('42')).toMatchObject({ hand_off: 'sim', codigo_operadora_vq: '' });
   });
 
+  it('forwards protocolo_vq into the Genesys userdata, as the agent wrote it', async () => {
+    // `u_protocolo` is what the attendant reads at the WDE instead of asking the
+    // beneficiary for the number they were just given. The agent owns the format
+    // (a list, newest first); the channel only carries it.
+    await boot();
+    await send(
+      { type: 'text', text: 'Vou te transferir.' },
+      {
+        isHandoff: true,
+        handoffFields: { fila_vq: 'VQ_AGENDAMENTO', protocolo_vq: '00000000000000000002, 00000000000000000001' },
+      },
+    );
+
+    expect(ready('42')).toMatchObject({
+      hand_off: 'sim',
+      fila_vq: 'VQ_AGENDAMENTO',
+      protocolo_vq: '00000000000000000002, 00000000000000000001',
+    });
+  });
+
+  it('forwards an empty protocolo_vq rather than omitting it', async () => {
+    // Same all-or-nothing `store` as the identity fields: with no protocol —
+    // absent, blank or not text — the key still arrives as "", so the flow's
+    // mapping is never skipped and the handoff is not refused.
+    await boot();
+    const cases: Array<Record<string, unknown>> = [
+      { fila_vq: 'VQ_AGENDAMENTO' },
+      { fila_vq: 'VQ_AGENDAMENTO', protocolo_vq: '' },
+      { fila_vq: 'VQ_AGENDAMENTO', protocolo_vq: '  \n ' },
+      { fila_vq: 'VQ_AGENDAMENTO', protocolo_vq: 123 },
+      { fila_vq: 'VQ_AGENDAMENTO', protocolo_vq: ['00000000000000000001'] },
+      { fila_vq: 'VQ_AGENDAMENTO', protocolo_vq: null },
+    ];
+    for (const [i, handoffFields] of cases.entries()) {
+      if (i > 0) await openTurn(plugin);
+      await send({ type: 'text', text: 'Vou te transferir.' }, { isHandoff: true, handoffFields });
+      expect(ready('42')).toMatchObject({ hand_off: 'sim', fila_vq: 'VQ_AGENDAMENTO', protocolo_vq: '' });
+    }
+  });
+
+  it('collapses whitespace and caps protocolo_vq at 200 characters', async () => {
+    await boot();
+    await send(
+      { type: 'text', text: 'Vou te transferir.' },
+      {
+        isHandoff: true,
+        handoffFields: { fila_vq: 'VQ_AGENDAMENTO', protocolo_vq: '  00000000000000000002, \n 00000000000000000001 ' },
+      },
+    );
+    expect(ready('42')?.protocolo_vq).toBe('00000000000000000002, 00000000000000000001');
+
+    await openTurn(plugin);
+    await send(
+      { type: 'text', text: 'Vou te transferir.' },
+      { isHandoff: true, handoffFields: { fila_vq: 'VQ_AGENDAMENTO', protocolo_vq: '9'.repeat(300) } },
+    );
+    expect(ready('42')?.protocolo_vq).toBe('9'.repeat(200));
+  });
+
+  it('does not carry protocolo_vq on a turn that does not hand off', async () => {
+    await boot();
+    await send(
+      { type: 'text', text: 'ok' },
+      { handoffQueue: 'VQ_X', handoffFields: { protocolo_vq: '00000000000000000001' } },
+    );
+
+    expect(ready('42')).not.toHaveProperty('protocolo_vq');
+  });
+
   // `POST /messages/send/handoff` sets `agentPaused: true` unless the send says
   // otherwise. In `flow` mode that pause is the deadlock: the beneficiary only
   // leaves the bot at the `genesys_mobile_service` node, so the agent must keep
@@ -604,6 +673,7 @@ describe('outbound turn', () => {
         fila_vq: 'VQ_AGENDAMENTO',
         motivo_transf_vq: 'fora do escopo',
         codigo_operadora_vq: '',
+        protocolo_vq: '',
       });
     });
 

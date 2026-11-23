@@ -3,7 +3,7 @@
 // computer has, else one this plugin downloads once from Bun's own releases and checks
 // against the release's SHASUMS256.txt before unpacking it. `bun x` then installs and starts
 // @automagik/omni at the newest release this plugin works with (omni-release.js: one exact
-// version, shown before it runs) (`install --sandbox --at-login --json`), and the sandbox's
+// version, shown before it runs) (`install --sandbox --json`), and the sandbox's
 // key links this host the way "Use it" does (omni-discover.js). The key is read here, from
 // the sandbox's config file, and never reaches the page.
 //
@@ -21,7 +21,7 @@ import { delimiter, dirname, isAbsolute, join, relative } from 'node:path'
 import { promisify } from 'node:util'
 import { inflateRawSync } from 'node:zlib'
 import { z } from 'zod'
-import { linkWithKey, sandboxHome, UNFOLD_RUNS_OMNI, unfoldHost } from './omni-discover.js'
+import { linkWithKey, sandboxHome, SERVER_IMAGE_INSTALL, UNFOLD_RUNS_OMNI, unfoldHost } from './omni-discover.js'
 import { installRelease } from './omni-release.js'
 import { PLUGIN_VERSION } from './version.js'
 
@@ -158,8 +158,40 @@ export async function downloadBun({ env = process.env, home = homedir(), platfor
   return target
 }
 
-// The arguments Omni's CLI is run with: no shell, nothing interpolated.
-export const installArgs = version => ['x', '--bun', `@automagik/omni@${version}`, 'install', '--sandbox', '--at-login', '--json']
+export async function atLoginUsable({ env = process.env, platform = process.platform, spawn = spawnProcess, uid = process.getuid?.() ?? 0 } = {}) {
+  if (env.AUTOMAGIK_GATE_IMAGE === '1') return false
+  if (platform !== 'linux') return platform === 'darwin'
+  return new Promise(resolve => {
+    let child
+    try {
+      child = spawn('systemctl', ['--user', 'show-environment'], {
+        env: { ...env, XDG_RUNTIME_DIR: env.XDG_RUNTIME_DIR || `/run/user/${uid}` },
+        stdio: 'ignore',
+      })
+    } catch {
+      resolve(false)
+      return
+    }
+    const finish = (usable) => {
+      clearTimeout(timer)
+      child.off('error', onError)
+      child.off('close', onClose)
+      resolve(usable)
+    }
+    const onError = () => finish(false)
+    const onClose = (code, signal) => finish(code === 0 && !signal)
+    const timer = setTimeout(() => {
+      try { child.kill('SIGKILL') } catch {}
+      finish(false)
+    }, 2000)
+    child.once('error', onError)
+    child.once('close', onClose)
+  })
+}
+
+// The direct job reads a JSON report. The interactive terminal shows the same install without JSON.
+export const installArgs = (version, { atLogin }) => ['x', '--bun', `@automagik/omni@${version}`, 'install', '--sandbox', ...(atLogin ? ['--at-login'] : []), '--json']
+export const installCommand = (version, options) => ['bun', ...installArgs(version, options).slice(0, -1)].join(' ')
 
 // The environment the CLI runs in: this one, with Bun's folder first on PATH (the CLI runs on
 // Bun) and without an Omni config or key of this host's, which are not the sandbox's.
@@ -170,14 +202,14 @@ export function installEnv(bun, env = process.env) {
 
 // Runs the CLI and reads its report: the last line it printed on stdout. Exit 3 means no
 // sandbox at that home; any other failure carries the CLI's own words.
-export function runInstall({ bun, version = PLUGIN_VERSION, env = process.env, spawn = spawnProcess, timeoutMs = INSTALL_TIMEOUT_MS }) {
+export function runInstall({ bun, version = PLUGIN_VERSION, env = process.env, spawn = spawnProcess, atLogin = false, timeoutMs = INSTALL_TIMEOUT_MS }) {
   return new Promise((resolve) => {
     let stdout = ''
     let stderr = ''
     const keep = (text, chunk) => (text + chunk).slice(-MAX_OUTPUT)
     let child
     try {
-      child = spawn(bun, installArgs(version), { env: installEnv(bun, env), stdio: ['ignore', 'pipe', 'pipe'], shell: false })
+      child = spawn(bun, installArgs(version, { atLogin }), { env: installEnv(bun, env), stdio: ['ignore', 'pipe', 'pipe'], shell: false })
     } catch (error) {
       resolve({ ok: false, error: `Could not start Bun: ${error.message}` })
       return
@@ -243,13 +275,14 @@ export function install(rt, deps = {}) {
 
   async function run(current, version) {
     try {
+      const atLogin = await (deps.atLoginUsable ?? atLoginUsable)({ env, platform: deps.platform, spawn, uid: deps.uid })
       let bun = await findBun({ env, home, versionProbeTimeoutMs: deps.versionProbeTimeoutMs })
       if (bun === null) {
         current.step = 'download-bun'
         bun = await (deps.downloadBun ?? downloadBun)({ env, home, fetchImpl, platform: deps.platform, arch: deps.arch })
       }
       current.step = 'install'
-      const report = await runInstall({ bun, version, env, spawn })
+      const report = await runInstall({ bun, version, env, spawn, atLogin })
       current.logsDir = report.logsDir ?? null
       if (!report.ok) throw new Error(report.error)
       const key = sandboxKey(report)
@@ -268,6 +301,7 @@ export function install(rt, deps = {}) {
   // Without `confirm`, only what the page should ask about: where it goes, which version. Under
   // Unfold nothing is installed here: no Bun download, no npm lookup, no login item.
   async function start(body) {
+    if (env.AUTOMAGIK_GATE_IMAGE === '1') throw refused(SERVER_IMAGE_INSTALL)
     if (unfoldHost(env)) throw refused(UNFOLD_RUNS_OMNI)
     const parsed = InstallPayload.safeParse(body ?? undefined)
     if (!parsed.success) throw invalid('Confirm installing Omni on this computer first')

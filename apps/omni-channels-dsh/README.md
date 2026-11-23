@@ -28,11 +28,20 @@ and needs it; the canvas plugin (`@automagik/omni-canvas-dsh`) sits on this one.
   page. A run for an event only reads omni. A "thread" worker runs each event in the thread
   of the chat it came from, making that chat a thread first when it is none, so an
   automation over many chats works in one thread per chat, drawn under the Omni Bot's row.
+- **Backfilling chats' history**: `propose_backfill` puts a card before the user, who ticks
+  chats, sets the range and presses Start once; each chat's row moves live until it ends (see
+  below). `backfill_status` and `cancel_backfill` let the Bot follow and stop one.
 - **Omni's rules**: how to operate Omni, that it has no computer, and how to run automations,
   as a part of the Main Bot's rules inside the team's prompt section.
 - **Connect Omni**, the onboarding step `omni-connect` (order −250), between the Omni AI
   plugin's welcome (−300) and Connect AI (−200). A skip is kept by `@automagik/welcome-dsh`
   when it is installed, else in this browser.
+
+On a Bot team whose `bots-dsh` release passes the Session to step classifiers, an
+`omni_call` post into a group or channel and a presence update with text count as hard
+steps. Auto never lets one through by itself, every asking level asks, and a never-asking
+level refuses. Sends to a person and deletes keep Omni's own confirmation card.
+`omni_send`, reactions, automation event runs, and chat threads keep Omni's rules.
 
 ## Attach a Telegram bot from a wizard host
 
@@ -254,7 +263,7 @@ messages never start an answer.
   channel's history) marks. The header gives the coverage (oldest, newest, count, count in the
   window, deleted, media without a file), the last contact each way, "page N of about M", the
   next cursor (which keeps its window, and its size unless another is given) and the chat's
-  reading note. When Omni holds nothing for the window, it says to ask the user for a backfill
+  reading note and conversation summary. When Omni holds nothing for the window, it says to ask the user for a backfill
   first. A page stays under the size DSH keeps whole in a tool result (about 46,000
   characters): a page that fits keeps every text whole; one that does not cuts its texts
   shorter, never its lines, and its header says to read it again (same cursor, none on a first
@@ -263,14 +272,15 @@ messages never start an answer.
   (at most 8 times), the header says "fewer messages than asked, to fit", and the next cursor
   is Omni's own after the last message shown. A chat Omni does not have, or that this link may
   not read, is said plainly.
-- `save_reading_note { chat, note, readThrough }` keeps the note (at most 8,000 characters: who
+- `save_reading_note { chat, note, readThrough, summary? }` keeps the note (at most 8,000 characters: who
   the person is to the user, what is open, the last contact, how the user talks to them), the
   newest message time it covers (`readThrough`, where a later reading of what is new starts),
   and when it was updated. Pages go back from the newest, so until a reading reaches its last
-  page the note itself says how far back it has read.
+  page the note itself says how far back it has read. Supply a summary of 1–300 characters
+  for conversation review. Leaving it out keeps the previous summary.
 
-The notes live in `omni-reading-notes.json` beside `omni.json` (0600), keyed by Omni chat id:
-never in `state.json`, a log or the roster view. Each save rewrites the file through a
+Notes and summaries live in `omni-reading-notes.json` and `omni-reading-summaries.json`
+beside `omni.json` (0600), keyed by Omni chat id. Each save rewrites the file through a
 temporary file and a rename, one at a time in this host; there is no lock across hosts, and a
 host that only reads the team does not save. The tools need an Omni with the page cursor and
 the coverage read, so `engines.omni` names the release this change is cut in.
@@ -282,7 +292,7 @@ The shared kit's person card reads one chat's note and coverage through the endp
 request:  { chat: "<Omni chat id>" }
 response: {
   chat: { id, name?, channelId? },
-  note: { text, readThrough, updatedAt } | null,
+  note: { text, readThrough, updatedAt, summary: string | null } | null,
   coverage: { oldest, newest, count, mediaMissing, deletedCount, lastInbound, lastOutbound } | null
 }
 ```
@@ -292,6 +302,126 @@ operates Omni may read its channel (`rt.canChannel(bot, channel, 'read')`, as th
 Otherwise the answer is `{ chat: { id }, note: null, coverage: null }`, never a saved note.
 `note` is null until a Bot saves one; `coverage` is null when the Omni cannot give it. Times are
 ISO strings.
+
+## Backfill a chat's history
+
+The user asks the Bot that operates Omni for history ("my chats since March"). The Bot calls
+`propose_backfill { chats?, from?, to? }`; any Bot that operates Omni may, never an answer
+child. It saves a proposal the shared kit draws as one card:
+
+- the chats the Bot may read (the 200 most active, then any it named), pre-ticked only when
+  the user named them;
+- the range, only when the user gave one;
+- nothing else: it starts nothing and carries no authority. A new proposal from the same Bot
+  replaces its open one, so the next card starts empty.
+
+The user ticks chats, sets the range and presses Start once. That owner action alone starts
+the work, one Omni backfill job per ticked chat (`POST /chats/:id/backfill`):
+
+- each chat is read again at Start and must be on a channel the proposing Bot may read;
+- the proposal is used once;
+- `omni_call` refuses that route, so no model's call stands in for it.
+
+Cancel really stops a job, from the card (`cancel_backfill`) or by the Bot's `cancel_backfill`
+tool when the user asks; Omni's worker stops after the round it is in. Omni stores what a
+backfill fetches without publishing it as new messages, so old messages never wake an answer.
+
+Each job is a row in every state answer (the chat asks every 1.5 s), fed by Omni's `sync.*`
+events, which Omni journals for durable consumers. This plugin streams its `sync.*` consumer
+only while a job is unfinished. The job's route is the fallback read: after Start, on
+`backfill_status`, on cancel, and each time the stream connects (so after a restart too).
+Rows carry labels and counts, never message text.
+
+For ended rows the calling Bot can still read, `backfill_status` gives the run ID, exact
+window, chat IDs, outcomes and the number of messages Omni holds in that window. The Bot
+can read those chats with `read_history` and save a summary before the user chooses chats
+for Answer Mode training.
+
+### For the shared kit
+
+The picker card reads `omniBackfillProposals` in the team view:
+
+```text
+{ id, botId, from: ISO | null, to: ISO | null, createdAt: ms,
+  chats: [{ id, name, kind: 'dm' | 'group' | … | null, channelId, channel: name | null, ticked }] }
+```
+
+The owner actions are write endpoints of `POST /api/omni-ui`. They require a writable host.
+
+```text
+start_backfill  { proposalId, chats: [chat id, 1-200, all on the card], from, to }
+                → { runId, jobs: [{ chatId, jobId | null, state }] }
+cancel_backfill { jobId } → { jobId, state, outcome }
+select_conversation_training { chats: [chat id, 1–50], selected: boolean }
+                             → { results: [{ chatId, selected, threadId | null, sendingMode | null, refusal | null }] }
+```
+
+`from` and `to` are ISO times, or dates for that whole day (`from` before `to`, `from` not in
+the future). A refusal comes back as the endpoint's error message.
+
+`omni-conversations { runId? }` reads the newest run by default. Unknown or pruned runs
+return `{ run: null, chats: [] }`. Each row must resolve on the current Omni link to a
+channel a Bot that operates Omni can read. The response includes the run's exact window,
+visible chats and their outcome, coverage, last activity, summary, reading-note status and
+training selection. `inWindow` counts messages Omni holds in the window, and `stored`
+counts messages stored by the job. The totals reflect the visible rows.
+
+The owner can select direct chats on channels explicitly owned by a Bot with Answer Mode
+and channel write access. A new answer child starts in training mode. If live intake
+created the child first, selection reuses it and returns its existing sending mode, which
+may be `sending`. Deselecting clears the selection and keeps the child available for the
+existing pause and remove controls. Conversation review and selection create no sends,
+cards, deliveries, runs or follow-ups.
+
+Answer children can read their own chat, including imported messages, with
+`thread_history`. Staff can add approved context with `set_child_notes`. Reading notes
+and summaries stay in their private files and authorized reads.
+
+Training selection and summary changes are published through Omni as
+`custom.omni-channels.training.selected`, `custom.omni-channels.training.deselected` and
+`custom.omni-channels.conversation.summarized`. The team's outbox retains pending events
+with IDs, timestamps and selection status for retry.
+
+The live rows are `omniBackfills` in every state answer, newest run first, the last 10 runs
+(an unfinished one is never dropped):
+
+```text
+{ id (the proposal's), botId, from, to, startedAt,
+  summary: { total, running, done, phoneDidNotAnswer, stopped, failed },
+  rows: [{ chatId, chat (its name), channelId, jobId | null,
+           state: 'queued' | 'fetching' | 'done' | 'phone-did-not-answer' | 'cancelled' | 'failed',
+           outcome: null | 'done' | 'phone-did-not-answer' | 'stopped' | 'failed' | 'not-started',
+           counts: { fetched, stored, duplicates, mediaDownloaded, mediaMissing, reactions, edits, deletions, unmatched },
+           round, oldestReached: ISO | null,
+           coverage: null | { oldest, newest, count, countInWindow, deletedCount, mediaMissing, lastInbound, lastOutbound },
+           startedAt, updatedAt }] }
+```
+
+`outcome` is null while the job runs, and set only when it ends (Omni's sync.completed,
+sync.cancelled or sync.failed, or the job route's status). `state` can read
+`phone-did-not-answer` or `done` a little before that, while Omni reads the chat's coverage.
+`coverage` is what Omni holds of the chat once its job ends, and null before then and on a
+failure. `not-started` means Omni refused to queue that chat's job at Start.
+
+## Cards
+
+On the team owner surface, a successful `propose_backfill` call opens a picker for
+that proposal when the team client supplies one. Older team clients show the proposal text.
+A `backfill_status` call with a review section opens the conversation
+card for the newest run named in the result. Tick the chats to use for Answer Mode
+training, then choose Apply. The card shows any chats the host refused and reloads
+the saved selection. Opening either card starts no jobs or training.
+
+`list_commitments` opens a review card using the call's chat, status and verified
+filters. Verify confirms a candidate or a previously unverified closed commitment.
+Dismiss removes a candidate from the default list. To see dismissed items, request
+the `dismissed` status. The card displays commitment details and UTC dates. The
+display response excludes source evidence and link metadata.
+
+The conversation and commitment cards refresh when the team roster revision
+changes and after you act. Summaries are scoped to the Omni link origin, channel
+and chat. In a read-only window, the cards show the data and explain where to make
+changes. Members and guests see the tool result text.
 
 ## Existing channel settings
 
@@ -442,10 +572,22 @@ deletion is reported separately, without treating deletion as failed
 - **Host**: it injects the team's runtime (`omniTeam`) and installs `subscriptions`,
   `omni-api`, `omni-link`, `omni` and `omni-events` on a runtime of its own whose prototype is
   the team's, so they call the team's functions while their tools and effects stay on this
-  plugin's fiber. It adds to the team only through `rt.hooks`: the `omni-*` and
+  plugin's fiber. It adds to the team only through `rt.hooks` and, on a Bot team that has it,
+  `rt.noteStop`. The hooks add the `omni-*` and
   `automation-*` endpoints of `POST /api/omni-ui` (the reads also on a host that only reads
   the team), the automations in the team view, the events Omni listens to in every state
   answer, and the operator rules. It provides its runtime as `omniChannels`.
+  On a Bot team that has `rt.hooks.sessionOwner`, it names
+  its chat threads' and ask runs' Sessions with that hook (a thread as the Bot it acts as,
+  an ask run as the Omni Bot, each labelled with the chat), so its DSH card is noted under
+  that Bot in the sidebar,
+  the Live rail and notifications. When `rt.noteStop` is available, it notes stopped steps
+  for the person, and the team keeps those notes in memory for a while:
+  `rule` when one of Omni's own rules refused one (an ask run's non-read, an automation event
+  run's write, `start_task` for a Bot that operates Omni), and `level` when a thread cannot
+  leave Auto review once it is gone (DSH then refuses its Session). A thread that keeps DSH's
+  default permissions, because Auto review is off or could not be set, is not a stop: none of
+  its steps was refused. These are notes only: no answer, level or policy changes.
 - **Browser**: `client.js` names `@automagik/bots-dsh/client` in `dsh.client.external`, so
   DSH loads the team's bundle
   first and this one shares it: the host call, the interface
@@ -453,7 +595,8 @@ deletion is reported separately, without treating deletion as failed
   its tool cards, account-menu row, row badge, header button and Bot-surface panels to. It
   exports `channels`, the live views of omni the canvas plugin draws with.
 - **Data**: the automations and their runs (`subscriptions`, `subscriptionRuns`,
-  `omniEventCursors`) stay in the team's `state.json`, saved through the team's lock; a DSH
+  `omniEventCursors`), and the backfill proposals and runs (`omniBackfillProposals`,
+  `omniBackfillRuns`), stay in the team's `state.json`, saved through the team's lock; a DSH
   that only reads the team does not change them.
 
 ## Meta webhook setup

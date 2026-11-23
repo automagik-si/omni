@@ -734,14 +734,20 @@ else:
     # pin commit under different subjects, so the pipeline never re-triggers.
     guard = "startsWith(github.event.head_commit.message, 'chore(version): bump to ')"
     if release_candidate.count(guard) != 2:
-        errors.append("candidate pipeline concurrency group and cut job do not share the auto-bump subject guard")
+        errors.append("candidate pipeline concurrency group and verification job do not share the auto-bump subject guard")
     require(release_candidate, r"head_commit\.author\.email == 'github-actions\[bot\]@users\.noreply\.github\.com'", "candidate pipeline does not require the auto-bump author")
     require(version_workflow, r'git commit -m "chore\(version\): cut candidate \$\{VERSION\}"', "a candidate cut commits the auto-bump subject and would re-trigger the candidate pipeline")
     forbid("\n".join(line for line in release_candidate.splitlines() if not line.lstrip().startswith("#")), r"chore\(version\): cut candidate|chore\(release\): pin candidate", "candidate pipeline fires on its own candidate cut or pin commit")
     rc_jobs = job_blocks(release_candidate)
-    if list(rc_jobs) != ["cut", "mint", "pin"]:
+    if list(rc_jobs) != ["verify-bump", "cut", "mint", "pin"]:
         errors.append(f"candidate pipeline job set changed: {list(rc_jobs)}")
+    verify_job = "\n".join(rc_jobs.get("verify-bump", []))
+    require(verify_job, r"BEFORE: \$\{\{ github\.event\.before \}\}", "candidate verifier does not bind the previous dev tip")
+    require(verify_job, r"gh api .*GITHUB_SHA.* --jq '\.parents\[\]\.sha'", "candidate verifier does not read all commit parents")
+    require(verify_job, r'if \[\[ "\$\{parents\}" == "\$\{BEFORE\}" \]\]; then\n\s+echo "eligible=true"', "candidate verifier does not require exactly one matching parent")
     cut_job = "\n".join(rc_jobs.get("cut", []))
+    require(cut_job, r"^    needs: verify-bump\n", "candidate cut does not depend on the verifier")
+    require(cut_job, r"github.event_name == 'workflow_dispatch' \|\| needs\.verify-bump\.outputs\.eligible == 'true'", "candidate cut does not require verified automatic pushes")
     require(cut_job, r"^    uses: \./\.github/workflows/version\.yml\n", "candidate pipeline does not call version.yml for the cut")
     require(cut_job, r"^    with:\n      candidate: true\n", "candidate pipeline cut is not a candidate=true cut")
     mint_job = "\n".join(rc_jobs.get("mint", []))

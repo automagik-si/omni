@@ -8,9 +8,12 @@
 // Omni is a fake of the two routes reading uses (O1's contract), kept in one place: omniO1.
 import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import fsPromises from 'node:fs/promises'
+import { syncBuiltinESMExports } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, afterEach, test } from 'node:test'
+import { z } from 'zod'
 import { Context } from '@deepseek-ai/cordis'
 import { AgentRegistry } from '@deepseek-ai/dsh-agent'
 import { LlmRuntime, ToolCallId } from '@deepseek-ai/dsh-llm'
@@ -23,7 +26,7 @@ import { ToolRuntime } from '@deepseek-ai/dsh-tools'
 import * as team from '@automagik/bots-dsh'
 import * as channels from '../index.js'
 import { LINK_FILE } from '../src/host/omni-link.js'
-import { ANSWER_CHILD_REFUSAL, BAD_CURSOR, CURSOR_WINDOW, NO_CHAT, NOT_OPERATOR, NOT_READABLE, NOTE_MAX, NOTES_FILE, PAGE_CHARS_MAX } from '../src/host/reading.js'
+import { ANSWER_CHILD_REFUSAL, BAD_CURSOR, CURSOR_WINDOW, NO_CHAT, NOT_OPERATOR, NOT_READABLE, NOTE_MAX, NOTES_FILE, PAGE_CHARS_MAX, SUMMARIES_FILE } from '../src/host/reading.js'
 import { INSTANCE, OMNI, OTHER_INSTANCE, resetFetch, teamState } from './thread-fixture.js'
 
 const realFetch = globalThis.fetch
@@ -98,6 +101,10 @@ function omniO1() {
     const path = url.pathname.replace(/^\/api\/v2/, '')
     asked.push({ method, path, query: Object.fromEntries(url.searchParams) })
     if (url.origin !== OMNI || init.headers?.['x-api-key'] !== LINK_KEY) return json(401, { error: { code: 'UNAUTHORIZED' } })
+    if (method === 'POST' && path === '/events/trigger') {
+      asked.at(-1).body = JSON.parse(init.body)
+      return json(201, { published: true })
+    }
     if (method !== 'GET') return json(404, { error: { code: 'NOT_FOUND' } })
     const [, chatId, part] = /^\/chats\/([^/]+)(?:\/(messages|coverage))?$/.exec(path) ?? []
     if (chatId === undefined) return json(404, { error: { code: 'NOT_FOUND' } })
@@ -361,11 +368,149 @@ test('the reading note survives a restart: saved in its own 0600 file, shown on 
   const card = await second.endpoint('omni-reading-note', { chat: CHAT })
   assert.deepEqual({ ...card, note: { ...card.note, updatedAt: typeof card.note.updatedAt } }, {
     chat: { id: CHAT, name: 'Ana', channelId: INSTANCE },
-    note: { text: note, readThrough: '2026-11-01T08:00:00.000Z', updatedAt: 'string' },
+    note: { text: note, readThrough: '2026-11-01T08:00:00.000Z', updatedAt: 'string', summary: null },
     coverage: { oldest: '2026-03-02T10:00:00.000Z', newest: '2026-11-01T08:00:00.000Z', count: 8, mediaMissing: 3, deletedCount: 1, lastInbound: '2026-11-01T08:00:00.000Z', lastOutbound: '2026-08-01T09:00:00.000Z' },
   })
   assert.equal((await second.endpoint('omni-reading-note', { chat: BIG })).note, null)
   await assert.rejects(second.endpoint('omni-reading-note', { chat: 'not-a-chat' }))
+})
+
+test('summaries stay in a private sidecar and the old strict note entries still parse', async (t) => {
+  const omni = omniO1()
+  const threadId = id(900)
+  const state = teamState({
+    bots: { m1: { ...teamState().bots.m1, answer: { enabled: true } } },
+    omniOwnership: { defaultBotId: 'm1', channels: { [INSTANCE]: 'm1' } },
+    omniThreads: {
+      [threadId]: {
+        id: threadId, sessionId: 'child', ownerBotId: 'm1', channelId: INSTANCE, origin: OMNI, chatId: CHAT,
+        chatIds: [CHAT], chatName: 'Ana', notes: '', answerChild: true, sendingMode: 'sending',
+      },
+    },
+  })
+  const home = homeWith(t, state)
+  const dsh = await start(t, home)
+  const rt = dsh.root.get('omniChannels')
+  const marker = 'PRIVATE-SUMMARY-29f9'
+  const note = { chat: CHAT, note: 'Reading notes.', readThrough: SAME }
+  const sidecar = join(home, SUMMARIES_FILE)
+  for (const summary of ['   ', 'x'.repeat(301)]) assert.match(await dsh.run('save_reading_note', { ...note, summary }), /summary of 1 to 300 characters/)
+  assert.match(await dsh.run('save_reading_note', { ...note, summary: `  ${marker}  ` }), /^Reading note saved/)
+  const first = JSON.parse(readFileSync(sidecar, 'utf8'))
+  assert.equal(first.version, 1)
+  const key = JSON.stringify([OMNI, INSTANCE, CHAT])
+  assert.equal(first.chats[key].summary, marker)
+  assert.equal(statSync(sidecar).mode & 0o777, 0o600)
+  const oldNotes = z.object({
+    version: z.literal(1),
+    chats: z.record(z.string(), z.object({ note: z.string().max(NOTE_MAX), readThrough: z.string(), updatedAt: z.string() }).strict()),
+  })
+  assert.equal(oldNotes.parse(JSON.parse(readFileSync(join(home, NOTES_FILE), 'utf8'))).chats[CHAT].note, note.note)
+  assert.match(await dsh.run('save_reading_note', { ...note, note: 'More reading notes.' }), /^Reading note saved/)
+  assert.deepEqual(JSON.parse(readFileSync(sidecar, 'utf8')), first)
+  assert.ok((await dsh.run('read_history', { chat: CHAT })).includes(`Conversation summary: ${marker}`))
+  assert.equal((await dsh.endpoint('omni-reading-note', { chat: CHAT })).note.summary, marker)
+  assert.equal((await dsh.endpoint('select_conversation_training', { chats: [CHAT], selected: true })).results[0].selected, true)
+  const { updatedAt } = first.chats[key]
+  const stateText = readFileSync(join(home, 'state.json'), 'utf8')
+  const views = JSON.stringify([dsh.team.extended.view(), dsh.team.extended.live(), rt.threads.list()])
+  assert.equal(stateText.includes(marker), false)
+  assert.equal(views.includes(marker), false)
+  await dsh.stop()
+  const events = omni.asked.filter(call => call.path === '/events/trigger').map(call => call.body)
+  assert.deepEqual(events.filter(event => event.eventType.endsWith('.summarized')), [{
+    eventType: 'custom.omni-channels.conversation.summarized', instanceId: INSTANCE,
+    idempotencyKey: events[0].idempotencyKey,
+    payload: { chatId: CHAT, updatedAt },
+  }])
+  assert.ok(events[0].idempotencyKey.startsWith(`conversation.summarized:${CHAT}:`))
+  assert.equal(JSON.stringify(events).includes(marker), false)
+})
+
+for (const failure of ['rename failure', 'authority refusal']) {
+  test(`a summary replacement with ${failure} preserves the old summary and publishes no event, even after restart`, async (t) => {
+    const omni = omniO1()
+    const home = homeWith(t)
+    const path = join(home, SUMMARIES_FILE)
+    const key = JSON.stringify([OMNI, INSTANCE, CHAT])
+    const previous = { version: 1, chats: { [key]: { summary: 'Previous summary', updatedAt: SAME } } }
+    writeFileSync(path, JSON.stringify(previous), { mode: 0o600 })
+    const dsh = await start(t, home)
+    const rt = dsh.root.get('omniChannels')
+    const save = rt.save
+    const readOnly = dsh.team.readOnly
+    const state = () => JSON.parse(readFileSync(join(home, 'state.json'), 'utf8'))
+    const events = () => omni.asked.filter(call => call.path === '/events/trigger').map(call => call.body)
+    let saves = 0
+    rt.save = async (options) => {
+      await save(options)
+      if (!options?.required || ++saves !== 1) return
+      assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), previous)
+      const [entry] = state().omniEventOutbox
+      assert.equal(entry.origin, OMNI)
+      assert.equal(entry.event.eventType, 'custom.omni-channels.conversation.summarized')
+      assert.equal(entry.event.payload.chatId, CHAT)
+      if (failure === 'authority refusal') {
+        dsh.team.readOnly = () => 'Became read-only during the team save.'
+      } else {
+        const staged = readdirSync(home).filter(file => file.startsWith(`${SUMMARIES_FILE}.`) && file.endsWith('.tmp'))
+        assert.equal(staged.length, 1)
+        rmSync(join(home, staged[0]))
+      }
+    }
+    const summary = 'New private summary'
+    assert.match(await dsh.run('save_reading_note', { chat: CHAT, note: 'Reading note', readThrough: SAME, summary }),
+      failure === 'authority refusal' ? /Became read-only/ : /ENOENT.*rename/)
+    assert.equal(saves, 2)
+    rt.save = save
+    dsh.team.readOnly = readOnly
+    await rt.flushOmniEventOutbox()
+    assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), previous)
+    assert.equal(state().omniEventOutbox?.length ?? 0, 0)
+    assert.equal(rt.state.omniEventOutbox?.length ?? 0, 0)
+    assert.equal(JSON.stringify(state()).includes(summary), false)
+    assert.deepEqual(events(), [])
+    await dsh.stop()
+
+    const restarted = await start(t, home)
+    await restarted.root.get('omniChannels').flushOmniEventOutbox()
+    assert.deepEqual(events(), [])
+    assert.equal(state().omniEventOutbox?.length ?? 0, 0)
+    assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), previous)
+  })
+}
+
+test('becoming read-only during directory preparation never creates a private temporary file', async (t) => {
+  omniO1()
+  const home = homeWith(t)
+  const dsh = await start(t, home)
+  const path = join(home, NOTES_FILE)
+  const { mkdir, writeFile } = fsPromises
+  let prepared = false
+  let staged = 0
+  const prepare = t.mock.method(fsPromises, 'mkdir', async (...args) => {
+    const value = await mkdir(...args)
+    if (args[0] === home) {
+      prepared = true
+      dsh.team.readOnly = () => 'Became read-only during directory preparation.'
+    }
+    return value
+  })
+  const write = t.mock.method(fsPromises, 'writeFile', async (...args) => {
+    if (String(args[0]).startsWith(`${path}.`)) staged++
+    return writeFile(...args)
+  })
+  syncBuiltinESMExports()
+  try {
+    assert.match(await dsh.run('save_reading_note', { chat: CHAT, note: 'Private note', readThrough: SAME }), /Became read-only during directory preparation/)
+    assert.equal(prepared, true)
+    assert.equal(staged, 0)
+    assert.ok(readdirSync(home).every(file => !file.startsWith(NOTES_FILE)))
+  } finally {
+    prepare.mock.restore()
+    write.mock.restore()
+    syncBuiltinESMExports()
+  }
 })
 
 test('a page that does not fit even at the shortest cut is read again from the same cursor with fewer messages: never over the limit, nothing skipped (200 heavy rows under an 8,000-character note)', async (t) => {
@@ -407,9 +552,10 @@ test('the kit\'s endpoint gives a note and coverage only for a chat Omni finds a
     omniOwnership: { defaultBotId: 'w1', channels: { [INSTANCE]: 'm1', [OTHER_INSTANCE]: 'w1' } },
   })
   const home = homeWith(t, state)
-  // Notes kept from before: one for a chat no operating Bot may read now, one for a chat Omni no longer has.
   const kept = { note: 'kept from before', readThrough: '2026-11-01T00:00:00.000Z', updatedAt: '2026-11-02T00:00:00.000Z' }
-  writeFileSync(join(home, NOTES_FILE), JSON.stringify({ version: 1, chats: { [ELSEWHERE]: kept, [UNKNOWN]: kept } }), { mode: 0o600 })
+  const marker = 'PRIVATE-SCOPED-CHAT'
+  writeFileSync(join(home, NOTES_FILE), JSON.stringify({ version: 1, chats: { [ELSEWHERE]: kept, [UNKNOWN]: kept, [SCOPED_OUT]: { ...kept, note: marker } } }), { mode: 0o600 })
+  writeFileSync(join(home, SUMMARIES_FILE), JSON.stringify({ version: 1, chats: { [SCOPED_OUT]: { summary: marker, updatedAt: kept.updatedAt } } }), { mode: 0o600 })
   const dsh = await start(t, home)
   // Unreadable: the tools refuse it, and the card gets its id alone.
   assert.equal(await dsh.run('read_history', { chat: ELSEWHERE }), NOT_READABLE)
@@ -422,10 +568,22 @@ test('the kit\'s endpoint gives a note and coverage only for a chat Omni finds a
   assert.equal(coverageReads(), before)
   // A chat whose history routes answer Omni's chat-not-found (a key held to other channels).
   assert.equal(await dsh.run('read_history', { chat: SCOPED_OUT }), NO_CHAT)
+  const closed = { chat: { id: SCOPED_OUT }, note: null, coverage: null }
+  assert.deepEqual(await dsh.endpoint('omni-reading-note', { chat: SCOPED_OUT }), closed)
   // Readable: the note and the coverage.
   assert.match(await dsh.run('save_reading_note', { chat: CHAT, note: 'open order', readThrough: '2026-11-01' }), /^Reading note saved/)
   const card = await dsh.endpoint('omni-reading-note', { chat: CHAT })
   assert.deepEqual([card.chat, card.note.text, card.coverage.count], [{ id: CHAT, name: 'Ana', channelId: INSTANCE }, 'open order', 8])
+  const inner = globalThis.fetch
+  let status = 403
+  globalThis.fetch = (url, init) => new URL(url).pathname.endsWith(`/chats/${SCOPED_OUT}/coverage`)
+    ? new Response(null, { status }) : inner(url, init)
+  assert.deepEqual(await dsh.endpoint('omni-reading-note', { chat: SCOPED_OUT }), closed)
+  status = 503
+  const unavailable = await dsh.endpoint('omni-reading-note', { chat: SCOPED_OUT })
+  assert.equal(unavailable.coverage, null)
+  assert.equal(unavailable.note.text, marker)
+  assert.equal(unavailable.note.summary, null)
 })
 
 test('the reading note never reaches state.json, a log, the team view or any other file', async (t) => {

@@ -5,14 +5,15 @@
 // The team's runtime arrives as the omniTeam service. This plugin's modules install on a
 // runtime of their own whose prototype is the team's: they call the team's functions
 // (load, save, botOf, deliver…) as before, while their tools, listeners and effects sit on
-// this plugin's fiber, and they add to the team only through its hooks (rt.hooks), so
-// turning this plugin off takes all of it away. Its own runtime is provided as
-// omniChannels for the canvas plugin, which reads omni through it.
+// this plugin's fiber. They add to the team only through rt.hooks and, on a team that has
+// it, rt.noteStop; the team keeps those notes in memory for a while. Its own runtime is
+// provided as omniChannels for the canvas plugin, which reads omni through it.
 import * as resumeHook from './src/host/resume-hook.js'
 import * as grants from './src/host/grants.js'
 import * as subscriptions from './src/host/subscriptions.js'
 import * as asks from './src/host/asks.js'
 import * as omniApi from './src/host/omni-api.js'
+import * as outsideSenders from './src/host/outside-senders.js'
 import * as omniLink from './src/host/omni-link.js'
 import * as omniDiscover from './src/host/omni-discover.js'
 import * as omniLocal from './src/host/omni-local.js'
@@ -31,6 +32,9 @@ import * as needsStaff from './src/host/needs-staff.js'
 import * as standingRecovery from './src/host/standing-recovery.js'
 import * as standingRuns from './src/host/standing-runs.js'
 import * as reading from './src/host/reading.js'
+import * as botChannels from './src/host/bot-channels.js'
+import * as backfill from './src/host/backfill.js'
+import * as commitments from './src/host/commitments.js'
 
 export const name = 'omni-channels'
 // The chat threads take their instructions from a prompt section, archive their Sessions in
@@ -42,6 +46,7 @@ export const inject = ['omniTeam', 'tools', 'sessions', 'sessionTitle', 'setting
 // this plugin's Sessions (resume-hook.js). Then the team's install order, kept: automations
 // and Omni's tools first, the link (the Omnis found on this computer to link, one to run here,
 // the terminal that updates or sets one up, and updating them) and its events after.
+// The team's outside-send classifier follows Omni's API tools.
 // Asking the Omni Bot from a thread (asks.js) comes right after the automations, whose run
 // log it shares. Permissions come before the tools that check them. The threads' own keys
 // come after omni.js, whose requests they make, the threads after their keys, and the
@@ -54,9 +59,11 @@ export const inject = ['omniTeam', 'tools', 'sessions', 'sessionTitle', 'setting
 // outside service (it shares the code path's per-chat limit), come right before the events,
 // which call them; both mark the reply's request row.
 // Changing channels from the Channels page comes next: it only calls omni through omni.js.
-// Reading a chat's history and keeping its reading note comes last: it only reads omni
+// Reading a chat's history and keeping its reading note comes next: it only reads omni
 // through omni.js and checks the threads' answer children and the channels' owners.
-const MODULES = [resumeHook, grants, subscriptions, asks, omniApi, omniLink, omniDiscover, omniLocal, omniTerminal, omniUpdate, omni, threadKeys, threads, threadTools, needsStaff, standingRuns, standingRecovery, answerStrangers, answerCodes, answerOutsideCheck, omniEvents, omniChannelActions, reading]
+// The left bar reads each Bot’s channels and chats through omni.js.
+// The backfill tools use the event stream to track their rows. Commitments use their outbox.
+const MODULES = [resumeHook, grants, subscriptions, asks, omniApi, outsideSenders, omniLink, omniDiscover, omniLocal, omniTerminal, omniUpdate, omni, threadKeys, threads, threadTools, needsStaff, standingRuns, standingRecovery, answerStrangers, answerCodes, answerOutsideCheck, omniEvents, omniChannelActions, reading, botChannels, backfill, commitments]
 
 export function apply(ctx, config = {}) {
   ctx.provide('omniChannels', createRuntime(ctx, ctx.omniTeam, config))

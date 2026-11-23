@@ -1,7 +1,10 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync, readdirSync } from 'node:fs'
+import { join } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { runInNewContext } from 'node:vm'
+import { readPin } from '../../automagik.mjs'
 import { EXTERNAL_BUNDLES, bundleClient } from '../scripts/build-client.mjs'
 import { STRINGS } from '../src/client/strings.js'
 import { loadTeamClient } from './omni-client.js'
@@ -58,7 +61,8 @@ test('client.js requires React, ReactDOM and the team\'s client, and adds to the
     },
   })
   assert.deepEqual(registered, [['settings.onboarding', 'omni-connect'], ['settings.section', 'omni']])
-  for (const name of ['omni_call', 'omni_channels', 'omni_chats', 'omni_messages', 'omni_connect', 'save_automation']) assert.equal(typeof omni.toolCards.renderer(name), 'function', name)
+  for (const name of ['omni_call', 'omni_channels', 'omni_chats', 'omni_messages', 'omni_connect', 'save_automation',
+    'propose_backfill', 'backfill_status', 'list_commitments']) assert.equal(typeof omni.toolCards.renderer(name), 'function', name)
   assert.equal(omni.toolCards.renderer('find_chats'), undefined)
   assert.equal(omni.toolCards.phrase('find_chats')(() => undefined).state, 'searching')
   assert.deepEqual([...omni.nav.entries()].map(entry => entry.id), ['automations'])
@@ -93,7 +97,8 @@ test('client.js requires React, ReactDOM and the team\'s client, and adds to the
 })
 
 test('every literal this client translates has a Chinese entry, here or in the team\'s copy', async () => {
-  const { DICTIONARY } = await import(new URL('src/client/i18n.js', `file://${process.env.OMNI_DSH_CORE}/`))
+  const core = process.env.OMNI_DSH_CORE
+  const { DICTIONARY } = await import(pathToFileURL(join(core, 'src/client/i18n.js')))
   const dir = new URL('../src/client/', import.meta.url)
   const missing = []
   for (const name of readdirSync(dir).filter(file => file.endsWith('.js'))) {
@@ -104,6 +109,8 @@ test('every literal this client translates has a Chinese entry, here or in the t
     }
   }
   assert.deepEqual(missing, [])
-  // The plugin's copy adds to the team's; it never restates a key the team has.
-  assert.deepEqual(Object.keys(STRINGS).filter(key => Object.hasOwn(DICTIONARY.zh, key)), [])
+  // Keep the plugin's copy minimal against the supported pin. With a newer team, addStrings
+  // keeps the team's translations for any keys it has since added.
+  const pinnedCore = fileURLToPath(new URL(`../../.automagik/${readPin().commit}/apps/bots-dsh`, import.meta.url))
+  if (core === pinnedCore) assert.deepEqual(Object.keys(STRINGS).filter(key => Object.hasOwn(DICTIONARY.zh, key)), [])
 })
