@@ -207,8 +207,10 @@ test('the Omni Bot\'s Session has the thread tools trimmed one name at a time, w
 // The Bot team's Native tools switch (its rt.nativeToolsFor, read per Session). ON: the Bot
 // works with its agent's own shell and files, so its Session keeps DSH's computer tools and
 // the team's start_task, an Omni named or not; the thread tools still go. Off, any answer
-// that is not a plain true, or a team with no such switch: trimmed and refused, as before.
-test('with an Omni named, the Omni Bot\'s Session keeps the computer tools and start_task while the Bot team says its native tools are on there, and loses them otherwise', async (t) => {
+// that is not a plain true, a getter that throws, or a team with no such switch: trimmed and
+// refused, as before. The answer is the Session's: another Session of the same Bot that the
+// team answers off for (a task of its own here) is trimmed and refused while its chat is not.
+test('with an Omni named, the Omni Bot\'s Session keeps the computer tools and start_task while the Bot team says its native tools are on there, and loses them otherwise; each Session of the Bot has its own answer', async (t) => {
   const { THREAD_TOOLS } = await import('../src/host/threads.js')
   const { COMPUTER_TOOLS } = await import('../src/host/omni-api.js')
   const threadTools = THREAD_TOOLS.filter(name => name !== 'thread_picture').map(name => [name])
@@ -218,6 +220,8 @@ test('with an Omni named, the Omni Bot\'s Session keeps the computer tools and s
     { label: 'on', getter: () => sessionId => sessionId === 'omni-chat', kept: true },
     { label: 'off', getter: () => () => false, kept: false },
     { label: 'not a plain true', getter: () => () => 'true', kept: false },
+    { label: 'the getter throws', getter: () => () => { throw new Error('the switch could not be read') }, kept: false },
+    { label: 'not a function', getter: () => true, kept: false },
     { label: 'no switch on the team', getter: () => undefined, kept: false },
   ]
   for (const { label, getter, kept } of cases) {
@@ -233,21 +237,30 @@ test('with an Omni named, the Omni Bot\'s Session keeps the computer tools and s
       await ctx.dispose()
       rmSync(home, { recursive: true, force: true, maxRetries: 5 })
     })
+    await team.load()
+    // A task Session of the same Bot: the team answers for it apart from the Bot's chat.
+    team.taskOwners.set('omni-task', { botId: 'm1' })
     team.nativeToolsFor = getter()
     ctx.tools.schemas = () => [...THREAD_TOOLS, ...COMPUTER_TOOLS, 'start_task', 'web_search'].map(name => ({ name }))
-    const denied = []
-    const omniBot = { id: 'omni-chat', session: { id: 'omni-chat' }, ctx: { effect: () => {}, tools: { restrict: ({ deny }) => {
-      if (deny?.includes('thread_picture')) throw new Error('tools.restrict() names unknown global tool "thread_picture"')
-      denied.push(deny)
-      return () => {}
-    } } } }
-    for (const listener of ctx.listeners.get('agent/created') ?? []) await listener({ agent: omniBot })
-    const ours = () => denied.filter(([name]) => THREAD_TOOLS.includes(name) || COMPUTER_TOOLS.includes(name) || name === 'start_task')
-    assert.deepEqual(ours(), [...(kept ? [] : computer), ...threadTools], label)
-    // The guard of the computer tools follows the same answer, and a silent guard trims nothing.
-    for (const name of COMPUTER_TOOLS) {
-      assert.equal(ctx.guards.map(guard => guard({ name, callId: `call-${name}`, agent: omniBot })).find(Boolean), kept ? undefined : REFUSAL, `${label}: ${name}`)
+    const agentFor = (sessionId) => {
+      const denied = []
+      return { id: sessionId, session: { id: sessionId }, denied, ctx: { effect: () => {}, tools: { restrict: ({ deny }) => {
+        if (deny?.includes('thread_picture')) throw new Error('tools.restrict() names unknown global tool "thread_picture"')
+        denied.push(deny)
+        return () => {}
+      } } } }
     }
-    assert.deepEqual(ours(), [...(kept ? [] : computer), ...threadTools], label)
+    const ours = agent => agent.denied.filter(([name]) => THREAD_TOOLS.includes(name) || COMPUTER_TOOLS.includes(name) || name === 'start_task')
+    const refusalOf = (agent, name) => ctx.guards.map(guard => guard({ name, callId: `call-${name}`, agent })).find(Boolean)
+    const omniBot = agentFor('omni-chat')
+    const task = agentFor('omni-task')
+    for (const agent of [omniBot, task]) for (const listener of ctx.listeners.get('agent/created') ?? []) await listener({ agent })
+    assert.deepEqual(ours(omniBot), [...(kept ? [] : computer), ...threadTools], label)
+    // The guard of the computer tools follows the same answer, and a silent guard trims nothing.
+    for (const name of COMPUTER_TOOLS) assert.equal(refusalOf(omniBot, name), kept ? undefined : REFUSAL, `${label}: ${name}`)
+    assert.deepEqual(ours(omniBot), [...(kept ? [] : computer), ...threadTools], label)
+    // The task Session is answered off in every case, the one where the Bot's chat is on too.
+    assert.deepEqual(ours(task), [...computer, ...threadTools], `${label}: task`)
+    for (const name of COMPUTER_TOOLS) assert.equal(refusalOf(task, name), REFUSAL, `${label}: task ${name}`)
   }
 })

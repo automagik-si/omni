@@ -161,8 +161,8 @@ test('a Main Bot\'s prompt with an Omni named is the text it was before the spli
 // The Bot team's Native tools switch, read per Bot for the prompt (its rt.nativeToolsBotOn): a
 // Bot with the switch on works with its agent's own shell and files, so its rules say so, and
 // say it conditionally, since one Session of that Bot can still run without them. Only a plain
-// true picks the variant; the rules of every other Bot, and of a team with no such switch, are
-// OPERATOR_RULES to the byte.
+// true picks the variant; the rules of every other Bot, of a team with no such switch, and of
+// one whose getter throws, are OPERATOR_RULES to the byte: a fault there never drops the rules.
 test('the rules of a Main Bot whose native tools the Bot team says are on are the variant that allows computer work in its own chat; every other case keeps OPERATOR_RULES', async (t) => {
   const { OPERATOR_RULES_NATIVE } = await import('../src/host/omni-rules.js')
   const state = {
@@ -205,6 +205,13 @@ test('the rules of a Main Bot whose native tools the Bot team says are on are th
   for (const off of [false, undefined, 1, 'true', {}]) {
     named.team.nativeToolsBotOn = () => off
     assert.equal(prompt(named, 'm1'), before.m1, String(off))
+  }
+
+  // A getter that throws, or a value that is no function: OPERATOR_RULES, never an empty part.
+  for (const [label, broken] of [['throws', () => { throw new Error('the switch could not be read') }], ['not a function', true]]) {
+    named.team.nativeToolsBotOn = broken
+    assert.equal(prompt(named, 'm1'), before.m1, label)
+    assert.ok(prompt(named, 'm1').includes(OPERATOR_RULES), label)
   }
 
   // With no Omni named there are no operator rules, whatever the switch says.

@@ -39,14 +39,20 @@ export function noteOmniStop(rt, sessionId, detail, agent) {
 export const operatesOmni = (rt, botId) => botId !== undefined && (rt.isMain(botId) || rt.botOf(botId)?.kind === 'omni')
 
 /**
+ * Whether one of the Bot team's Native tools getters (rt.nativeToolsFor for a Session,
+ * rt.nativeToolsBotOn for a Bot) says on for `arg`. Only a plain true counts: a team without
+ * the getter, a value that is not a function, any other answer and a getter that throws are
+ * all off, so a fault there never gives a computer or drops a rule.
+ */
+export const nativeOn = (fn, arg) => { try { return typeof fn === 'function' && fn(arg) === true } catch { return false } }
+
+/**
  * Whether a Session is a Bot that operates the Omni named here, without a computer: such a
  * Session has lost DSH's computer tools (omni-api.js) and the team's start_task. Not when the
- * Bot team says the Bot's Native tools switch is on in this Session (its rt.nativeToolsFor):
- * the user gave that Bot its agent's own shell and files, so Omni takes nothing from it. Only
- * a plain true counts; a Bot team without the switch answers nothing, and the Session stays
- * without a computer.
+ * Bot team says the Bot's Native tools switch is on in this Session (nativeOn): the user gave
+ * that Bot its agent's own shell and files, so Omni takes nothing from it.
  */
-export const operatesHere = (rt, sessionId) => (rt.omniNamed?.() ?? Boolean(rt.config?.omni?.url)) && operatesOmni(rt, rt.selfOf(sessionId)) && rt.nativeToolsFor?.(sessionId) !== true
+export const operatesHere = (rt, sessionId) => (rt.omniNamed?.() ?? Boolean(rt.config?.omni?.url)) && operatesOmni(rt, rt.selfOf(sessionId)) && !nativeOn(rt.nativeToolsFor, sessionId)
 
 /**
  * Whether a Session is a chat thread's (threads.js): it works on Omni as the Omni Bot does,

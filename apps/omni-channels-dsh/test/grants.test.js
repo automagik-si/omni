@@ -151,8 +151,8 @@ test("start_task for a Bot that operates the named Omni is denied before any car
 
 // The Bot team's Native tools switch (its rt.nativeToolsFor, read per Session): ON gives the
 // Bot its agent's own shell and files, so Omni no longer takes the team's start_task from it.
-// Only `true` counts; a team without the getter keeps today's refusal.
-test("start_task for a Bot that operates the named Omni is allowed while the Bot team says its native tools are on in that Session, and refused when they are off, not a plain true, or the team has no such switch", async (t) => {
+// Only `true` counts; a team without the getter, and a getter that throws, keep today's refusal.
+test("start_task for a Bot that operates the named Omni is allowed while the Bot team says its native tools are on in that Session, and refused when they are off, not a plain true, the getter throws, or the team has no such switch", async (t) => {
   const { ctx, team } = setup(t)
   await team.load()
   const stops = []
@@ -183,6 +183,16 @@ test("start_task for a Bot that operates the named Omni is allowed while the Bot
     assert.deepEqual(await gate('m1', 'call-off'), { kind: 'deny', reason: START_TASK_REFUSAL }, String(off))
     assert.equal(guard('m1', 'call-off'), START_TASK_REFUSAL, String(off))
     assert.equal(stops.length, 2, String(off))
+  }
+
+  // A getter that throws, and a value that is no function, are off: the same refusal, noted.
+  const throws = () => { throw new Error('the switch could not be read') }
+  for (const [label, broken] of [['throws', throws], ['not a function', true]]) {
+    stops.length = 0
+    team.nativeToolsFor = broken
+    assert.deepEqual(await gate('m1', 'call-broken'), { kind: 'deny', reason: START_TASK_REFUSAL }, label)
+    assert.equal(guard('m1', 'call-broken'), START_TASK_REFUSAL, label)
+    assert.equal(stops.length, 2, label)
   }
 
   // An older Bot team has no switch to read.
