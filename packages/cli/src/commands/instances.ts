@@ -551,8 +551,11 @@ export function createInstancesCommand(): Command {
       '--zenvia-webhook-verify-token <token>',
       'Secret the Zenvia subscription sends as the x-webhook-token header or the ?token= query parameter (required for zenvia)',
     )
-    .option('--zenvia-sales-api-key <key>', 'Zenvia Sales API key (not the same token as the API token)')
-    .option('--zenvia-handoff-group-id <id>', 'Zenvia Sales group dedicated to the chatbot; handoffs transfer to it')
+    .option(
+      '--zenvia-sales-api-key <key>',
+      'Zenvia Sales API key (not the same token as the API token); without it handoffs transfer through the Conversations API',
+    )
+    .option('--zenvia-handoff-group-id <id>', 'Zenvia group dedicated to the chatbot; handoffs transfer to it')
     .option('--zenvia-handoff-user-id <id>', 'Optional agent inside the Zenvia handoff group')
     .option('--zenvia-handoff-solution <solution>', 'Zenvia fallback routing: conversion, zenvia_chat or nlu')
     .option(
@@ -1304,7 +1307,7 @@ export function createInstancesCommand(): Command {
     )
     .option(
       '--zenvia-handoff-group-id <id>',
-      'Zenvia Sales handoff group (use "null" to clear). The plugin reads it at connect: restart the instance for the change to take effect',
+      'Zenvia handoff group (use "null" to clear). The plugin reads it at connect: restart the instance for the change to take effect',
     )
     .option(
       '--zenvia-handoff-user-id <id>',

@@ -269,21 +269,23 @@ const createInstanceSchema = z.object({
     .string()
     .optional()
     .nullable()
-    .describe('Zenvia Sales API key (not the same token as zenviaApiToken)'),
+    .describe(
+      'Zenvia Sales API key (not the same token as zenviaApiToken). Without it a handoff transfers through the Conversations API',
+    ),
   zenviaHandoffGroupId: z
     .string()
     .optional()
     .nullable()
-    .describe('Sales group dedicated to the chatbot; handoffs transfer the prospect to it'),
+    .describe('Zenvia group dedicated to the chatbot; handoffs transfer the conversation to it'),
   zenviaHandoffUserId: z
     .string()
     .optional()
     .nullable()
-    .describe('Optional agent inside the handoff group the prospect is transferred to'),
+    .describe('Optional agent inside the handoff group the conversation is transferred to'),
   zenviaHandoffRouting: ZenviaHandoffRoutingSchema.optional()
     .nullable()
     .describe(
-      'Routes a handoff to a Sales group by the value of one handoffFields key: { field, groups: { <value>: <groupId> } }. zenviaHandoffGroupId is the fallback for an unmapped or missing value; without it such a handoff is refused (422). Read by the plugin at connect: restart the instance after changing it. null clears it',
+      'Routes a handoff to a Zenvia group by the value of one handoffFields key: { field, groups: { <value>: <groupId> } }. zenviaHandoffGroupId is the fallback for an unmapped or missing value; without it such a handoff is refused (422). Read by the plugin at connect: restart the instance after changing it. null clears it',
     ),
   ascFlowBaseUrl: z
     .string()
@@ -1883,17 +1885,22 @@ const connectInstanceSchema = z.object({
     .enum(ZENVIA_HANDOFF_SOLUTIONS)
     .optional()
     .describe('Zenvia solution a handoff routes the conversation to (conversation.solution)'),
-  zenviaSalesApiKey: z.string().optional().describe('Zenvia Sales API key (not the same token as zenviaApiToken)'),
+  zenviaSalesApiKey: z
+    .string()
+    .optional()
+    .describe(
+      'Zenvia Sales API key (not the same token as zenviaApiToken). Without it a handoff transfers through the Conversations API',
+    ),
   zenviaHandoffGroupId: z
     .string()
     .optional()
-    .describe('Sales group dedicated to the chatbot; handoffs transfer the prospect to it'),
+    .describe('Zenvia group dedicated to the chatbot; handoffs transfer the conversation to it'),
   zenviaHandoffUserId: z
     .string()
     .optional()
-    .describe('Optional agent inside the handoff group the prospect is transferred to'),
+    .describe('Optional agent inside the handoff group the conversation is transferred to'),
   zenviaHandoffRouting: ZenviaHandoffRoutingSchema.optional().describe(
-    'Routes a handoff to a Sales group by the value of one handoffFields key (see POST /instances)',
+    'Routes a handoff to a Zenvia group by the value of one handoffFields key (see POST /instances)',
   ),
   webhookVerifyToken: z
     .string()

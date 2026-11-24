@@ -6616,15 +6616,15 @@ export interface components {
              * @enum {string|null}
              */
             zenviaHandoffSolution?: "conversion" | "zenvia_chat" | "nlu" | null;
-            /** @description Sales group dedicated to the chatbot; handoffs transfer the prospect to it. Read by the plugin at connect: restart the instance after changing it */
+            /** @description Zenvia group dedicated to the chatbot; handoffs transfer the conversation to it (through the Sales API with zenviaSalesApiKey, the Conversations API otherwise). Read by the plugin at connect: restart the instance after changing it */
             zenviaHandoffGroupId?: string | null;
-            /** @description Optional agent inside the handoff group the prospect is transferred to. Read by the plugin at connect: restart the instance after changing it */
+            /** @description Optional agent inside the handoff group the conversation is transferred to. Read by the plugin at connect: restart the instance after changing it */
             zenviaHandoffUserId?: string | null;
-            /** @description Routes a handoff to a Sales group by the value of one handoffFields key: { field, groups: { <value>: <groupId> } }. zenviaHandoffGroupId is the fallback for an unmapped or missing value; without it such a handoff is refused (422). Read by the plugin at connect: restart the instance after changing it. null clears it */
+            /** @description Routes a handoff to a Zenvia group by the value of one handoffFields key: { field, groups: { <value>: <groupId> } }. zenviaHandoffGroupId is the fallback for an unmapped or missing value; without it such a handoff is refused (422). Read by the plugin at connect: restart the instance after changing it. null clears it */
             zenviaHandoffRouting?: {
-                /** @description Key of handoffFields whose value picks the Sales group */
+                /** @description Key of handoffFields whose value picks the handoff group */
                 field: string;
-                /** @description Maps a value of the field to a Sales group id. Values compare trimmed, with inner whitespace collapsed and ignoring case; two keys that become equal are rejected. Only string values match */
+                /** @description Maps a value of the field to a Zenvia group id. Values compare trimmed, with inner whitespace collapsed and ignoring case; two keys that become equal are rejected. Only string values match */
                 groups: {
                     [key: string]: string;
                 };
@@ -6853,17 +6853,17 @@ export interface components {
              * @enum {string|null}
              */
             zenviaHandoffSolution?: "conversion" | "zenvia_chat" | "nlu" | null;
-            /** @description Zenvia Sales API key, not the same token as zenviaApiToken. Sealed at rest and write-only: never returned */
+            /** @description Zenvia Sales API key, not the same token as zenviaApiToken. With it a handoff transfers through the Sales API; without it, through the Conversations API with zenviaApiToken. Sealed at rest and write-only: never returned */
             zenviaSalesApiKey?: string | null;
-            /** @description Sales group dedicated to the chatbot; handoffs transfer the prospect to it. Read by the plugin at connect: restart the instance after changing it */
+            /** @description Zenvia group dedicated to the chatbot; handoffs transfer the conversation to it (through the Sales API with zenviaSalesApiKey, the Conversations API otherwise). Read by the plugin at connect: restart the instance after changing it */
             zenviaHandoffGroupId?: string | null;
-            /** @description Optional agent inside the handoff group the prospect is transferred to. Read by the plugin at connect: restart the instance after changing it */
+            /** @description Optional agent inside the handoff group the conversation is transferred to. Read by the plugin at connect: restart the instance after changing it */
             zenviaHandoffUserId?: string | null;
-            /** @description Routes a handoff to a Sales group by the value of one handoffFields key: { field, groups: { <value>: <groupId> } }. zenviaHandoffGroupId is the fallback for an unmapped or missing value; without it such a handoff is refused (422). Read by the plugin at connect: restart the instance after changing it. null clears it */
+            /** @description Routes a handoff to a Zenvia group by the value of one handoffFields key: { field, groups: { <value>: <groupId> } }. zenviaHandoffGroupId is the fallback for an unmapped or missing value; without it such a handoff is refused (422). Read by the plugin at connect: restart the instance after changing it. null clears it */
             zenviaHandoffRouting?: {
-                /** @description Key of handoffFields whose value picks the Sales group */
+                /** @description Key of handoffFields whose value picks the handoff group */
                 field: string;
-                /** @description Maps a value of the field to a Sales group id. Values compare trimmed, with inner whitespace collapsed and ignoring case; two keys that become equal are rejected. Only string values match */
+                /** @description Maps a value of the field to a Zenvia group id. Values compare trimmed, with inner whitespace collapsed and ignoring case; two keys that become equal are rejected. Only string values match */
                 groups: {
                     [key: string]: string;
                 };
@@ -6934,17 +6934,17 @@ export interface components {
              * @enum {string}
              */
             zenviaHandoffSolution?: "conversion" | "zenvia_chat" | "nlu";
-            /** @description Zenvia Sales API key, not the same token as zenviaApiToken. Sealed at rest and write-only: never returned */
+            /** @description Zenvia Sales API key, not the same token as zenviaApiToken. With it a handoff transfers through the Sales API; without it, through the Conversations API with zenviaApiToken. Sealed at rest and write-only: never returned */
             zenviaSalesApiKey?: string;
-            /** @description Sales group dedicated to the chatbot; handoffs transfer the prospect to it. Read by the plugin at connect: restart the instance after changing it */
+            /** @description Zenvia group dedicated to the chatbot; handoffs transfer the conversation to it (through the Sales API with zenviaSalesApiKey, the Conversations API otherwise). Read by the plugin at connect: restart the instance after changing it */
             zenviaHandoffGroupId?: string;
-            /** @description Optional agent inside the handoff group the prospect is transferred to. Read by the plugin at connect: restart the instance after changing it */
+            /** @description Optional agent inside the handoff group the conversation is transferred to. Read by the plugin at connect: restart the instance after changing it */
             zenviaHandoffUserId?: string;
-            /** @description Routes a handoff to a Sales group by the value of one handoffFields key: { field, groups: { <value>: <groupId> } }. zenviaHandoffGroupId is the fallback for an unmapped or missing value; without it such a handoff is refused (422). Read by the plugin at connect: restart the instance after changing it. null clears it */
+            /** @description Routes a handoff to a Zenvia group by the value of one handoffFields key: { field, groups: { <value>: <groupId> } }. zenviaHandoffGroupId is the fallback for an unmapped or missing value; without it such a handoff is refused (422). Read by the plugin at connect: restart the instance after changing it. null clears it */
             zenviaHandoffRouting?: {
-                /** @description Key of handoffFields whose value picks the Sales group */
+                /** @description Key of handoffFields whose value picks the handoff group */
                 field: string;
-                /** @description Maps a value of the field to a Sales group id. Values compare trimmed, with inner whitespace collapsed and ignoring case; two keys that become equal are rejected. Only string values match */
+                /** @description Maps a value of the field to a Zenvia group id. Values compare trimmed, with inner whitespace collapsed and ignoring case; two keys that become equal are rejected. Only string values match */
                 groups: {
                     [key: string]: string;
                 };
@@ -13537,17 +13537,17 @@ export interface operations {
                      * @enum {string|null}
                      */
                     zenviaHandoffSolution?: "conversion" | "zenvia_chat" | "nlu" | null;
-                    /** @description Zenvia Sales API key, not the same token as zenviaApiToken. Sealed at rest and write-only: never returned */
+                    /** @description Zenvia Sales API key, not the same token as zenviaApiToken. With it a handoff transfers through the Sales API; without it, through the Conversations API with zenviaApiToken. Sealed at rest and write-only: never returned */
                     zenviaSalesApiKey?: string | null;
-                    /** @description Sales group dedicated to the chatbot; handoffs transfer the prospect to it. Read by the plugin at connect: restart the instance after changing it */
+                    /** @description Zenvia group dedicated to the chatbot; handoffs transfer the conversation to it (through the Sales API with zenviaSalesApiKey, the Conversations API otherwise). Read by the plugin at connect: restart the instance after changing it */
                     zenviaHandoffGroupId?: string | null;
-                    /** @description Optional agent inside the handoff group the prospect is transferred to. Read by the plugin at connect: restart the instance after changing it */
+                    /** @description Optional agent inside the handoff group the conversation is transferred to. Read by the plugin at connect: restart the instance after changing it */
                     zenviaHandoffUserId?: string | null;
-                    /** @description Routes a handoff to a Sales group by the value of one handoffFields key: { field, groups: { <value>: <groupId> } }. zenviaHandoffGroupId is the fallback for an unmapped or missing value; without it such a handoff is refused (422). Read by the plugin at connect: restart the instance after changing it. null clears it */
+                    /** @description Routes a handoff to a Zenvia group by the value of one handoffFields key: { field, groups: { <value>: <groupId> } }. zenviaHandoffGroupId is the fallback for an unmapped or missing value; without it such a handoff is refused (422). Read by the plugin at connect: restart the instance after changing it. null clears it */
                     zenviaHandoffRouting?: {
-                        /** @description Key of handoffFields whose value picks the Sales group */
+                        /** @description Key of handoffFields whose value picks the handoff group */
                         field: string;
-                        /** @description Maps a value of the field to a Sales group id. Values compare trimmed, with inner whitespace collapsed and ignoring case; two keys that become equal are rejected. Only string values match */
+                        /** @description Maps a value of the field to a Zenvia group id. Values compare trimmed, with inner whitespace collapsed and ignoring case; two keys that become equal are rejected. Only string values match */
                         groups: {
                             [key: string]: string;
                         };
@@ -13935,17 +13935,17 @@ export interface operations {
                      * @enum {string|null}
                      */
                     zenviaHandoffSolution?: "conversion" | "zenvia_chat" | "nlu" | null;
-                    /** @description Zenvia Sales API key, not the same token as zenviaApiToken. Sealed at rest and write-only: never returned */
+                    /** @description Zenvia Sales API key, not the same token as zenviaApiToken. With it a handoff transfers through the Sales API; without it, through the Conversations API with zenviaApiToken. Sealed at rest and write-only: never returned */
                     zenviaSalesApiKey?: string | null;
-                    /** @description Sales group dedicated to the chatbot; handoffs transfer the prospect to it. Read by the plugin at connect: restart the instance after changing it */
+                    /** @description Zenvia group dedicated to the chatbot; handoffs transfer the conversation to it (through the Sales API with zenviaSalesApiKey, the Conversations API otherwise). Read by the plugin at connect: restart the instance after changing it */
                     zenviaHandoffGroupId?: string | null;
-                    /** @description Optional agent inside the handoff group the prospect is transferred to. Read by the plugin at connect: restart the instance after changing it */
+                    /** @description Optional agent inside the handoff group the conversation is transferred to. Read by the plugin at connect: restart the instance after changing it */
                     zenviaHandoffUserId?: string | null;
-                    /** @description Routes a handoff to a Sales group by the value of one handoffFields key: { field, groups: { <value>: <groupId> } }. zenviaHandoffGroupId is the fallback for an unmapped or missing value; without it such a handoff is refused (422). Read by the plugin at connect: restart the instance after changing it. null clears it */
+                    /** @description Routes a handoff to a Zenvia group by the value of one handoffFields key: { field, groups: { <value>: <groupId> } }. zenviaHandoffGroupId is the fallback for an unmapped or missing value; without it such a handoff is refused (422). Read by the plugin at connect: restart the instance after changing it. null clears it */
                     zenviaHandoffRouting?: {
-                        /** @description Key of handoffFields whose value picks the Sales group */
+                        /** @description Key of handoffFields whose value picks the handoff group */
                         field: string;
-                        /** @description Maps a value of the field to a Sales group id. Values compare trimmed, with inner whitespace collapsed and ignoring case; two keys that become equal are rejected. Only string values match */
+                        /** @description Maps a value of the field to a Zenvia group id. Values compare trimmed, with inner whitespace collapsed and ignoring case; two keys that become equal are rejected. Only string values match */
                         groups: {
                             [key: string]: string;
                         };
@@ -14477,17 +14477,17 @@ export interface operations {
                      * @enum {string}
                      */
                     zenviaHandoffSolution?: "conversion" | "zenvia_chat" | "nlu";
-                    /** @description Zenvia Sales API key, not the same token as zenviaApiToken. Sealed at rest and write-only: never returned */
+                    /** @description Zenvia Sales API key, not the same token as zenviaApiToken. With it a handoff transfers through the Sales API; without it, through the Conversations API with zenviaApiToken. Sealed at rest and write-only: never returned */
                     zenviaSalesApiKey?: string;
-                    /** @description Sales group dedicated to the chatbot; handoffs transfer the prospect to it. Read by the plugin at connect: restart the instance after changing it */
+                    /** @description Zenvia group dedicated to the chatbot; handoffs transfer the conversation to it (through the Sales API with zenviaSalesApiKey, the Conversations API otherwise). Read by the plugin at connect: restart the instance after changing it */
                     zenviaHandoffGroupId?: string;
-                    /** @description Optional agent inside the handoff group the prospect is transferred to. Read by the plugin at connect: restart the instance after changing it */
+                    /** @description Optional agent inside the handoff group the conversation is transferred to. Read by the plugin at connect: restart the instance after changing it */
                     zenviaHandoffUserId?: string;
-                    /** @description Routes a handoff to a Sales group by the value of one handoffFields key: { field, groups: { <value>: <groupId> } }. zenviaHandoffGroupId is the fallback for an unmapped or missing value; without it such a handoff is refused (422). Read by the plugin at connect: restart the instance after changing it. null clears it */
+                    /** @description Routes a handoff to a Zenvia group by the value of one handoffFields key: { field, groups: { <value>: <groupId> } }. zenviaHandoffGroupId is the fallback for an unmapped or missing value; without it such a handoff is refused (422). Read by the plugin at connect: restart the instance after changing it. null clears it */
                     zenviaHandoffRouting?: {
-                        /** @description Key of handoffFields whose value picks the Sales group */
+                        /** @description Key of handoffFields whose value picks the handoff group */
                         field: string;
-                        /** @description Maps a value of the field to a Sales group id. Values compare trimmed, with inner whitespace collapsed and ignoring case; two keys that become equal are rejected. Only string values match */
+                        /** @description Maps a value of the field to a Zenvia group id. Values compare trimmed, with inner whitespace collapsed and ignoring case; two keys that become equal are rejected. Only string values match */
                         groups: {
                             [key: string]: string;
                         };

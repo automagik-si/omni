@@ -79,11 +79,11 @@ const zenviaRoutingValue = z.string().min(1).max(256);
 const zenviaRoutingGroupId = z.string().trim().min(1).max(64);
 export const ZenviaHandoffRoutingSchema = z
   .object({
-    field: z.string().trim().min(1).max(128).describe('Key of handoffFields whose value picks the Sales group'),
+    field: z.string().trim().min(1).max(128).describe('Key of handoffFields whose value picks the handoff group'),
     groups: z
       .record(zenviaRoutingValue, zenviaRoutingGroupId)
       .describe(
-        'Maps a value of the field to a Sales group id. Values compare trimmed, with inner whitespace collapsed and ignoring case; two keys that become equal are rejected. Only string values match',
+        'Maps a value of the field to a Zenvia group id. Values compare trimmed, with inner whitespace collapsed and ignoring case; two keys that become equal are rejected. Only string values match',
       ),
   })
   .strict()
@@ -132,20 +132,20 @@ const zenviaInstanceFields = {
   }),
   zenviaSalesApiKey: z.string().openapi({
     description:
-      'Zenvia Sales API key, not the same token as zenviaApiToken. Sealed at rest and write-only: never returned',
+      'Zenvia Sales API key, not the same token as zenviaApiToken. With it a handoff transfers through the Sales API; without it, through the Conversations API with zenviaApiToken. Sealed at rest and write-only: never returned',
     writeOnly: true,
   }),
   zenviaHandoffGroupId: z.string().openapi({
     description:
-      'Sales group dedicated to the chatbot; handoffs transfer the prospect to it. Read by the plugin at connect: restart the instance after changing it',
+      'Zenvia group dedicated to the chatbot; handoffs transfer the conversation to it (through the Sales API with zenviaSalesApiKey, the Conversations API otherwise). Read by the plugin at connect: restart the instance after changing it',
   }),
   zenviaHandoffUserId: z.string().openapi({
     description:
-      'Optional agent inside the handoff group the prospect is transferred to. Read by the plugin at connect: restart the instance after changing it',
+      'Optional agent inside the handoff group the conversation is transferred to. Read by the plugin at connect: restart the instance after changing it',
   }),
   zenviaHandoffRouting: ZenviaHandoffRoutingSchema.openapi({
     description:
-      'Routes a handoff to a Sales group by the value of one handoffFields key: { field, groups: { <value>: <groupId> } }. zenviaHandoffGroupId is the fallback for an unmapped or missing value; without it such a handoff is refused (422). Read by the plugin at connect: restart the instance after changing it. null clears it',
+      'Routes a handoff to a Zenvia group by the value of one handoffFields key: { field, groups: { <value>: <groupId> } }. zenviaHandoffGroupId is the fallback for an unmapped or missing value; without it such a handoff is refused (422). Read by the plugin at connect: restart the instance after changing it. null clears it',
   }),
   webhookVerifyToken: z.string().openapi({
     description:
