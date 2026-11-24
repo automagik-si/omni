@@ -42,6 +42,8 @@ import { getPlugin } from './loader';
 
 const log = createLogger('media-processor');
 
+export const MEDIA_PROCESSOR_ACK_WAIT_MS = 15 * 60 * 1000;
+
 /**
  * Media types that should be processed
  */
@@ -1056,6 +1058,7 @@ export async function setupMediaProcessor(eventBus: EventBus, db: Database, serv
     queue: 'media-processor',
     maxRetries: 2,
     retryDelayMs: 1000,
+    ackWaitMs: MEDIA_PROCESSOR_ACK_WAIT_MS,
     startFrom: 'first',
     concurrency: 5, // #1200: per-message work, independent across deliveries
   });
