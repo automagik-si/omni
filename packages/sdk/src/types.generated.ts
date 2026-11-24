@@ -1401,7 +1401,7 @@ export interface paths {
         put?: never;
         /**
          * Close a contact
-         * @description Terminal close: logs the close in close_contact_logs, pauses the agent, sets closed (won/lost, or escalated after repeated soft closes) or a closeUntil cooldown (other outcomes, tunable per instance via closeContactConfig), and disarms follow-ups. Channels declaring canCloseContact send a native close with `text`. `text` is optional: without it the contact is classified/closed with no farewell — channels also declaring canCloseContactWithoutText still receive the native close event with empty text; other channels skip the channel send and only apply the side effects.
+         * @description Terminal close: logs the close in close_contact_logs, pauses the agent, sets closed (won/lost, or escalated after repeated soft closes) or a closeUntil cooldown (other outcomes, tunable per instance via closeContactConfig), and disarms follow-ups. Channels declaring canCloseContact send a native close with `text`. `text` is optional: without it the contact is classified/closed with no farewell — channels also declaring canCloseContactWithoutText still receive the native close event with empty text; other channels skip the channel send and only apply the side effects. On a channel without canCloseContact, a `lost` close sends `text` as a plain message, because the paused agent reply is never delivered; if that send fails the close still applies and `messageId` is null. The other outcomes leave the farewell to the agent reply.
          */
         post: operations["sendCloseContact"];
         delete?: never;
@@ -16664,7 +16664,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: {
-                            /** @description Channel message ID (null when no native send happened) */
+                            /** @description Channel message ID (null when nothing was sent) */
                             messageId: string | null;
                             /** @enum {string} */
                             status: "closed";
