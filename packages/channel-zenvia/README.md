@@ -154,12 +154,14 @@ Setting the Sales key, or `zenviaHandoffUserId`, without a group
 `zenviaHandoffRouting`, no `zenviaSalesApiKey`). Every call carries the same
 `X-API-TOKEN` as outbound messages. In order:
 
-1. `GET /v2/conversations?search=<contact digits>&sort=createdAt,desc&size=50`
+1. `GET /v2/conversations?search=<contact digits>&sort=createdAt,desc&size=100&page=N`
    finds the conversation. The search is free text, so the plugin keeps only
    the results that are really this contact on this sender: `channel` is
    `whatsapp`, `to` reduced to its digits is the contact, `from` is
    `zenviaSenderId` (compared the same way as on inbound messages) and the
    status is not `CLOSED`. Of those it takes the most recent by `createdAt`.
+   It reads page after page, newest first, and stops at the first page that
+   has a match, at a page shorter than the page size, or after 5 pages.
    None left means no conversation to transfer, and the handoff fails before
    anything is written or sent. Results it cannot read are skipped.
 2. `POST /v2/conversations/{id}/notes` writes the same note as the Sales
@@ -171,7 +173,8 @@ Setting the Sales key, or `zenviaHandoffUserId`, without a group
 3. `POST /v2/conversations/{id}/actions/transfer` with
    `{ "type": "GROUP", "groupId" }`, or `{ "type": "USER", "groupId", "userId" }`
    when `zenviaHandoffUserId` is set. Any 2xx counts as done (Zenvia answers
-   202 for a group and 200 for a user). A refusal fails the handoff before the
+   202 for a group and 200 for a user), even when its body cannot be read, so
+   an accepted transfer is never retried. A refusal fails the handoff before the
    farewell, so the agent keeps the chat.
 4. The farewell, exactly as in the Sales transfer.
 

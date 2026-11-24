@@ -34,6 +34,7 @@ import {
   type ZenviaHandoffSolution,
   type ZenviaInboundContent,
   type ZenviaInboundMessage,
+  type ZenviaListedConversation,
   type ZenviaMessageStatusEvent,
   type ZenviaOutboundContent,
   type ZenviaOutboundMessage,
@@ -59,7 +60,8 @@ const SENT_RECIPIENT_MAX_ENTRIES = 5000;
 const SENT_RECIPIENT_TTL_MS = 24 * 60 * 60 * 1000;
 const RECIPIENT_STATUS_CODES: ReadonlySet<string> = new Set(['DELIVERED', 'READ', 'REJECTED', 'NOT_DELIVERED']);
 
-const CONVERSATION_LOOKUP_SIZE = 50;
+const CONVERSATION_LOOKUP_SIZE = 100;
+const CONVERSATION_LOOKUP_MAX_PAGES = 5;
 const CONVERSATION_LOOKUP_SORT = 'createdAt,desc';
 
 interface ZenviaInstanceState {
@@ -331,17 +333,7 @@ export class ZenviaPlugin extends BaseChannelPlugin {
     groupId: string,
   ): Promise<TransferOutcome> {
     const contact = toZenviaPhone(to);
-    const conversation = contact
-      ? pickOpenConversation(
-          await state.client.listConversations({
-            search: contact,
-            sort: CONVERSATION_LOOKUP_SORT,
-            size: CONVERSATION_LOOKUP_SIZE,
-          }),
-          contact,
-          state.config.senderId,
-        )
-      : undefined;
+    const conversation = contact ? await findOpenConversation(state, contact) : undefined;
     if (!conversation) {
       return {
         ok: false,
@@ -707,6 +699,24 @@ export class ZenviaPlugin extends BaseChannelPlugin {
 }
 
 type ZenviaConversation = ZenviaConversationStatusEvent['conversation'];
+
+async function findOpenConversation(
+  state: ZenviaInstanceState,
+  contact: string,
+): Promise<ZenviaListedConversation | undefined> {
+  for (let page = 1; page <= CONVERSATION_LOOKUP_MAX_PAGES; page++) {
+    const listed = await state.client.listConversations({
+      search: contact,
+      sort: CONVERSATION_LOOKUP_SORT,
+      size: CONVERSATION_LOOKUP_SIZE,
+      page,
+    });
+    const picked = pickOpenConversation(listed, contact, state.config.senderId);
+    if (picked) return picked;
+    if (listed.length < CONVERSATION_LOOKUP_SIZE) return undefined;
+  }
+  return undefined;
+}
 
 function conversationContact(conversation: ZenviaConversation, senderId: string): string | undefined {
   if (conversation.channel?.toLowerCase() !== 'whatsapp') return undefined;

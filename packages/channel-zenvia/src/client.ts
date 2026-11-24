@@ -85,8 +85,18 @@ export class ZenviaClient {
     return parsed.success ? parsed.data : {};
   }
 
-  async listConversations(query: { search: string; sort: string; size: number }): Promise<ZenviaListedConversation[]> {
-    const params = new URLSearchParams({ search: query.search, sort: query.sort, size: String(query.size) });
+  async listConversations(query: {
+    search: string;
+    sort: string;
+    size: number;
+    page: number;
+  }): Promise<ZenviaListedConversation[]> {
+    const params = new URLSearchParams({
+      search: query.search,
+      sort: query.sort,
+      size: String(query.size),
+      page: String(query.page),
+    });
     const res = await this.request(`/conversations?${params.toString()}`, {
       method: 'GET',
       operation: 'listConversations',
@@ -117,7 +127,7 @@ export class ZenviaClient {
       body: JSON.stringify(target),
       operation: 'transferConversation',
     });
-    await readBodyText(res, 'transferConversation');
+    await readBodyText(res, 'transferConversation').catch(() => '');
   }
 
   async listGroups(): Promise<ZenviaGroups> {

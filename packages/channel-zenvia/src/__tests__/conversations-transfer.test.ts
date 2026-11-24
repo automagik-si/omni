@@ -352,7 +352,66 @@ describe('ZenviaPlugin handoff through the Conversations API', () => {
     expect(noteWarning).not.toContain('asked for a person');
   });
 
+  it('pages through the search until it finds the open conversation', async () => {
+    await connect();
+    const firstPage = Array.from({ length: 100 }, (_, index) =>
+      conversation({ id: `foreign-${index}`, from: OTHER_SENDER }),
+    );
+    const fetchSpy = spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse(firstPage))
+      .mockResolvedValueOnce(jsonResponse([conversation({ id: 'on-page-two' })]))
+      .mockResolvedValueOnce(jsonResponse({ id: 'note-1' }, 201))
+      .mockResolvedValueOnce(jsonResponse(conversation(), 202))
+      .mockResolvedValueOnce(sendResponse());
+    const before = fetchSpy.mock.calls.length;
+
+    const result = await plugin.sendMessage(instanceId, handoffMessage);
+
+    expect(result).toMatchObject({ success: true, messageId: MESSAGE_ID });
+    expect(call(fetchSpy, before).url.searchParams.get('page')).toBe('1');
+    expect(call(fetchSpy, before + 1).url.searchParams.get('page')).toBe('2');
+    expect(call(fetchSpy, before + 3).url.pathname).toBe('/v2/conversations/on-page-two/actions/transfer');
+  });
+
+  it('treats an accepted transfer whose answer cannot be read as done, never as retryable', async () => {
+    await connect();
+    const unreadable = new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.error(new Error('connection reset'));
+        },
+      }),
+      { status: 202 },
+    );
+    spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse([conversation()]))
+      .mockResolvedValueOnce(jsonResponse({ id: 'note-1' }, 201))
+      .mockResolvedValueOnce(unreadable)
+      .mockResolvedValueOnce(sendResponse());
+
+    const result = await plugin.sendMessage(instanceId, handoffMessage);
+
+    expect(result).toMatchObject({ success: true, messageId: MESSAGE_ID });
+    expect(result.retryable).toBeUndefined();
+  });
+
   describe('no conversation to transfer', () => {
+    it('stops paging at the first short page and refuses', async () => {
+      await connect();
+      const fullPage = Array.from({ length: 100 }, (_, index) =>
+        conversation({ id: `closed-${index}`, status: 'CLOSED' }),
+      );
+      const fetchSpy = spyOn(globalThis, 'fetch')
+        .mockResolvedValueOnce(jsonResponse(fullPage))
+        .mockResolvedValueOnce(jsonResponse([conversation({ status: 'CLOSED' })]));
+      const before = fetchSpy.mock.calls.length;
+
+      const result = await plugin.sendMessage(instanceId, handoffMessage);
+
+      expect(result.rejected).toBe(true);
+      expect(paths(fetchSpy, before)).toEqual(['GET /v2/conversations', 'GET /v2/conversations']);
+    });
+
     it('refuses for good, sending nothing, when the contact has no open conversation on this sender', async () => {
       for (const listed of [
         [],
