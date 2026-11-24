@@ -89,7 +89,9 @@ export function registerChannelSchemas(registry: OpenAPIRegistry): void {
       'Zenvia takes only a URL (the sandbox webhook), the token may come as the token query parameter instead; the ' +
       'header wins when both are present. ' +
       'MESSAGE events with direction IN become message.received and MESSAGE_STATUS events become delivered, read or ' +
-      'failed. Every other event is acknowledged with 200 and ignored.',
+      'failed. CONVERSATION_STATUS events of the instance sender become chat.human_takeover when a user is assigned ' +
+      '(distributed, claimed or transferred to a user) and chat.human_released when the conversation is closed. ' +
+      'Every other event is acknowledged with 200 and ignored.',
     security: [],
     request: {
       params: z.object({ instanceId: z.string().uuid().openapi({ description: 'Zenvia instance id' }) }),

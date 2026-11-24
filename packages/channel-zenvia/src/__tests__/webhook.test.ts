@@ -325,8 +325,8 @@ describe('Zenvia webhook', () => {
     expect(received(eventBus)).toHaveLength(0);
   });
 
-  it('acks conversation status events without emitting', async () => {
-    const res = await plugin.handleWebhook(post({ type: 'CONVERSATION_STATUS', conversationStatus: {} }));
+  it('acks event types it does not handle without emitting', async () => {
+    const res = await plugin.handleWebhook(post({ type: 'CONTACT', contact: {} }));
     expect(res.status).toBe(200);
     expect(eventBus.published).toHaveLength(0);
   });

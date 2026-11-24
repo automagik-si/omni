@@ -65,7 +65,8 @@ verify token in the subscription's fixed headers:
 }
 ```
 
-Create one subscription per event type (`MESSAGE` and `MESSAGE_STATUS`).
+Create one subscription per event type (`MESSAGE`, `MESSAGE_STATUS` and
+`CONVERSATION_STATUS`).
 
 Where Zenvia takes only a URL and no headers (the sandbox webhook of the
 *Testes em Sandbox* screen), put the token in the URL instead:
@@ -97,7 +98,10 @@ logged first. The plugin keeps no seen-set for statuses, so a redelivery
 publishes the receipt again. That is safe because the persistence consumers
 are idempotent: a `delivered` or `read` receipt only moves a message forward
 and the first `deliveredAt`/`readAt` is kept, and a `failed` receipt never
-overwrites a message already reported delivered or read. A payload that fails
+overwrites a message already reported delivered or read. A
+`CONVERSATION_STATUS` whose event could not be published answers 503 too; its
+redelivery is safe because a takeover on a chat already paused changes
+nothing. A payload that fails
 validation is still acknowledged with 200, since redelivering it cannot help.
 An inbound `MESSAGE` addressed to a different sender
 of the same Zenvia account is acknowledged and dropped, so two instances on
@@ -277,30 +281,44 @@ ignored.
 - interactive buttons and lists, contacts send, WhatsApp Flows, products;
 - template CRUD (the Zenvia API has it; this plugin only sends);
 - typing indicator (the API has none);
-- reactions;
-- `CONVERSATION_STATUS` (below).
+- reactions.
 
-## Not wired yet: conversation status
+## Conversation status: a person takes over
 
-The ZCC guidance is that the chatbot stops sending once the transfer succeeds
-and listens for the end of the conversation to resume later. Stopping is
-covered by the handoff route. Resuming is not.
+Zenvia reports the lifecycle of a conversation through `CONVERSATION_STATUS`
+events. The subscription covers the whole organization, not one number, so
+the plugin keeps only the events of its own sender: one of `from` and `to`
+must be `zenviaSenderId` (compared the same way as on inbound messages) and
+the other is the contact, reduced to its digits like the chat id of an
+inbound message. A status on another channel than `whatsapp`, on another
+sender, or with no contact is acknowledged and dropped. Both spellings of the
+status are accepted: the webhook sends `CONVERSATION_CLAIMED`, the
+Conversations API answers `CLAIMED`.
 
-Zenvia reports the conversation lifecycle through `CONVERSATION_STATUS`
-events (queued, distributed to an agent, claimed, transferred, snoozed,
-closed), and the same signal would also tell the agent that a person took
-over a conversation it did not hand off. Core has no channel-agnostic event
-a plugin can publish for that: `agentPaused` is only set by the handoff and
-close-contact routes, and only cleared by session reset or the chats routes.
-Wiring it needs a small core contract first, for example a
-`chat.human_takeover` / `chat.human_released` pair consumed next to
-`chat.handoff_activated`, so that it works for every channel. Until then
-these events are acknowledged and ignored.
+| Status                                                    | Published             |
+| --------------------------------------------------------- | --------------------- |
+| `DISTRIBUTED_TO_USER`                                     | `chat.human_takeover` |
+| `CLAIMED` with a `userId`                                 | `chat.human_takeover` |
+| `TRANSFERRED` to a user (`TRANSFER_TO_USER` or a `newUserId`) | `chat.human_takeover` |
+| `CLOSED`                                                  | `chat.human_released` |
+| everything else (created, queued, started, snoozed, unsnoozed, a transfer to a group) | nothing |
+
+`chat.human_takeover` carries `chatExternalId` (the contact), the
+`providerConversationId`, the `providerStatus` and the `attendantId` when
+Zenvia names one. Omni applies it the way the handoff route does: the stored
+chat of that contact gets `agentPaused: true` (merged into its settings), which
+publishes `chat.handoff_activated`, and its follow-up is disarmed with reason
+`handoff`. A chat already paused is left alone, and a contact with no stored
+chat yet has nothing to pause.
+
+`chat.human_released` carries who closed the conversation (`releasedBy`:
+`attendant` or `system`, and `releasedById`) and the close reason (`reason`,
+`reasonLabel`). Omni does not resume the agent on its own: no channel resumes
+it today, and resuming stays with the session reset and the chats routes. An
+app that wants the agent back once the person is done listens for this event.
 
 ## Pending for follow-up PRs
 
-- `CONVERSATION_STATUS` events and human takeover: they need the core contract
-  described above.
 - Template management (create, list, sync): this plugin only sends templates.
 - An allowlist of hosts for inbound media: it waits for Zenvia's answer on
   which hosts serve `fileUrl` (open questions below).

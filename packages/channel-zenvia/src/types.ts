@@ -199,4 +199,44 @@ export const ZenviaMessageStatusEventSchema = z
   .passthrough();
 export type ZenviaMessageStatusEvent = z.infer<typeof ZenviaMessageStatusEventSchema>;
 
+const ZenviaActorSchema = z
+  .object({
+    id: z.string().optional().catch(undefined),
+    type: z.string().optional().catch(undefined),
+  })
+  .passthrough();
+
+export const ZenviaConversationStatusEventSchema = z
+  .object({
+    id: z.string().optional(),
+    type: z.literal('CONVERSATION_STATUS'),
+    timestamp: z.string().optional(),
+    conversation: z
+      .object({
+        id: z.string().optional(),
+        status: z.string().min(1),
+        statusTimestamp: z.string().optional(),
+        channel: z.string().optional(),
+        from: z.string().optional(),
+        to: z.string().optional(),
+        contactId: z.string().optional(),
+        groupId: z.string().optional(),
+        userId: z.string().optional(),
+        transferType: z.string().optional(),
+        newUserId: z.string().optional(),
+        closedBy: ZenviaActorSchema.optional().catch(undefined),
+        closeReason: z
+          .object({
+            key: z.string().optional().catch(undefined),
+            name: z.string().optional().catch(undefined),
+          })
+          .passthrough()
+          .optional()
+          .catch(undefined),
+      })
+      .passthrough(),
+  })
+  .passthrough();
+export type ZenviaConversationStatusEvent = z.infer<typeof ZenviaConversationStatusEventSchema>;
+
 export const ZenviaEventEnvelopeSchema = z.object({ type: z.string() }).passthrough();

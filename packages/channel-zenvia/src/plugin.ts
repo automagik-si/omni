@@ -30,6 +30,7 @@ import { ZenviaSalesClient } from './sales-client';
 import {
   ZENVIA_HANDOFF_SOLUTIONS,
   type ZenviaConfig,
+  type ZenviaConversationStatusEvent,
   type ZenviaHandoffSolution,
   type ZenviaInboundContent,
   type ZenviaInboundMessage,
@@ -586,6 +587,100 @@ export class ZenviaPlugin extends BaseChannelPlugin {
         return;
     }
   }
+
+  async handleConversationStatus(instanceId: string, event: ZenviaConversationStatusEvent): Promise<void> {
+    const state = this.zenviaInstances.get(instanceId);
+    if (!state) return;
+
+    const { conversation } = event;
+    const status = normalizeConversationStatus(conversation.status);
+    const logContext = { instanceId, conversationId: conversation.id, status };
+
+    const chatExternalId = conversationContact(conversation, state.config.senderId);
+    if (!chatExternalId) {
+      this.logger.debug('[zenvia] conversation status of another sender or channel dropped', logContext);
+      return;
+    }
+
+    const base = {
+      instanceId,
+      chatExternalId,
+      ...(conversation.id ? { providerConversationId: conversation.id } : {}),
+      providerStatus: status,
+      occurredAt: conversationStatusTime(event),
+    };
+
+    if (status === 'CLOSED') {
+      await this.emitChatHumanReleased({ ...base, ...releaseDetails(conversation) });
+      return;
+    }
+
+    const takeover = humanAttendant(status, conversation);
+    if (!takeover) {
+      this.logger.debug('[zenvia] conversation status without a human attendant ignored', logContext);
+      return;
+    }
+    await this.emitChatHumanTakeover({
+      ...base,
+      ...(takeover.attendantId ? { attendantId: takeover.attendantId } : {}),
+    });
+  }
+}
+
+type ZenviaConversation = ZenviaConversationStatusEvent['conversation'];
+
+function normalizeConversationStatus(status: string): string {
+  return status
+    .trim()
+    .toUpperCase()
+    .replace(/^CONVERSATION_/, '');
+}
+
+function conversationContact(conversation: ZenviaConversation, senderId: string): string | undefined {
+  if (conversation.channel && conversation.channel.toLowerCase() !== 'whatsapp') return undefined;
+  const { from, to } = conversation;
+  if (!from || !to) return undefined;
+  const fromSender = toSenderId(from) === senderId;
+  const toSender = toSenderId(to) === senderId;
+  if (fromSender === toSender) return undefined;
+  return toZenviaPhone(fromSender ? to : from) || undefined;
+}
+
+function conversationStatusTime(event: ZenviaConversationStatusEvent): number {
+  const parsed = Date.parse(event.conversation.statusTimestamp ?? event.timestamp ?? '');
+  return Number.isFinite(parsed) ? parsed : Date.now();
+}
+
+function humanAttendant(status: string, conversation: ZenviaConversation): { attendantId?: string } | undefined {
+  switch (status) {
+    case 'DISTRIBUTED_TO_USER':
+      return { attendantId: conversation.userId };
+    case 'CLAIMED':
+      return conversation.userId ? { attendantId: conversation.userId } : undefined;
+    case 'TRANSFERRED':
+      return conversation.newUserId || conversation.transferType === 'TRANSFER_TO_USER'
+        ? { attendantId: conversation.newUserId }
+        : undefined;
+    default:
+      return undefined;
+  }
+}
+
+function releaseDetails(conversation: ZenviaConversation): {
+  releasedBy?: 'attendant' | 'system';
+  releasedById?: string;
+  reason?: string;
+  reasonLabel?: string;
+} {
+  const actor = conversation.closedBy?.type?.toUpperCase();
+  const releasedBy = actor === 'USER' ? 'attendant' : actor === 'SYSTEM' ? 'system' : undefined;
+  const { closedBy, closeReason } = conversation;
+  return {
+    ...(releasedBy ? { releasedBy } : {}),
+    ...(closedBy?.id ? { releasedById: closedBy.id } : {}),
+    ...(closeReason?.key ? { reason: closeReason.key } : {}),
+    ...(closeReason?.name ? { reasonLabel: closeReason.name } : {}),
+  };
 }
 
 function disposeState(state: ZenviaInstanceState): void {
