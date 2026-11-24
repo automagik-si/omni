@@ -83,6 +83,7 @@ import {
   setupEventPersistence,
   setupFollowUpHooks,
   setupHistoryPushTracker,
+  setupHumanTakeoverHooks,
   setupLidMappingListener,
   setupMediaProcessor,
   setupMessageListener,
@@ -712,6 +713,12 @@ async function setupEventBusServices(
     await setupFollowUpHooks(eventBus, services, db);
   } catch (error) {
     log.error('Failed to set up follow-up hooks', { error: String(error) });
+  }
+
+  try {
+    await setupHumanTakeoverHooks(eventBus, services, db);
+  } catch (error) {
+    log.error('Failed to set up human takeover hooks', { error: String(error) });
   }
 
   // Sync worker
