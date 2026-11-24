@@ -127,7 +127,7 @@ describe('human-takeover-hooks', () => {
     expect(calls.updates[0]?.data).toEqual({ settings: { agentPaused: true } });
   });
 
-  test('leaves a chat whose agent is already paused untouched', async () => {
+  test('a redelivery after the pause was stored still disarms the follow-up, without rewriting the chat', async () => {
     const { services, calls } = servicesWith({ id: 'chat-uuid', settings: { agentPaused: true } });
     const { bus, fire } = captureBus();
     await setupHumanTakeoverHooks(bus, services, fakeDb([]));
@@ -135,7 +135,9 @@ describe('human-takeover-hooks', () => {
     await fire(takeoverEvent());
 
     expect(calls.updates).toEqual([]);
-    expect(calls.disarms).toEqual([]);
+    expect(calls.disarms).toEqual([
+      expect.objectContaining({ chatId: 'chat-uuid', instanceId: INSTANCE_ID, reason: 'handoff' }),
+    ]);
   });
 
   test('does nothing when the contact has no stored chat', async () => {

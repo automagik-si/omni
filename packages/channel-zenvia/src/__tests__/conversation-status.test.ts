@@ -247,6 +247,22 @@ describe('Zenvia CONVERSATION_STATUS', () => {
       expect(published()).toHaveLength(0);
     });
 
+    it('drops a status that names no channel', async () => {
+      await plugin.handleWebhook(
+        post(conversationStatus('CONVERSATION_DISTRIBUTED_TO_USER', { userId: 'user-1', channel: undefined })),
+      );
+
+      expect(published()).toHaveLength(0);
+    });
+
+    it('accepts the channel name in any letter case', async () => {
+      await plugin.handleWebhook(
+        post(conversationStatus('CONVERSATION_DISTRIBUTED_TO_USER', { userId: 'user-1', channel: 'WhatsApp' })),
+      );
+
+      expect(published()).toHaveLength(1);
+    });
+
     it('drops a status that names no contact', async () => {
       await plugin.handleWebhook(
         post(conversationStatus('CONVERSATION_DISTRIBUTED_TO_USER', { userId: 'user-1', from: undefined })),

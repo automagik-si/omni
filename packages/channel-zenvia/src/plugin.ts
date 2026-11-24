@@ -637,7 +637,7 @@ function normalizeConversationStatus(status: string): string {
 }
 
 function conversationContact(conversation: ZenviaConversation, senderId: string): string | undefined {
-  if (conversation.channel && conversation.channel.toLowerCase() !== 'whatsapp') return undefined;
+  if (conversation.channel?.toLowerCase() !== 'whatsapp') return undefined;
   const { from, to } = conversation;
   if (!from || !to) return undefined;
   const fromSender = toSenderId(from) === senderId;

@@ -35,6 +35,8 @@ async function applyHumanTakeover(
     return;
   }
 
+  await services.followUpLifecycle.disarm({ chatId: chat.id, instanceId, reason: 'handoff', tenantId });
+
   const settings = (chat.settings as Record<string, unknown> | null) ?? {};
   if (settings.agentPaused === true) {
     log.debug('Human takeover on a chat whose agent is already paused', { instanceId, chatId: chat.id });
@@ -44,7 +46,6 @@ async function applyHumanTakeover(
   await runTenantWorkDb(db, tenantId, () =>
     services.chats.update(chat.id, { settings: { ...settings, agentPaused: true } }),
   );
-  await services.followUpLifecycle.disarm({ chatId: chat.id, instanceId, reason: 'handoff', tenantId });
 
   log.info('Agent paused: a human took over the chat on the channel', {
     instanceId,
