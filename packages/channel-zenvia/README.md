@@ -44,11 +44,11 @@ official Meta BSP with its own API format (not a Cloud API mirror).
 | ----------------------- | -------- | ------------------------------------------------------------------------------------------- |
 | `zenviaApiToken`        | yes      | `X-API-TOKEN` header of the Zenvia API v2. Sealed at rest.                                  |
 | `zenviaSenderId`        | yes      | The sender registered at Zenvia (the WhatsApp number). A phone-like value (digits, `+`, spaces, parentheses, hyphens) or a JID is reduced to its digits; any other value is kept exactly as written. |
-| `zenviaSalesApiKey`     | no       | Key of the Zenvia Sales APIs (`api-key` query parameter). **Not** the same token as above. Sealed at rest. |
-| `zenviaHandoffGroupId`  | no       | Sales group dedicated to the chatbot. With `zenviaSalesApiKey` it is required, unless `zenviaHandoffRouting` is set; then it is the default group. |
-| `zenviaHandoffRouting`  | no       | JSON `{ "field": "<handoffFields key>", "groups": { "<value>": "<groupId>" } }`: the value of that key picks the Sales group (see Routing a handoff to a group). Needs `zenviaSalesApiKey`. |
+| `zenviaSalesApiKey`     | no       | Key of the Zenvia Sales APIs (`api-key` query parameter). **Not** the same token as above. Sealed at rest. With it a handoff transfers through the Sales API; without it, through the Conversations API with `zenviaApiToken`. |
+| `zenviaHandoffGroupId`  | no       | Group dedicated to the chatbot that a handoff transfers to. Required for a transfer unless `zenviaHandoffRouting` is set; then it is the default group. |
+| `zenviaHandoffRouting`  | no       | JSON `{ "field": "<handoffFields key>", "groups": { "<value>": "<groupId>" } }`: the value of that key picks the group (see Routing a handoff to a group). |
 | `zenviaHandoffUserId`   | no       | A specific agent inside the chosen group.                                                   |
-| `zenviaHandoffSolution` | no       | `conversion` \| `zenvia_chat` \| `nlu`. Fallback routing when there is no Sales transfer.     |
+| `zenviaHandoffSolution` | no       | `conversion` \| `zenvia_chat` \| `nlu`. Fallback routing when there is no group to transfer to. |
 | `webhookVerifyToken`    | yes      | Shared secret every webhook POST must carry, as the `x-webhook-token` header or the `token` query parameter. Zenvia signs nothing, so an instance does not connect without it. |
 
 To wire up the webhook, create the subscriptions with that URL. Put the
@@ -109,7 +109,11 @@ one account never answer each other's contacts.
 
 ## Handoff
 
-`POST /messages/send/handoff` has two modes, chosen by the instance config:
+`POST /messages/send/handoff` has three modes, chosen by the instance config.
+A group (`zenviaHandoffGroupId` and/or `zenviaHandoffRouting`) turns on the
+transfer: through the Sales API when `zenviaSalesApiKey` is set, through the
+Conversations API otherwise. Without a group, `zenviaHandoffSolution` routes
+the conversation instead.
 
 **Transfer through the Sales API** (`zenviaSalesApiKey` + `zenviaHandoffGroupId`
 and/or `zenviaHandoffRouting`). This is the ZCC flow. In order:
@@ -142,9 +146,38 @@ created exclusively for the chatbot. On connect the plugin lists the groups
 visible to the Sales key and logs a warning when the group is not among them,
 when the key is rejected or when the Sales API is down; none of that blocks
 the connection, because messaging must not depend on an optional feature.
-Setting the Sales key without a group (`zenviaHandoffGroupId` or
-`zenviaHandoffRouting`), or a group without the key, leaves the transfer off
+Setting the Sales key, or `zenviaHandoffUserId`, without a group
+(`zenviaHandoffGroupId` or `zenviaHandoffRouting`) leaves the transfer off
 (logged) instead of failing the connect.
+
+**Transfer through the Conversations API** (`zenviaHandoffGroupId` and/or
+`zenviaHandoffRouting`, no `zenviaSalesApiKey`). Every call carries the same
+`X-API-TOKEN` as outbound messages. In order:
+
+1. `GET /v2/conversations?search=<contact digits>&sort=createdAt,desc&size=50`
+   finds the conversation. The search is free text, so the plugin keeps only
+   the results that are really this contact on this sender: `channel` is
+   `whatsapp`, `to` reduced to its digits is the contact, `from` is
+   `zenviaSenderId` (compared the same way as on inbound messages) and the
+   status is not `CLOSED`. Of those it takes the most recent by `createdAt`.
+   None left means no conversation to transfer, and the handoff fails before
+   anything is written or sent. Results it cannot read are skipped.
+2. `POST /v2/conversations/{id}/notes` writes the same note as the Sales
+   transfer (`motivoHandoff`, `dadosLead` and every `handoffFields` key) as
+   an internal note, which the contact never sees. It runs before the transfer
+   so whoever picks the conversation up finds it there; a note that fails is
+   logged and the transfer still runs. A handoff retried after a failed
+   transfer can therefore leave the note twice.
+3. `POST /v2/conversations/{id}/actions/transfer` with
+   `{ "type": "GROUP", "groupId" }`, or `{ "type": "USER", "groupId", "userId" }`
+   when `zenviaHandoffUserId` is set. Any 2xx counts as done (Zenvia answers
+   202 for a group and 200 for a user). A refusal fails the handoff before the
+   farewell, so the agent keeps the chat.
+4. The farewell, exactly as in the Sales transfer.
+
+On connect the plugin lists `GET /v2/groups` (enabled groups only) and warns
+about the default group and every mapped group that is not among them, or
+when the listing fails. None of that blocks the connection.
 
 ### What `data.messageId` tells the caller
 
@@ -166,8 +199,8 @@ way, not as an error:
 ### Routing a handoff to a group
 
 By default every handoff goes to `zenviaHandoffGroupId`. When the emitter
-chooses a queue, `zenviaHandoffRouting` sends each queue to its own Sales
-group:
+chooses a queue, `zenviaHandoffRouting` sends each queue to its own group,
+in either transfer mode:
 
 ```json
 {
@@ -191,15 +224,14 @@ group:
   normally belongs to specific groups, so leave it unset when routing to
   several groups: whether Zenvia refuses a user that is not in the target group
   is an open question (below), and a refusal would be a 422.
-- The note written to the prospect still carries the queue with the rest of
-  `handoffFields`.
+- The note still carries the queue with the rest of `handoffFields`.
 - An invalid map (not an object, blank `field`, empty `groups`, a group id that
   is not a non-empty string, unknown keys) is a 400 on `POST` and `PATCH` of
   the instance, and the plugin refuses to connect with it. The plugin reads the
   map on connect: restart the instance after changing it.
-- On connect the plugin lists the groups visible to the Sales key and warns
-  about every mapped group that is not among them. It never blocks the
-  connection.
+- On connect the plugin lists the groups visible to the Sales key, or to the
+  API token without it, and warns about every mapped group that is not among
+  them. It never blocks the connection.
 
 ```bash
 omni instances update <id> \
@@ -207,7 +239,7 @@ omni instances update <id> \
   --zenvia-handoff-routing '{"field":"queue_field","groups":{"queue-a":"group-1"}}'
 ```
 
-**Conversation routing** (`zenviaHandoffSolution`, no Sales key). The only
+**Conversation routing** (`zenviaHandoffSolution`, no group). The only
 primitive of the API v2 is the `conversation` field on an outbound message,
 `{ "solution": ..., "properties": { ... } }`. The farewell carries it and
 Zenvia hands the conversation to the solution when the contact replies.
@@ -234,15 +266,16 @@ below). A Zenvia 4xx on an ordinary send stays unflagged and answers 502.
 
 | Failure                                                                   | `rejected` | `retryable` | HTTP                         |
 | ------------------------------------------------------------------------- | ---------- | ----------- | ---------------------------- |
-| Handoff not configured (no transfer pair, no routing solution)            | `true`     | `false`     | 422 `CHANNEL_SEND_REJECTED`  |
+| Handoff not configured (no group, no routing solution)                    | `true`     | `false`     | 422 `CHANNEL_SEND_REJECTED`  |
 | No Sales prospect for the contact's number                                | `true`     | `false`     | 422 `CHANNEL_SEND_REJECTED`  |
-| Sales API refuses the lookup or the transfer with a 4xx other than 401, 403 and 429 | `true` | `false` | 422 `CHANNEL_SEND_REJECTED`  |
+| No open conversation of the contact on this sender (Conversations API)    | `true`     | `false`     | 422 `CHANNEL_SEND_REJECTED`  |
+| Sales or Conversations API refuses the lookup or the transfer with a 4xx other than 401, 403 and 429 | `true` | `false` | 422 `CHANNEL_SEND_REJECTED`  |
 | Sales API answers the transfer with `success: false`                      | `true`     | `false`     | 422 `CHANNEL_SEND_REJECTED`  |
 | `zenviaHandoffRouting` set, the queue maps to no group and there is no `zenviaHandoffGroupId` | `true` | `false` | 422 `CHANNEL_SEND_REJECTED`  |
-| Sales key refused (401, 403): a credential problem, not a refusal of the lead | absent | `false`     | 502 `CHANNEL_SEND_FAILED`    |
+| Sales key or API token refused (401, 403): a credential problem, not a refusal of the lead | absent | `false` | 502 `CHANNEL_SEND_FAILED` |
 | Rate limit (429)                                                          | absent     | `true`      | 502 `CHANNEL_SEND_FAILED`    |
-| Sales or Zenvia 5xx, timeout, network failure                             | absent     | `true`      | 502 `CHANNEL_SEND_FAILED`    |
-| Farewell fails in routing mode (no Sales transfer)                        | absent     | by cause    | 502 `CHANNEL_SEND_FAILED`    |
+| Sales or Zenvia 5xx, timeout, network failure, unreadable conversation list | absent   | `true`      | 502 `CHANNEL_SEND_FAILED`    |
+| Farewell fails in routing mode (no transfer)                              | absent     | by cause    | 502 `CHANNEL_SEND_FAILED`    |
 | Zenvia 4xx other than 401, 403 and 429 on an ordinary send (not a handoff) | absent    | `false`     | 502 `CHANNEL_SEND_FAILED`    |
 
 ## v1 scope
@@ -338,4 +371,8 @@ app that wants the agent back once the person is done listens for this event.
   refused, and with which status.
 - Whether the Sales `/groups` listing is paginated (the connect check only
   warns, so a missing page does not block anything).
+- Which number format the `search` of `GET /v2/conversations` matches. The
+  plugin searches by the digits and checks `to`/`from` on every result, so a
+  format it does not match ends in a 422, never in a transfer of the wrong
+  conversation.
 - Rate limits for `POST /channels/whatsapp/messages` and for the Sales APIs.

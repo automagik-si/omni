@@ -645,16 +645,17 @@ describe('ZenviaPlugin handoff through the Sales API', () => {
       expect(plugin.getInstanceState(instanceId)?.salesClient).toBeDefined();
     });
 
-    it('keeps the transfer off, without blocking the connection, when the map has no Sales key', async () => {
+    it('checks the mapped groups through the Conversations API when the map has no Sales key', async () => {
       plugin = new ZenviaPlugin();
       await plugin.initialize(createContext(new MockEventBus()));
-      const warn = spyOn(plugin.getLogger(), 'warn');
-      spyOn(globalThis, 'fetch').mockResolvedValueOnce(jsonResponse([]));
+      const fetchSpy = spyOn(globalThis, 'fetch')
+        .mockResolvedValueOnce(jsonResponse([]))
+        .mockResolvedValueOnce(jsonResponse([{ id: 'group-1' }, { id: 'group-2' }]));
 
       await connectPlugin(plugin, { zenviaHandoffRouting: ROUTING });
 
       expect(plugin.getInstanceState(instanceId)?.salesClient).toBeUndefined();
-      expect(warn).toHaveBeenCalled();
+      expect(call(fetchSpy, fetchSpy.mock.calls.length - 1).url.href).toBe('https://api.zenvia.com/v2/groups');
     });
   });
 

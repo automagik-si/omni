@@ -19,10 +19,33 @@ export interface ZenviaConfig {
 export const ZenviaSalesProspectSchema = z.object({ id: z.string().min(1) }).passthrough();
 export type ZenviaSalesProspect = z.infer<typeof ZenviaSalesProspectSchema>;
 
-export const ZenviaSalesGroupsSchema = z.array(
-  z.object({ id: z.string().min(1), name: z.string().optional(), displayName: z.string().optional() }).passthrough(),
-);
+const ZenviaGroupSchema = z
+  .object({ id: z.string().min(1), name: z.string().optional(), displayName: z.string().optional() })
+  .passthrough();
+
+export const ZenviaSalesGroupsSchema = z.array(ZenviaGroupSchema);
 export type ZenviaSalesGroups = z.infer<typeof ZenviaSalesGroupsSchema>;
+
+export const ZenviaGroupsSchema = z.array(ZenviaGroupSchema);
+export type ZenviaGroups = z.infer<typeof ZenviaGroupsSchema>;
+
+export const ZenviaListedConversationSchema = z
+  .object({
+    id: z.string().min(1),
+    status: z.string().min(1),
+    channel: z.string().optional().catch(undefined),
+    from: z.string().optional().catch(undefined),
+    to: z.string().optional().catch(undefined),
+    createdAt: z.string().optional().catch(undefined),
+  })
+  .passthrough();
+export type ZenviaListedConversation = z.infer<typeof ZenviaListedConversationSchema>;
+
+export const ZenviaConversationListSchema = z.array(z.unknown());
+
+export type ZenviaConversationTransfer =
+  | { type: 'GROUP'; groupId: string }
+  | { type: 'USER'; groupId: string; userId: string };
 
 export const ZenviaSalesTransferResponseSchema = z
   .object({

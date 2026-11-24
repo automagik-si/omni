@@ -40,6 +40,7 @@ import {
   type ZenviaReferral,
   type ZenviaSendResponse,
 } from './types';
+import { normalizeConversationStatus, pickOpenConversation } from './utils/conversations';
 import { ZenviaApiError, ZenviaErrorCode, isDefinitiveRefusal } from './utils/errors';
 import {
   HANDOFF_NOT_CONFIGURED_ERROR,
@@ -57,6 +58,9 @@ const downloadGuard = createDownloadGuard();
 const SENT_RECIPIENT_MAX_ENTRIES = 5000;
 const SENT_RECIPIENT_TTL_MS = 24 * 60 * 60 * 1000;
 const RECIPIENT_STATUS_CODES: ReadonlySet<string> = new Set(['DELIVERED', 'READ', 'REJECTED', 'NOT_DELIVERED']);
+
+const CONVERSATION_LOOKUP_SIZE = 50;
+const CONVERSATION_LOOKUP_SORT = 'createdAt,desc';
 
 interface ZenviaInstanceState {
   client: ZenviaClient;
@@ -112,11 +116,22 @@ export class ZenviaPlugin extends BaseChannelPlugin {
     let salesClient: ZenviaSalesClient | undefined;
     const hasTransferTarget = Boolean(zenviaConfig.handoffGroupId || zenviaConfig.handoffRouting);
     if (zenviaConfig.salesApiKey && hasTransferTarget) {
-      salesClient = new ZenviaSalesClient({ apiKey: zenviaConfig.salesApiKey });
-      await this.verifySalesAccess(instanceId, salesClient, zenviaConfig);
-    } else if (zenviaConfig.salesApiKey || hasTransferTarget || zenviaConfig.handoffUserId) {
+      const sales = new ZenviaSalesClient({ apiKey: zenviaConfig.salesApiKey });
+      salesClient = sales;
+      await this.verifyHandoffGroups(instanceId, zenviaConfig, {
+        api: 'Sales',
+        listedBy: 'the Sales key',
+        listGroups: () => sales.listGroups(),
+      });
+    } else if (hasTransferTarget) {
+      await this.verifyHandoffGroups(instanceId, zenviaConfig, {
+        api: 'Conversations',
+        listedBy: 'the API token',
+        listGroups: () => client.listGroups(),
+      });
+    } else if (zenviaConfig.salesApiKey || zenviaConfig.handoffUserId) {
       this.logger.warn(
-        'Zenvia Sales transfer needs zenviaSalesApiKey and a group (zenviaHandoffGroupId or zenviaHandoffRouting); it stays off',
+        'Zenvia handoff transfer needs a group (zenviaHandoffGroupId or zenviaHandoffRouting); it stays off',
         { instanceId },
       );
     }
@@ -176,7 +191,7 @@ export class ZenviaPlugin extends BaseChannelPlugin {
     const correlationId = metadata?.correlationId as string | undefined;
 
     let transferred = false;
-    if (metadata?.isHandoff === true && state.salesClient && resolveHandoffMode(state.config) === 'transfer') {
+    if (metadata?.isHandoff === true && resolveHandoffMode(state.config) === 'transfer') {
       const outcome = await this.transferToHuman(instanceId, state, to, metadata);
       if (!outcome.ok) return failedResult(outcome);
       transferred = true;
@@ -252,41 +267,14 @@ export class ZenviaPlugin extends BaseChannelPlugin {
     to: string,
     metadata: Record<string, unknown>,
   ): Promise<TransferOutcome> {
-    const sales = state.salesClient;
-    if (!sales) return { ok: false, error: HANDOFF_NOT_CONFIGURED_ERROR, retryable: false, rejected: true };
-
     const resolution = resolveHandoffGroup(state.config.handoffRouting, state.config.handoffGroupId, metadata);
     if (resolution.miss) this.logRoutingMiss(instanceId, resolution.miss, resolution.ok);
     if (!resolution.ok) return { ok: false, error: resolution.error, retryable: false, rejected: true };
-    const groupId = resolution.groupId;
 
     try {
-      const prospect = await sales.findProspectByPhone(to);
-      if (!prospect) {
-        return {
-          ok: false,
-          error:
-            'Zenvia handoff failed: no Sales prospect exists for this contact, so there is no conversation to transfer',
-          retryable: false,
-          rejected: true,
-        };
-      }
-
-      const userId = state.config.handoffUserId;
-      await sales.transferProspect(prospect.id, userId ? { group: groupId, user: userId } : { group: groupId });
-
-      const note = buildHandoffNote(metadata);
-      if (note) {
-        try {
-          await sales.createNote(prospect.id, note);
-        } catch (err) {
-          this.logger.warn('Zenvia handoff note failed after the transfer', {
-            instanceId,
-            error: err instanceof Error ? err.message : String(err),
-          });
-        }
-      }
-      return { ok: true };
+      return state.salesClient
+        ? await this.transferThroughSales(instanceId, state.salesClient, state.config, to, metadata, resolution.groupId)
+        : await this.transferThroughConversations(instanceId, state, to, metadata, resolution.groupId);
     } catch (err) {
       const isZenvia = err instanceof ZenviaApiError;
       return {
@@ -297,6 +285,92 @@ export class ZenviaPlugin extends BaseChannelPlugin {
         ...(isDefinitiveRefusal(err) ? { rejected: true as const } : {}),
       };
     }
+  }
+
+  private async transferThroughSales(
+    instanceId: string,
+    sales: ZenviaSalesClient,
+    config: ZenviaConfig,
+    to: string,
+    metadata: Record<string, unknown>,
+    groupId: string,
+  ): Promise<TransferOutcome> {
+    const prospect = await sales.findProspectByPhone(to);
+    if (!prospect) {
+      return {
+        ok: false,
+        error:
+          'Zenvia handoff failed: no Sales prospect exists for this contact, so there is no conversation to transfer',
+        retryable: false,
+        rejected: true,
+      };
+    }
+
+    const userId = config.handoffUserId;
+    await sales.transferProspect(prospect.id, userId ? { group: groupId, user: userId } : { group: groupId });
+
+    const note = buildHandoffNote(metadata);
+    if (note) {
+      try {
+        await sales.createNote(prospect.id, note);
+      } catch (err) {
+        this.logger.warn('Zenvia handoff note failed after the transfer', {
+          instanceId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+    return { ok: true };
+  }
+
+  private async transferThroughConversations(
+    instanceId: string,
+    state: ZenviaInstanceState,
+    to: string,
+    metadata: Record<string, unknown>,
+    groupId: string,
+  ): Promise<TransferOutcome> {
+    const contact = toZenviaPhone(to);
+    const conversation = contact
+      ? pickOpenConversation(
+          await state.client.listConversations({
+            search: contact,
+            sort: CONVERSATION_LOOKUP_SORT,
+            size: CONVERSATION_LOOKUP_SIZE,
+          }),
+          contact,
+          state.config.senderId,
+        )
+      : undefined;
+    if (!conversation) {
+      return {
+        ok: false,
+        error:
+          'Zenvia handoff failed: the contact has no open conversation on this sender, so there is no conversation to transfer',
+        retryable: false,
+        rejected: true,
+      };
+    }
+
+    const note = buildHandoffNote(metadata);
+    if (note) {
+      try {
+        await state.client.addConversationNote(conversation.id, note);
+      } catch (err) {
+        this.logger.warn('Zenvia handoff note failed; transferring without it', {
+          instanceId,
+          conversationId: conversation.id,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    const userId = state.config.handoffUserId;
+    await state.client.transferConversation(
+      conversation.id,
+      userId ? { type: 'USER', groupId, userId } : { type: 'GROUP', groupId },
+    );
+    return { ok: true };
   }
 
   private logFarewellFailure(instanceId: string, errorCode: string | undefined, error: string): void {
@@ -322,25 +396,30 @@ export class ZenviaPlugin extends BaseChannelPlugin {
     );
   }
 
-  private async verifySalesAccess(instanceId: string, sales: ZenviaSalesClient, config: ZenviaConfig): Promise<void> {
+  private async verifyHandoffGroups(
+    instanceId: string,
+    config: ZenviaConfig,
+    source: { api: string; listedBy: string; listGroups: () => Promise<ReadonlyArray<{ id: string }>> },
+  ): Promise<void> {
     try {
-      const listed = new Set((await sales.listGroups()).map((group) => group.id));
+      const listed = new Set((await source.listGroups()).map((group) => group.id));
       if (config.handoffGroupId && !listed.has(config.handoffGroupId)) {
-        this.logger.warn('Zenvia handoff group not among the groups listed for the Sales key; transfers may fail', {
-          instanceId,
-        });
+        this.logger.warn(
+          `Zenvia handoff group not among the groups listed for ${source.listedBy}; transfers may fail`,
+          { instanceId },
+        );
       }
       const unlisted = [...new Set(Object.values(config.handoffRouting?.groups ?? {}))].filter(
         (groupId) => !listed.has(groupId),
       );
       if (unlisted.length > 0) {
         this.logger.warn(
-          'Zenvia handoff routing groups not among the groups listed for the Sales key; transfers to them may fail',
+          `Zenvia handoff routing groups not among the groups listed for ${source.listedBy}; transfers to them may fail`,
           { instanceId, groups: unlisted },
         );
       }
     } catch (err) {
-      this.logger.warn('Zenvia Sales API check failed on connect; handoff transfer is unverified', {
+      this.logger.warn(`Zenvia ${source.api} API check failed on connect; handoff transfer is unverified`, {
         instanceId,
         error: err instanceof Error ? err.message : String(err),
       });
@@ -628,13 +707,6 @@ export class ZenviaPlugin extends BaseChannelPlugin {
 }
 
 type ZenviaConversation = ZenviaConversationStatusEvent['conversation'];
-
-function normalizeConversationStatus(status: string): string {
-  return status
-    .trim()
-    .toUpperCase()
-    .replace(/^CONVERSATION_/, '');
-}
 
 function conversationContact(conversation: ZenviaConversation, senderId: string): string | undefined {
   if (conversation.channel?.toLowerCase() !== 'whatsapp') return undefined;
