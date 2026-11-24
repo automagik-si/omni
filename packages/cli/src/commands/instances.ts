@@ -549,7 +549,7 @@ export function createInstancesCommand(): Command {
     .option('--zenvia-sender-id <number>', 'Sender registered at Zenvia (the WhatsApp number)')
     .option(
       '--zenvia-webhook-verify-token <token>',
-      'Secret the Zenvia subscription sends as x-webhook-token (required for zenvia)',
+      'Secret the Zenvia subscription sends as the x-webhook-token header or the ?token= query parameter (required for zenvia)',
     )
     .option('--zenvia-sales-api-key <key>', 'Zenvia Sales API key (not the same token as the API token)')
     .option('--zenvia-handoff-group-id <id>', 'Zenvia Sales group dedicated to the chatbot; handoffs transfer to it')
@@ -1296,7 +1296,7 @@ export function createInstancesCommand(): Command {
     )
     .option(
       '--zenvia-webhook-verify-token <token>',
-      'Secret the Zenvia subscription sends as x-webhook-token; required to connect (use "null" to clear). The plugin reads it at connect: restart the instance for the change to take effect',
+      'Secret the Zenvia subscription sends as the x-webhook-token header or the ?token= query parameter; required to connect (use "null" to clear). The plugin reads it at connect: restart the instance for the change to take effect',
     )
     .option(
       '--zenvia-sales-api-key <key>',

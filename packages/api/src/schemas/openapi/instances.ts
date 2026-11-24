@@ -149,7 +149,7 @@ const zenviaInstanceFields = {
   }),
   webhookVerifyToken: z.string().openapi({
     description:
-      'Shared secret the webhook of a Gupshup, ASC, ASC Flow or Zenvia instance checks. On Zenvia the subscription sends it as x-webhook-token and the instance does not connect without it. Sealed at rest and write-only: never returned. null clears it',
+      'Shared secret the webhook of a Gupshup, ASC, ASC Flow or Zenvia instance checks. On Zenvia the subscription sends it as the x-webhook-token header or the token query parameter, and the instance does not connect without it. Sealed at rest and write-only: never returned. null clears it',
     writeOnly: true,
   }),
 };

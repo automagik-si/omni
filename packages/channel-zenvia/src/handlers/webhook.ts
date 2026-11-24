@@ -6,12 +6,19 @@ import { ZenviaEventEnvelopeSchema, ZenviaMessageEventSchema, ZenviaMessageStatu
 const MAX_BODY_BYTES = 1024 * 1024;
 
 const TOKEN_HEADER = 'x-webhook-token';
+const TOKEN_QUERY_PARAM = 'token';
 
 function tokensMatch(supplied: string | null, expected: string): boolean {
   if (supplied === null) return false;
   const a = Buffer.from(supplied);
   const b = Buffer.from(expected);
   return a.length === b.length && timingSafeEqual(a, b);
+}
+
+function suppliedToken(request: Request): string | null {
+  const fromHeader = request.headers.get(TOKEN_HEADER);
+  if (fromHeader !== null) return fromHeader;
+  return new URL(request.url).searchParams.get(TOKEN_QUERY_PARAM);
 }
 
 export async function handleZenviaWebhookRequest(
@@ -22,7 +29,7 @@ export async function handleZenviaWebhookRequest(
 ): Promise<Response> {
   const logger = plugin.getLogger();
 
-  if (verifyToken && !tokensMatch(request.headers.get(TOKEN_HEADER), verifyToken)) {
+  if (verifyToken && !tokensMatch(suppliedToken(request), verifyToken)) {
     logger.warn('[zenvia] webhook token missing or mismatched — rejecting', { instanceId });
     return new Response('Unauthorized', { status: 401 });
   }

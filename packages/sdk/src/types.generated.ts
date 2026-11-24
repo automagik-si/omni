@@ -4191,7 +4191,7 @@ export interface paths {
         put?: never;
         /**
          * Zenvia subscription webhook (public)
-         * @description Receives the events of a Zenvia subscription for one instance. Unauthenticated by contract: Zenvia signs nothing, so authenticity rests on the unguessable instance id in the path plus the instance webhookVerifyToken, which the subscription echoes as the fixed x-webhook-token header and the plugin requires on every request. MESSAGE events with direction IN become message.received and MESSAGE_STATUS events become delivered, read or failed. Every other event is acknowledged with 200 and ignored.
+         * @description Receives the events of a Zenvia subscription for one instance. Unauthenticated by contract: Zenvia signs nothing, so authenticity rests on the unguessable instance id in the path plus the instance webhookVerifyToken, which the subscription echoes as the fixed x-webhook-token header and the plugin requires on every request. Where Zenvia takes only a URL (the sandbox webhook), the token may come as the token query parameter instead; the header wins when both are present. MESSAGE events with direction IN become message.received and MESSAGE_STATUS events become delivered, read or failed. Every other event is acknowledged with 200 and ignored.
          */
         post: operations["receiveZenviaWebhook"];
         delete?: never;
@@ -6868,7 +6868,7 @@ export interface components {
                     [key: string]: string;
                 };
             } | null;
-            /** @description Shared secret the webhook of a Gupshup, ASC, ASC Flow or Zenvia instance checks. On Zenvia the subscription sends it as x-webhook-token and the instance does not connect without it. Sealed at rest and write-only: never returned. null clears it */
+            /** @description Shared secret the webhook of a Gupshup, ASC, ASC Flow or Zenvia instance checks. On Zenvia the subscription sends it as the x-webhook-token header or the token query parameter, and the instance does not connect without it. Sealed at rest and write-only: never returned. null clears it */
             webhookVerifyToken?: string | null;
         };
         InstanceStatus: {
@@ -13552,7 +13552,7 @@ export interface operations {
                             [key: string]: string;
                         };
                     } | null;
-                    /** @description Shared secret the webhook of a Gupshup, ASC, ASC Flow or Zenvia instance checks. On Zenvia the subscription sends it as x-webhook-token and the instance does not connect without it. Sealed at rest and write-only: never returned. null clears it */
+                    /** @description Shared secret the webhook of a Gupshup, ASC, ASC Flow or Zenvia instance checks. On Zenvia the subscription sends it as the x-webhook-token header or the token query parameter, and the instance does not connect without it. Sealed at rest and write-only: never returned. null clears it */
                     webhookVerifyToken?: string | null;
                 };
             };
@@ -13950,7 +13950,7 @@ export interface operations {
                             [key: string]: string;
                         };
                     } | null;
-                    /** @description Shared secret the webhook of a Gupshup, ASC, ASC Flow or Zenvia instance checks. On Zenvia the subscription sends it as x-webhook-token and the instance does not connect without it. Sealed at rest and write-only: never returned. null clears it */
+                    /** @description Shared secret the webhook of a Gupshup, ASC, ASC Flow or Zenvia instance checks. On Zenvia the subscription sends it as the x-webhook-token header or the token query parameter, and the instance does not connect without it. Sealed at rest and write-only: never returned. null clears it */
                     webhookVerifyToken?: string | null;
                     agentReplyFilter?: {
                         /** @enum {string} */
@@ -23960,7 +23960,7 @@ export interface operations {
                     "text/plain": string;
                 };
             };
-            /** @description The x-webhook-token header is missing or does not match the instance webhookVerifyToken */
+            /** @description Neither the x-webhook-token header nor the token query parameter is present, or the one used does not match the instance webhookVerifyToken */
             401: {
                 headers: {
                     [name: string]: unknown;

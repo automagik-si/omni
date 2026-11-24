@@ -738,7 +738,7 @@ function readZenviaConfig(config: InstanceConfig): ZenviaConfig {
   if (!webhookVerifyToken) {
     throw new ZenviaApiError(
       ZenviaErrorCode.INVALID_REQUEST,
-      'webhookVerifyToken is required for a zenvia instance: Zenvia signs nothing, so the subscription must send it as x-webhook-token',
+      'webhookVerifyToken is required for a zenvia instance: Zenvia signs nothing, so the subscription must send it as the x-webhook-token header or the token query parameter of the webhook URL',
     );
   }
 

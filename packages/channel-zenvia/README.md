@@ -49,7 +49,7 @@ official Meta BSP with its own API format (not a Cloud API mirror).
 | `zenviaHandoffRouting`  | no       | JSON `{ "field": "<handoffFields key>", "groups": { "<value>": "<groupId>" } }`: the value of that key picks the Sales group (see Routing a handoff to a group). Needs `zenviaSalesApiKey`. |
 | `zenviaHandoffUserId`   | no       | A specific agent inside the chosen group.                                                   |
 | `zenviaHandoffSolution` | no       | `conversion` \| `zenvia_chat` \| `nlu`. Fallback routing when there is no Sales transfer.     |
-| `webhookVerifyToken`    | yes      | Shared secret every webhook POST must carry as `x-webhook-token`. Zenvia signs nothing, so an instance does not connect without it. |
+| `webhookVerifyToken`    | yes      | Shared secret every webhook POST must carry, as the `x-webhook-token` header or the `token` query parameter. Zenvia signs nothing, so an instance does not connect without it. |
 
 To wire up the webhook, create the subscriptions with that URL. Put the
 verify token in the subscription's fixed headers:
@@ -67,13 +67,24 @@ verify token in the subscription's fixed headers:
 
 Create one subscription per event type (`MESSAGE` and `MESSAGE_STATUS`).
 
+Where Zenvia takes only a URL and no headers (the sandbox webhook of the
+*Testes em Sandbox* screen), put the token in the URL instead:
+`{OMNI_BASE_URL}/api/v2/channels/zenvia/{instanceId}/webhook?token=<webhookVerifyToken>`.
+The header wins when both are present, and both are compared in constant
+time. Prefer the header wherever it can be set: a query string can end up in
+the access logs of a proxy in front of Omni (Omni itself logs only the path).
+In the sandbox the inbound `message.to` is the sandbox keyword, not a number,
+so set `zenviaSenderId` to that keyword: it is kept exactly as written and
+matches.
+
 To rotate the verify token, send the new one as `webhookVerifyToken` in the body
 of `POST /instances/{id}/connect`: it replaces the stored token and is
 persisted once the connect succeeds. Without the field the stored token is
 kept and nothing is rewritten. The other route is `PATCH /instances/{id}`
 followed by a restart. Either way the token is sealed at rest and never
-returned, and the `x-webhook-token` header of both subscriptions must be
-updated to the same value: the webhook answers 401 until the two match.
+returned, and the `x-webhook-token` header (or `token` query parameter) of
+every subscription must be updated to the same value: the webhook answers 401
+until the two match.
 
 The webhook answers 200 to every authenticated event it processed or
 deliberately ignores, 401 to a missing or wrong token and 503 while the
