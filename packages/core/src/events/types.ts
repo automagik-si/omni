@@ -118,6 +118,8 @@ export const CORE_EVENT_TYPES = [
   'chat.handoff_activated',
   'chat.archived',
   'chat.closed',
+  'chat.human_takeover',
+  'chat.human_released',
   'follow_up.armed',
   'follow_up.fired',
   'follow_up.skipped',
@@ -1111,6 +1113,27 @@ export interface ChatHandoffActivatedPayload {
   reason?: string;
 }
 
+export interface ChatHumanTakeoverPayload {
+  instanceId: string;
+  chatExternalId: string;
+  providerConversationId?: string;
+  providerStatus: string;
+  attendantId?: string;
+  occurredAt: number;
+}
+
+export interface ChatHumanReleasedPayload {
+  instanceId: string;
+  chatExternalId: string;
+  providerConversationId?: string;
+  providerStatus: string;
+  releasedBy?: 'attendant' | 'system';
+  releasedById?: string;
+  reason?: string;
+  reasonLabel?: string;
+  occurredAt: number;
+}
+
 /**
  * Fired when a chat is archived (or equivalently muted long-term). Any armed
  * follow-up sequence on the chat disarms with reason `archived`.
@@ -1414,6 +1437,8 @@ export interface EventPayloadMap {
   'chat.handoff_activated': ChatHandoffActivatedPayload;
   'chat.archived': ChatArchivedPayload;
   'chat.closed': ChatClosedPayload;
+  'chat.human_takeover': ChatHumanTakeoverPayload;
+  'chat.human_released': ChatHumanReleasedPayload;
   'follow_up.armed': FollowUpArmedPayload;
   'follow_up.fired': FollowUpFiredPayload;
   'follow_up.skipped': FollowUpSkippedPayload;

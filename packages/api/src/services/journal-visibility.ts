@@ -33,6 +33,8 @@ export const CHANGE_JOURNAL_POLICY = {
   'chat.idle_timeout': 'full-access',
   'chat.handoff_activated': 'full-access',
   'chat.closed': 'full-access',
+  'chat.human_takeover': 'full-access',
+  'chat.human_released': 'full-access',
   'identity.created': 'full-access',
   'identity.linked': 'full-access',
   'identity.merged': 'full-access',
