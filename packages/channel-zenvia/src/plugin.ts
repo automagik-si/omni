@@ -333,7 +333,15 @@ export class ZenviaPlugin extends BaseChannelPlugin {
     groupId: string,
   ): Promise<TransferOutcome> {
     const contact = toZenviaPhone(to);
-    const conversation = contact ? await findOpenConversation(state, contact) : undefined;
+    const lookup = contact ? await findOpenConversation(state, contact) : { found: undefined, exhausted: false };
+    if (lookup.exhausted) {
+      return {
+        ok: false,
+        error: `Zenvia handoff failed: no open conversation of the contact in the first ${CONVERSATION_LOOKUP_MAX_PAGES} pages of the search, so it could not be confirmed`,
+        retryable: true,
+      };
+    }
+    const conversation = lookup.found;
     if (!conversation) {
       return {
         ok: false,
@@ -703,19 +711,19 @@ type ZenviaConversation = ZenviaConversationStatusEvent['conversation'];
 async function findOpenConversation(
   state: ZenviaInstanceState,
   contact: string,
-): Promise<ZenviaListedConversation | undefined> {
+): Promise<{ found: ZenviaListedConversation | undefined; exhausted: boolean }> {
   for (let page = 1; page <= CONVERSATION_LOOKUP_MAX_PAGES; page++) {
-    const listed = await state.client.listConversations({
+    const { conversations, listed } = await state.client.listConversations({
       search: contact,
       sort: CONVERSATION_LOOKUP_SORT,
       size: CONVERSATION_LOOKUP_SIZE,
       page,
     });
-    const picked = pickOpenConversation(listed, contact, state.config.senderId);
-    if (picked) return picked;
-    if (listed.length < CONVERSATION_LOOKUP_SIZE) return undefined;
+    const found = pickOpenConversation(conversations, contact, state.config.senderId);
+    if (found) return { found, exhausted: false };
+    if (listed < CONVERSATION_LOOKUP_SIZE) return { found: undefined, exhausted: false };
   }
-  return undefined;
+  return { found: undefined, exhausted: true };
 }
 
 function conversationContact(conversation: ZenviaConversation, senderId: string): string | undefined {

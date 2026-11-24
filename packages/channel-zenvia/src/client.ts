@@ -90,7 +90,7 @@ export class ZenviaClient {
     sort: string;
     size: number;
     page: number;
-  }): Promise<ZenviaListedConversation[]> {
+  }): Promise<{ conversations: ZenviaListedConversation[]; listed: number }> {
     const params = new URLSearchParams({
       search: query.search,
       sort: query.sort,
@@ -106,10 +106,11 @@ export class ZenviaClient {
       ZenviaConversationListSchema,
       'listConversations',
     );
-    return items.flatMap((item) => {
+    const conversations = items.flatMap((item) => {
       const conversation = ZenviaListedConversationSchema.safeParse(item);
       return conversation.success ? [conversation.data] : [];
     });
+    return { conversations, listed: items.length };
   }
 
   async addConversationNote(conversationId: string, text: string): Promise<void> {

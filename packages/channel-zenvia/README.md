@@ -161,9 +161,12 @@ Setting the Sales key, or `zenviaHandoffUserId`, without a group
    `zenviaSenderId` (compared the same way as on inbound messages) and the
    status is not `CLOSED`. Of those it takes the most recent by `createdAt`.
    It reads page after page, newest first, and stops at the first page that
-   has a match, at a page shorter than the page size, or after 5 pages.
-   None left means no conversation to transfer, and the handoff fails before
-   anything is written or sent. Results it cannot read are skipped.
+   has a match or at a page shorter than the page size (counting every item
+   Zenvia returned, readable or not). Results it cannot read are skipped. No
+   match before a short page means no conversation to transfer, and the
+   handoff fails for good before anything is written or sent. Five full pages
+   without a match end the search with a retryable error instead, since that
+   does not prove there is no conversation.
 2. `POST /v2/conversations/{id}/notes` writes the same note as the Sales
    transfer (`motivoHandoff`, `dadosLead` and every `handoffFields` key) as
    an internal note, which the contact never sees. It runs before the transfer

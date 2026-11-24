@@ -373,6 +373,45 @@ describe('ZenviaPlugin handoff through the Conversations API', () => {
     expect(call(fetchSpy, before + 3).url.pathname).toBe('/v2/conversations/on-page-two/actions/transfer');
   });
 
+  it('keeps paging after a full page that carries an unreadable item', async () => {
+    await connect();
+    const firstPage: unknown[] = Array.from({ length: 99 }, (_, index) =>
+      conversation({ id: `foreign-${index}`, from: OTHER_SENDER }),
+    );
+    firstPage.push({ unexpected: true });
+    const fetchSpy = spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse(firstPage))
+      .mockResolvedValueOnce(jsonResponse([conversation({ id: 'on-page-two' })]))
+      .mockResolvedValueOnce(jsonResponse({ id: 'note-1' }, 201))
+      .mockResolvedValueOnce(jsonResponse(conversation(), 202))
+      .mockResolvedValueOnce(sendResponse());
+    const before = fetchSpy.mock.calls.length;
+
+    const result = await plugin.sendMessage(instanceId, handoffMessage);
+
+    expect(result).toMatchObject({ success: true, messageId: MESSAGE_ID });
+    expect(call(fetchSpy, before + 3).url.pathname).toBe('/v2/conversations/on-page-two/actions/transfer');
+  });
+
+  it('does not claim there is no conversation when every page it may read is full', async () => {
+    await connect();
+    const fullPage = Array.from({ length: 100 }, (_, index) =>
+      conversation({ id: `foreign-${index}`, from: OTHER_SENDER }),
+    );
+    const fetchSpy = spyOn(globalThis, 'fetch');
+    for (let page = 0; page < 5; page++) fetchSpy.mockResolvedValueOnce(jsonResponse(fullPage));
+    const before = fetchSpy.mock.calls.length;
+
+    const result = await plugin.sendMessage(instanceId, handoffMessage);
+
+    expect(result.success).toBe(false);
+    expect(result.rejected).toBeUndefined();
+    expect(result.retryable).toBe(true);
+    expect(result.error).not.toMatch(/no conversation to transfer/);
+    expect(paths(fetchSpy, before)).toHaveLength(5);
+    expect(bus.published.some((event) => event.type === 'message.sent')).toBe(false);
+  });
+
   it('treats an accepted transfer whose answer cannot be read as done, never as retryable', async () => {
     await connect();
     const unreadable = new Response(
