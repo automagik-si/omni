@@ -167,6 +167,8 @@ export function createMediaProcessingService(config?: Partial<ProcessorConfig>):
     audioProvider: config?.audioProvider ?? process.env.STT_PROVIDER,
     audioModel: config?.audioModel ?? process.env.OPENAI_STT_MODEL,
     geminiAudioModel: config?.geminiAudioModel ?? process.env.GEMINI_STT_MODEL,
+    geminiVisionModel: config?.geminiVisionModel ?? process.env.GEMINI_MEDIA_MODEL,
+    openaiVisionModel: config?.openaiVisionModel ?? process.env.OPENAI_VISION_MODEL,
     audioPrompt: config?.audioPrompt,
     audioGlossary: config?.audioGlossary,
     defaultLanguage: config?.defaultLanguage ?? process.env.DEFAULT_LANGUAGE ?? 'pt',
