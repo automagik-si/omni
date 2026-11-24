@@ -31,7 +31,7 @@ import {
   getMediaHealthTracker,
   setGlobalCircuitBreakerStateChangeCallback,
 } from '@omni/media-processing';
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Services } from '../services';
 import { MediaStorageService } from '../services/media-storage';
@@ -62,7 +62,7 @@ const DOWNLOAD_ONLY_MEDIA_TYPES = new Set(['sticker']);
 function getContentFieldForType(
   processingType: 'transcription' | 'description' | 'extraction',
   contentType?: string,
-): string | undefined {
+): 'transcription' | 'imageDescription' | 'videoDescription' | 'documentExtraction' | undefined {
   switch (processingType) {
     case 'transcription':
       return 'transcription';
@@ -696,7 +696,7 @@ async function publishProcessingFailure(
       await scopedHandle(ctx.db)
         .update(messages)
         .set({ [errorColumn]: marker })
-        .where(eq(messages.id, messageId));
+        .where(and(eq(messages.id, messageId), isNull(messages[errorColumn])));
     });
   }
 
@@ -1105,6 +1105,7 @@ export const __test__ = {
     lastKnownAudioTranscriptionMode.clear();
   },
   persistProcessingResult,
+  publishProcessingFailure,
   resolveSafeMediaContentEventId,
   processMessageMedia,
   downloadMediaFromUrl,
