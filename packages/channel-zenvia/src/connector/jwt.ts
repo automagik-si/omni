@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
-export const CONNECTOR_TOKEN_LIFETIME_SECONDS = 60;
-export const CONNECTOR_CLOCK_SKEW_SECONDS = 30;
+const CONNECTOR_TOKEN_LIFETIME_SECONDS = 60;
+const CONNECTOR_CLOCK_SKEW_SECONDS = 30;
 
 const SIGNED_HEADER = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
 

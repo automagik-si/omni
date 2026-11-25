@@ -40,7 +40,7 @@ import {
 } from './types';
 
 export const NO_OPEN_LIVE_CHAT_ERROR = 'no open Zenvia live chat for this contact';
-export const CONNECTOR_MAX_FILE_BYTES = 25 * 1024 * 1024;
+const CONNECTOR_MAX_FILE_BYTES = 25 * 1024 * 1024;
 
 const ACCEPT_RETRY_DELAY_MS = 500;
 const MAX_STARTED_CLAIMS = 5000;

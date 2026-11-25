@@ -1,6 +1,6 @@
 import type { PluginStorage } from '@omni/channel-sdk';
 
-export const CONNECTOR_SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const CONNECTOR_SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 export interface ConnectorSession {
   conversationId: string;

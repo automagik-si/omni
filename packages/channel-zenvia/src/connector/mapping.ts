@@ -1,6 +1,6 @@
 import type { ConnectorContact, ConnectorEvent, ConnectorHistoryEntry } from './types';
 
-export const CONNECTOR_DEFAULT_COUNTRY_CODE = '55';
+const CONNECTOR_DEFAULT_COUNTRY_CODE = '55';
 
 const PLACEHOLDER_NAMES: ReadonlySet<string> = new Set(['sem nome']);
 

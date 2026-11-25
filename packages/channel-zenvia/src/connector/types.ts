@@ -11,17 +11,6 @@ export interface ZenviaConnectorConfig {
   env?: ZenviaConnectorEnv;
 }
 
-export const CONNECTOR_INBOUND_ACTIONS = [
-  'OPEN_CONVERSATION',
-  'SEND_MESSAGE',
-  'UPLOAD_FILE',
-  'SEND_FILE',
-  'GET_FILE',
-  'CLOSE_CONVERSATION',
-  'ACCEPT_CONVERSATION',
-  'REJECT_CONVERSATION',
-] as const;
-
 const looseId = z
   .union([z.string(), z.number()])
   .transform((value) => String(value))
@@ -82,7 +71,7 @@ export const ConnectorMessageParametersSchema = z
   })
   .passthrough();
 
-export const ConnectorSentFileSchema = z
+const ConnectorSentFileSchema = z
   .object({
     id: looseId,
     name: looseString,

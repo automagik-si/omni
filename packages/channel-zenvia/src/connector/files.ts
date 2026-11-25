@@ -2,8 +2,8 @@ import { randomUUID } from 'node:crypto';
 
 import type { PluginStorage } from '@omni/channel-sdk';
 
-export const CONNECTOR_FILE_TTL_MS = 24 * 60 * 60 * 1000;
-export const CONNECTOR_FILE_SCHEME = 'zenvia-connector-file:';
+const CONNECTOR_FILE_TTL_MS = 24 * 60 * 60 * 1000;
+const CONNECTOR_FILE_SCHEME = 'zenvia-connector-file:';
 
 const BASE64 = /^[A-Za-z0-9+/_-]*={0,2}$/;
 const DATA_URI = /^data:[^;,]*;base64,/i;
