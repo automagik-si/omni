@@ -115,8 +115,8 @@ export const SLACK_CAPABILITIES: ChannelCapabilities = {
       'reaction.received',
       'reaction.removed',
     ],
-    edits: false,
-    deletes: false,
+    edits: true,
+    deletes: true,
     idempotency: true,
   },
 };

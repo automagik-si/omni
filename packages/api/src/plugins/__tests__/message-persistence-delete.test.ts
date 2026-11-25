@@ -12,6 +12,10 @@ const TARGET_EXTERNAL_ID = 'message-platform-id';
 async function harness(options: { hasTarget?: boolean } = {}) {
   const chat = { id: 'chat-uuid', canonicalId: null, name: null };
   const target = { id: 'message-uuid', deletedAt: null as Date | null };
+  const recordEdit = mock(async () => undefined);
+  const slackTargets = mock(async () =>
+    options.hasTarget === false ? [] : [target, { id: 'attachment-uuid', deletedAt: null }],
+  );
   const findChat = mock(async () => chat);
   const getTarget = mock(async () => (options.hasTarget === false ? null : target));
   const markDeleted = mock(async (_id: string, _eventId: string | undefined, deletedAt: Date) => {
@@ -39,7 +43,13 @@ async function harness(options: { hasTarget?: boolean } = {}) {
         recordParticipantActivity: async () => undefined,
         updateLastMessage,
       },
-      messages: { getByExternalId: getTarget, markDeleted, findOrCreate: findOrCreateMessage },
+      messages: {
+        getSlackMessageParts: slackTargets,
+        recordEdit,
+        getByExternalId: getTarget,
+        markDeleted,
+        findOrCreate: findOrCreateMessage,
+      },
       instances: { updateLastMessageAt: async () => undefined },
       consumerOffsets: { updateOffset },
     } as unknown as Services,
@@ -49,6 +59,8 @@ async function harness(options: { hasTarget?: boolean } = {}) {
   if (!receive) throw new Error('Missing message.received handler');
   return {
     receive,
+    slackTargets,
+    recordEdit,
     findChat,
     getTarget,
     markDeleted,
@@ -121,4 +133,33 @@ describe('message.received deletion persistence', () => {
     expect(h.findOrCreateChat).not.toHaveBeenCalled();
     expect(h.markDeleted).not.toHaveBeenCalled();
   });
+});
+
+describe('passive Slack mutations', () => {
+  const ts = '1700000000.000123';
+
+  test('deletes the stored parts of an upload even without a text row', async () => {
+    const h = await harness();
+    const event = deletionEvent({ deletedMessageId: ts, noAgentDispatch: true });
+    event.metadata.channelType = 'slack';
+    await h.receive(event);
+    expect(h.slackTargets).toHaveBeenCalledWith('chat-uuid', ts);
+    expect(h.markDeleted).toHaveBeenCalledWith('attachment-uuid', EVENT_ID, new Date(EVENT_TIMESTAMP));
+    expect(h.findOrCreateMessage).not.toHaveBeenCalled();
+  });
+
+  for (const hasTarget of [true, false]) {
+    test(`a passive edit only updates existing parts (matched: ${hasTarget})`, async () => {
+      const h = await harness({ hasTarget });
+      const event = deletionEvent({ editedMessageId: ts, noAgentDispatch: true, editedAt: PLATFORM_TIMESTAMP });
+      event.metadata.channelType = 'slack';
+      event.payload.content = { type: 'edit', text: 'revised' };
+      await h.receive(event);
+      expect(h.slackTargets).toHaveBeenCalledWith('chat-uuid', ts);
+      expect(h.recordEdit).toHaveBeenCalledTimes(hasTarget ? 2 : 0);
+      expect(h.findOrCreateMessage).not.toHaveBeenCalled();
+      expect(h.findOrCreateChat).not.toHaveBeenCalled();
+      expect(h.updateLastMessage).not.toHaveBeenCalled();
+    });
+  }
 });

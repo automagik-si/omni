@@ -493,31 +493,37 @@ describe('shared-receiver fan-out', () => {
     expect(probe.calls).toEqual(['EC-dm']);
   });
 
-  it("filters a member's own outbound message per attachment, not receiver-wide", async () => {
+  it("records a member's own message without dispatch while retaining inbound delivery for other attachments", async () => {
     const ana = userAttachment('inst-ana', HUMAN_A);
     const ben = userAttachment('inst-ben', HUMAN_B);
-    const dispatched: string[] = [];
+    const observed: { instanceId: string; isFromMe: unknown; noAgentDispatch: unknown }[] = [];
     const handlerFor = (attachment: SlackAttachment) =>
       setupMessageHandlers(
         undefined,
         attachment,
         undefined,
         {
-          onMessage: async (instanceId) => {
-            dispatched.push(instanceId);
+          onMessage: async (instanceId, _externalId, _chatId, _from, _content, _replyTo, rawPayload) => {
+            observed.push({
+              instanceId,
+              isFromMe: rawPayload.isFromMe,
+              noAgentDispatch: rawPayload.noAgentDispatch,
+            });
           },
         },
         { policy: 'open' },
         noopLogger,
       );
 
-    // Ben types from his own phone: his instance must not treat its own
-    // principal's message as inbound, while Ana's instance must.
+    // Both installations see the message. Only Ben's records it as his own.
     const ownMessage = { ...channelMessage(HUMAN_B, '1000.0006'), team: TEAM };
     await handlerFor(ana)(ownMessage);
     await handlerFor(ben)(ownMessage);
 
-    expect(dispatched).toEqual(['inst-ana']);
+    expect(observed).toEqual([
+      { instanceId: 'inst-ana', isFromMe: undefined, noAgentDispatch: undefined },
+      { instanceId: 'inst-ben', isFromMe: true, noAgentDispatch: true },
+    ]);
   });
 
   it('a second bot-mode connect of the workspace is refused without force and accepted with it', async () => {

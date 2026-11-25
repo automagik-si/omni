@@ -16,6 +16,7 @@ import type { DedupeCache, Logger } from '@omni/channel-sdk';
 import { buildConversationKey } from '@omni/core';
 import type { DebounceManager } from '@omni/core';
 import type { App } from '@slack/bolt';
+import { z } from 'zod';
 import { resolveChannelConfig } from '../config/channel-config';
 import type { SlackAttachment } from '../connection/app-receiver';
 import { type DmPolicyConfig, shouldAcceptDm } from '../dm-policy';
@@ -27,7 +28,7 @@ export interface MessageHandlerCallbacks {
     externalId: string,
     chatId: string,
     from: string,
-    content: { type: 'text'; text?: string },
+    content: { type: 'text' | 'edit' | 'delete'; text?: string },
     replyToId: string | undefined,
     rawPayload: Record<string, unknown>,
     platformTimestamp?: number,
@@ -103,7 +104,7 @@ export function extractMessageMeta(event: Record<string, unknown>): SlackMessage
 }
 
 /**
- * Check if a message should be skipped (bot, subtype, own message).
+ * Check if a message should be skipped by the ordinary inbound path.
  *
  * `ownBotId` is this instance's app bot id (auth.test `bot_id`); messages the
  * plugin posts carry it, so they never loop back as inbound.
@@ -117,7 +118,7 @@ export function extractMessageMeta(event: Record<string, unknown>): SlackMessage
  * message the HUMAN types themselves, from their phone, carries no bot_id and
  * their own user id. Comparing only against the bot user id would let the
  * agent treat its own principal's typing as inbound and answer their
- * counterpart on their behalf. Verified live against Slack.
+ * counterpart on their behalf. The recording path handles that case separately.
  */
 export function shouldSkipMessage(
   msg: Record<string, unknown>,
@@ -187,6 +188,114 @@ function slackTsToMs(ts: string | undefined): number | undefined {
   return ts ? Math.floor(Number.parseFloat(ts) * 1000) : undefined;
 }
 
+const timestamp = z
+  .string()
+  .max(25)
+  .regex(/^\d+(?:\.\d+)?$/)
+  .refine((ts) => Number(ts) <= 8_640_000_000_000, 'Invalid Slack timestamp');
+const ownMessageSchema = z.object({
+  channel: z.string().min(1),
+  ts: timestamp,
+  user: z.string().min(1),
+  bot_id: z.string().optional(),
+  text: z.string().optional(),
+  thread_ts: timestamp.optional(),
+  channel_type: z.string().optional(),
+  team: z.string().optional(),
+  files: z.array(z.unknown()).optional(),
+});
+const mutationEnvelope = z.object({
+  channel: z.string().min(1),
+  ts: timestamp,
+  channel_type: z.string().optional(),
+  previous_message: z
+    .object({ user: z.string().optional(), bot_id: z.string().optional(), text: z.string().optional() })
+    .optional(),
+});
+const messageMutationSchema = z.discriminatedUnion('subtype', [
+  mutationEnvelope.extend({
+    subtype: z.literal('message_changed'),
+    message: z.object({
+      ts: timestamp,
+      user: z.string().optional(),
+      bot_id: z.string().optional(),
+      text: z.string(),
+      edited: z.object({ ts: timestamp }).optional(),
+    }),
+  }),
+  mutationEnvelope.extend({ subtype: z.literal('message_deleted'), deleted_ts: timestamp }),
+]);
+
+function acceptsMutationSender(isDm: boolean, userId: string | undefined, policy: DmPolicyConfig): boolean {
+  return !isDm || shouldAcceptDm(userId ?? '', policy).accepted;
+}
+
+/** A mutation changes a stored message without starting a new conversation turn. */
+async function recordMutation(
+  instanceId: string,
+  msg: Record<string, unknown>,
+  callbacks: MessageHandlerCallbacks,
+  logger: Logger,
+  filterConfig: ChannelFilterConfig | undefined,
+  dmPolicyConfig: DmPolicyConfig,
+  isAuthorizingUser: (user: unknown, botId: unknown) => boolean,
+): Promise<void> {
+  const parsed = messageMutationSchema.safeParse(msg);
+  if (!parsed.success) return;
+  const mutation = parsed.data;
+  const channelId = mutation.channel;
+  if (isChannelBlocked(channelId, filterConfig)) return;
+
+  const isEdit = mutation.subtype === 'message_changed';
+  const userId = (isEdit ? mutation.message.user : undefined) ?? mutation.previous_message?.user;
+  const isDm = mutation.channel_type === 'im' || mutation.channel_type === 'mpim' || channelId.startsWith('D');
+  if (isEdit && !isAuthorizingUser(userId, mutation.message.bot_id ?? mutation.previous_message?.bot_id)) {
+    const channelConfig = resolveChannelConfig({ channels: filterConfig?.channels }, channelId);
+    if (
+      isDroppedByChannelConfig(channelConfig, userId ?? '', isDm, true) ||
+      !acceptsMutationSender(isDm, userId, dmPolicyConfig)
+    )
+      return;
+  }
+
+  const eventTimestamp = slackTsToMs(mutation.ts);
+  const eventId = `${channelId}:${mutation.subtype}:${mutation.ts}`;
+  const rawPayload = {
+    noAgentDispatch: true,
+    channelType: mutation.channel_type,
+    isDm,
+    isGroup: !isDm || mutation.channel_type === 'mpim',
+  };
+  if (!isEdit) {
+    await callbacks.onMessage(
+      instanceId,
+      eventId,
+      channelId,
+      userId ?? '',
+      { type: 'delete' },
+      undefined,
+      { ...rawPayload, deletedMessageId: mutation.deleted_ts, deletedAt: eventTimestamp },
+      eventTimestamp,
+    );
+    return;
+  }
+
+  const message = mutation.message;
+  if (mutation.previous_message?.text === message.text) return;
+  const sanitized = sanitizeMessage(message.text, logger, { instanceId, messageId: message.ts });
+  if (!sanitized.ok) return;
+  await callbacks.onMessage(
+    instanceId,
+    eventId,
+    channelId,
+    userId ?? '',
+    { type: 'edit', text: sanitized.text },
+    undefined,
+    { ...rawPayload, editedMessageId: message.ts, editedAt: slackTsToMs(message.edited?.ts) ?? eventTimestamp },
+    eventTimestamp,
+  );
+}
+
 /** Check if a channel should be skipped per allowlist/blocklist config */
 function isChannelBlocked(channelId: string, filterConfig: ChannelFilterConfig | undefined): boolean {
   if (filterConfig?.channelAllowlist && filterConfig.channelAllowlist.length > 0) {
@@ -253,6 +362,7 @@ async function processMessage(
   logger: Logger,
   reliability: ReliabilityOptions | undefined,
   filterConfig: ChannelFilterConfig | undefined,
+  recordOwnMessage: boolean,
 ): Promise<void> {
   const userId = msg.user as string;
   const meta = extractMessageMeta(msg);
@@ -286,7 +396,7 @@ async function processMessage(
 
   // ── Per-channel config filtering (requireMention, allowedUsers) ──
   const channelConfig = resolveChannelConfig({ channels: filterConfig?.channels }, meta.channelId);
-  if (isDroppedByChannelConfig(channelConfig, userId, meta.isDm, isMentioningInstance)) {
+  if (!recordOwnMessage && isDroppedByChannelConfig(channelConfig, userId, meta.isDm, isMentioningInstance)) {
     logger.debug('Message dropped: per-channel filter', { channelId: meta.channelId, userId, instanceId });
     return;
   }
@@ -302,18 +412,23 @@ async function processMessage(
 
   // Build rawPayload with channel extra (tools/skills from per-channel config)
   const channelExtra: Record<string, unknown> = { isMentioningInstance };
+  const platformTimestamp = slackTsToMs(meta.ts);
+  if (recordOwnMessage) {
+    channelExtra.isFromMe = true;
+    channelExtra.noAgentDispatch = true;
+    channelExtra.messageTimestamp = platformTimestamp;
+  }
   if (channelConfig.tools) channelExtra.tools = channelConfig.tools;
   if (channelConfig.skills) channelExtra.skills = channelConfig.skills;
 
   const rawPayload = buildRawPayload(meta, msg, channelExtra);
-  const platformTimestamp = slackTsToMs(meta.ts);
   const replyToId = meta.isThreadReply ? meta.threadTs : undefined;
   const content: { type: 'text'; text?: string } = { type: 'text', text: text || undefined };
 
   // ── File attachments bypass debouncing — always dispatch immediately ──
   const hasFiles = Boolean(msg.files && (msg.files as unknown[]).length > 0);
 
-  if (reliability?.debounceManager && !hasFiles) {
+  if (reliability?.debounceManager && !hasFiles && !recordOwnMessage) {
     queueToDebouncer(
       reliability.debounceManager,
       instanceId,
@@ -377,7 +492,22 @@ export function setupMessageHandlers(
 
   // Handle all messages (channels, groups, DMs, mpim)
   const handle = async (msg: Record<string, unknown>): Promise<void> => {
-    if (shouldSkipMessage(msg, [resolveBotUserId(), resolveActingUserId()], resolveOwnBotId())) {
+    const currentBotUserId = resolveBotUserId();
+    const currentActingUserId = resolveActingUserId();
+    const currentOwnBotId = resolveOwnBotId();
+    const isAuthorizingUser = (user: unknown, botId: unknown) =>
+      currentActingUserId !== undefined &&
+      user === currentActingUserId &&
+      user !== currentBotUserId &&
+      (!botId || (currentOwnBotId !== undefined && botId !== currentOwnBotId));
+    if (msg.subtype === 'message_changed' || msg.subtype === 'message_deleted') {
+      await recordMutation(instanceId, msg, callbacks, logger, filterConfig, dmPolicyConfig, isAuthorizingUser);
+      return;
+    }
+
+    const userId = msg.user as string;
+    const recordOwnMessage = isAuthorizingUser(userId, msg.bot_id) && ownMessageSchema.safeParse(msg).success;
+    if (!recordOwnMessage && shouldSkipMessage(msg, [currentBotUserId, currentActingUserId], currentOwnBotId)) {
       logger.debug('Message skipped: bot/self/edit', {
         instanceId,
         channelId: msg.channel,
@@ -389,14 +519,23 @@ export function setupMessageHandlers(
       return;
     }
 
-    const userId = msg.user as string;
     const meta = extractMessageMeta(msg);
-    if (await enforceDmPolicy(meta, userId, dmPolicyConfig, instanceId, callbacks, logger)) return;
+    if (!recordOwnMessage && (await enforceDmPolicy(meta, userId, dmPolicyConfig, instanceId, callbacks, logger)))
+      return;
 
     // A mention addresses the instance through its bot; a bot-less user-mode
     // instance has none, so mentioning the person it acts as is the mention.
-    const mentionUserId = resolveBotUserId() ?? resolveActingUserId();
-    await processMessage(instanceId, msg, mentionUserId, callbacks, logger, reliability, filterConfig);
+    const mentionUserId = currentBotUserId ?? currentActingUserId;
+    await processMessage(
+      instanceId,
+      msg,
+      mentionUserId,
+      callbacks,
+      logger,
+      reliability,
+      filterConfig,
+      recordOwnMessage,
+    );
   };
   // Registered only when this instance owns an app; behind the shared receiver
   // the one listener is the receiver's, and it calls `handle` directly.

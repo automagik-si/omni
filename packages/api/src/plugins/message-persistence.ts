@@ -791,36 +791,53 @@ function maybeUpdateRecency(
 /** Chat/person linkage message-persistence resolved for an inbound event. */
 type JournalLink = { chatUuid: string; canonicalChatId: string | null; personId: string | null };
 
-const deletePayloadSchema = z.object({
-  deletedMessageId: z.string().min(1),
-  deletedAt: z.number().int().nonnegative().max(8_640_000_000_000_000).optional().catch(undefined),
+const mutationTargetSchema = z.object({
+  externalId: z.string().min(1),
+  at: z.number().int().nonnegative().max(8_640_000_000_000_000).optional().catch(undefined),
 });
 
-/** Apply a platform deletion to a stored message in its existing chat. */
-async function handleMessageDeletion(
+/** Apply a mutation in its existing chat without inserting a message for the event. */
+async function handleStoredMessageMutation(
   services: Services,
   event: TypedOmniEvent<'message.received'>,
   instanceId: string,
 ): Promise<JournalLink | undefined> {
   const { payload } = event;
-  const parsed = deletePayloadSchema.safeParse(payload.rawPayload);
+  const edit = payload.content.type === 'edit';
+  const raw = payload.rawPayload;
+  const parsed = mutationTargetSchema.safeParse({
+    externalId: edit ? raw?.editedMessageId : raw?.deletedMessageId,
+    at: edit ? raw?.editedAt : raw?.deletedAt,
+  });
   if (!parsed.success) return;
 
-  const targetExternalId = truncate(parsed.data.deletedMessageId, 255);
+  const targetExternalId = truncate(parsed.data.externalId, 255);
   if (!targetExternalId) return;
 
   const chatExternalId = truncate(payload.chatId, 255) ?? payload.chatId;
   const chat = await services.chats.findByExternalIdSmart(instanceId, chatExternalId);
   if (!chat) return;
 
-  const target = await services.messages.getByExternalId(chat.id, targetExternalId);
-  if (!target) return;
-  if (!target.deletedAt) {
-    await services.messages.markDeleted(
-      target.id,
-      isValidUuid(event.id) ? event.id : undefined,
-      new Date(parsed.data.deletedAt ?? event.timestamp),
-    );
+  const at = new Date(parsed.data.at ?? event.timestamp);
+  const eventId = isValidUuid(event.id) ? event.id : undefined;
+  const targets =
+    event.metadata.channelType === 'slack'
+      ? await services.messages.getSlackMessageParts(chat.id, targetExternalId)
+      : [await services.messages.getByExternalId(chat.id, targetExternalId)].filter((target) => target !== null);
+  if (!targets.length) return;
+  for (const target of targets) {
+    if (edit) {
+      await services.messages.recordEdit(
+        target.id,
+        sanitizeText(payload.content.text) ?? '',
+        at,
+        truncate(payload.from, 255) ?? undefined,
+        eventId,
+        true,
+      );
+    } else if (!target.deletedAt) {
+      await services.messages.markDeleted(target.id, eventId, at);
+    }
   }
 
   return { chatUuid: chat.id, canonicalChatId: chat.canonicalId ?? null, personId: null };
@@ -1338,19 +1355,23 @@ export async function setupMessagePersistence(eventBus: EventBus, services: Serv
           const workMetadata = { ...metadata, instanceId };
           // Resolved BEFORE the persistence transaction opens — its own work
           // item, its own scope, G6-gated (see the function's header).
-          const identity =
-            payload.content.type === 'delete'
-              ? null
-              : await resolveSenderIdentityForWorkItem(
-                  services,
-                  payload,
-                  workMetadata,
-                  (metadata.channelType ?? 'whatsapp') as ChannelType,
-                  trustedTenantId,
-                );
+          const existingOnly =
+            payload.content.type === 'delete' ||
+            (metadata.channelType === 'slack' &&
+              payload.content.type === 'edit' &&
+              payload.rawPayload?.noAgentDispatch === true);
+          const identity = existingOnly
+            ? null
+            : await resolveSenderIdentityForWorkItem(
+                services,
+                payload,
+                workMetadata,
+                (metadata.channelType ?? 'whatsapp') as ChannelType,
+                trustedTenantId,
+              );
           const journalLink = await runConsumerInTenantContext(services.db, event, () =>
             identity === null
-              ? handleMessageDeletion(services, event, instanceId)
+              ? handleStoredMessageMutation(services, event, instanceId)
               : handleMessageReceived(services, payload, workMetadata, event.timestamp, trustedTenantId, identity),
           );
           // After commit: the event-persistence consumer races this one, so its
