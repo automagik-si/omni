@@ -6,7 +6,7 @@
  */
 
 import type { GupshupOutboundMessage, GupshupSendResponse } from './types';
-import { GupshupError, GupshupErrorCode } from './utils/errors';
+import { GupshupError, GupshupErrorCode, isConnectionReset } from './utils/errors';
 
 /** Copy close-contact classification keys; callers must only pass CLOSING messages. */
 function addCloseFields(payload: Record<string, unknown>, msg: GupshupOutboundMessage): void {
@@ -20,6 +20,7 @@ export class GupshupClient {
     private readonly callbackUrl: string,
     private readonly authToken: string,
     private readonly eventId: string,
+    private readonly resetRetryDelayMs = 250,
   ) {}
 
   async send(phone: string, msg: GupshupOutboundMessage): Promise<GupshupSendResponse> {
@@ -50,14 +51,28 @@ export class GupshupClient {
     if (msg.type === 'CLOSING') addCloseFields(payload, msg);
 
     // POST to callback URL
-    const res = await fetch(this.callbackUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: this.authToken },
-      body: JSON.stringify(payload),
-    });
+    const res = await this.post(JSON.stringify(payload));
     if (!res.ok) throw new GupshupError(GupshupErrorCode.AUTH_FAILED, `HTTP ${res.status}`);
     const text = await res.text();
     return (text ? JSON.parse(text) : {}) as GupshupSendResponse;
+  }
+
+  private async post(body: string): Promise<Response> {
+    try {
+      return await this.postOnce(body);
+    } catch (error) {
+      if (!isConnectionReset(error)) throw error;
+      await Bun.sleep(this.resetRetryDelayMs);
+      return this.postOnce(body);
+    }
+  }
+
+  private postOnce(body: string): Promise<Response> {
+    return fetch(this.callbackUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: this.authToken },
+      body,
+    });
   }
 
   async validateCredentials(): Promise<boolean> {
