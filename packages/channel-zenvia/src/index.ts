@@ -13,6 +13,16 @@ export { ZenviaSalesClient, DEFAULT_ZENVIA_SALES_BASE_URL } from './sales-client
 export type { ZenviaSalesClientOptions, ZenviaTransferTarget } from './sales-client';
 
 export { handleZenviaEvent, handleZenviaWebhookRequest } from './handlers/webhook';
+export { handleZenviaConnectorWebhookRequest, MAX_CONNECTOR_BODY_BYTES } from './handlers/connector-webhook';
+
+export { ZenviaConnectorClient, DEFAULT_ZENVIA_CONNECTOR_BASE_URL } from './connector/client';
+export type { ZenviaConnectorClientOptions } from './connector/client';
+export { signConnectorToken, verifyConnectorToken } from './connector/jwt';
+export type { ConnectorTokenCheck, ConnectorTokenFailure } from './connector/jwt';
+export { ZENVIA_CONNECTOR_ENVS } from './connector/types';
+export type { ZenviaConnectorConfig, ZenviaConnectorEnv } from './connector/types';
+export { connectorPhone } from './connector/mapping';
+export { NO_OPEN_LIVE_CHAT_ERROR } from './connector/runtime';
 
 export {
   normalizeRoutingValue,

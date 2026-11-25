@@ -51,6 +51,10 @@ official Meta BSP with its own API format (not a Cloud API mirror).
 | `zenviaHandoffSolution` | no       | `conversion` \| `zenvia_chat` \| `nlu`. Fallback routing when there is no group to transfer to. |
 | `webhookVerifyToken`    | yes      | Shared secret every webhook POST must carry, as the `x-webhook-token` header or the `token` query parameter. Zenvia signs nothing, so an instance does not connect without it. |
 
+The "required" column is for the Channels API mode. With `zenviaConnectorSlug`
+set the instance runs in live chat mode instead, where only the connector keys
+are required (see Live chat mode below).
+
 To wire up the webhook, create the subscriptions with that URL. Put the
 verify token in the subscription's fixed headers:
 
@@ -356,6 +360,102 @@ chat yet has nothing to pause.
 it today, and resuming stays with the session reset and the chats routes. An
 app that wants the agent back once the person is done listens for this event.
 
+## Live chat mode (Zenvia NLU Agent Connector)
+
+When the Zenvia account runs its own bot journey (Zenvia NLU, formerly ALTU)
+and only hands the contact over at a step of that journey, the instance acts
+as a **live chat platform** behind the bot instead of talking to the Channels
+API. The bot calls `start_live_chat` with the integration; from then on Zenvia
+NLU sends the conversation to Omni and relays what Omni answers. When the
+agent hands off, Omni closes the live chat with the queue in `reason`, and the
+bot transfers the contact to people itself. A contact who comes back later
+starts again in the bot and reaches Omni as a new conversation.
+
+The mode is selected by `zenviaConnectorSlug`. With it set, `zenviaApiToken`,
+`zenviaSenderId` and `webhookVerifyToken` are optional and the Channels API is
+never called (the connect does not ping it, the handoff groups are not checked
+against it).
+
+| Key                              | Required | Notes |
+| -------------------------------- | -------- | ----- |
+| `zenviaConnectorSlug`            | yes      | The account slug in `https://agent.altubots.com/altu-connector/{slug}/{integrationId}`. Selects this mode. |
+| `zenviaConnectorIntegrationId`   | yes      | The live chat integration id. |
+| `zenviaConnectorAccessToken`     | yes      | The integration's access token, carried as the `access_token` claim. Sealed at rest. |
+| `zenviaConnectorAccessKey`       | yes      | The integration's access key, the HS256 signing key of every token. Sealed at rest. |
+| `zenviaConnectorEnv`             | no       | `homol` \| `prod`, appended as `?env=` so Zenvia NLU answers on that environment's webhook. |
+| `zenviaHandoffGroupId`           | no       | Default queue value sent as the close `reason`. |
+| `zenviaHandoffRouting`           | no       | Same map as above, but each value is the string the bot branches on, not a Zenvia group id. |
+
+Configure the integration's webhook as
+`{OMNI_BASE_URL}/api/v2/channels/zenvia/{instanceId}/webhook`.
+
+**Auth.** Every request either way carries `Authorization: Bearer <jwt>`:
+header `{"alg":"HS256","typ":"JWT"}`, payload `{access_token, iat, exp}` with
+`exp = iat + 60`, signed with the access key, a new token per request. Inbound
+tokens are always verified as HS256 whatever `alg` they claim; the
+`access_token` claim must equal the configured token (constant-time), `exp`
+may be at most 30 s in the past, `iat` at most 30 s in the future, and the
+lifetime at most 90 s. A bare token without `Bearer` is accepted too. A
+failure answers 401 `{"requestId","message":"Unauthorized"}` and logs the
+reason, the scheme and the claimed `alg` (never the token). The Channels API
+verify token does not authorize a connector event; it still authorizes a
+Channels API event (`type`) sent to the same URL.
+
+**Inbound.** The webhook tells the two APIs apart by the body: `action` is a
+connector event, `type` a Channels API event. Connector bodies may be up to
+32 MB (a file arrives as a JSON byte array); Channels API bodies stay at 1 MB.
+Every answer is JSON `{"requestId","message"}`: 200 `OK`, 400 for a malformed
+event, 404 for an unknown file, 500 when the event could not be published.
+
+| Action               | What Omni does |
+| -------------------- | -------------- |
+| `OPEN_CONVERSATION`  | Stores the session of the contact (replacing an older one), answers `ACCEPT_CONVERSATION` in the background (one retry on a transient failure), and publishes the lead's lines after the last bot line of `contact.history` as one `message.received`. Nothing is published when there are none. |
+| `SEND_MESSAGE`       | `message.received` with `messages` joined by a newline, or a `location`. `requestId` is the message id and the dedupe key. |
+| `UPLOAD_FILE`        | Decodes `file.buffer` (a Node Buffer `{type:"Buffer",data:[...]}` or base64), stores it for 24 h and answers `{fileId,requestId,message}`. |
+| `SEND_FILE`          | `message.received` with the media typed by its MIME type and `mediaId` `zenvia-connector-file:<fileId>`, which `downloadInboundMedia` reads back from the store (or asks Zenvia NLU with `GET_FILE`). The caption is the text. |
+| `GET_FILE`           | Returns the stored file in the spec's shape, 404 when it is gone. |
+| `CLOSE_CONVERSATION` | Drops the session (the contact closed or went idle). |
+| `ACCEPT_CONVERSATION`, `REJECT_CONVERSATION` | Logged (replies to a reopen request). |
+
+Both `conversationId` and `conversationID` are read; Omni sends
+`conversationId`. The chat id is the contact's phone as digits with the
+country code: a 10 or 11 digit `contact.phone` gets `55` in front (Zenvia NLU
+sends Brazilian numbers without it), anything else keeps its digits, and with
+no phone the `identifier` is used. That matches the chat id the Channels API
+mode produces for the same contact.
+
+The first `message.received` of each session carries `sessionStart: true`,
+whether it comes from the `OPEN_CONVERSATION` history or from the first
+message after it, and only that one. Omni's dispatcher uses it to resume an
+agent the earlier handoff paused (see `MessageReceivedPayload.sessionStart`);
+agent providers see it as `executionContext.source.sessionStart`.
+
+Sessions live in plugin storage (database-backed, 7 days), keyed by instance
+and contact, with the reverse map from conversation to contact, so a redeploy
+keeps them.
+
+**Outbound.** Only a contact with an open session can be written to; any other
+send fails with `no open Zenvia live chat for this contact` (rejected, not
+retried). Text goes as `SEND_MESSAGE` with Markdown converted to WhatsApp
+syntax. Media is read from `content.localPath` (or downloaded from
+`content.mediaUrl` behind the same guard as inbound media), sent as
+`UPLOAD_FILE` and then `SEND_FILE` with the returned id; a caption follows as a
+`SEND_MESSAGE`. Templates and other content types are refused. The agent is
+`{ id: <instanceId>, name: "Omni" }`. Only HTTP 200 with `message: "OK"` is a
+success; a 5xx or a network failure is retryable, 400 and 404 (and a 200 with
+another message) are definitive refusals, 401 is a credential problem.
+
+**Handoff.** The queue is resolved first with `zenviaHandoffRouting` and
+`zenviaHandoffGroupId` (refused with nothing sent when neither yields one).
+Then the farewell goes as `SEND_MESSAGE`, and `CLOSE_CONVERSATION` follows
+with `reason` set to the queue (one retry on a transient failure). The session
+is dropped and the result carries `pauseAgent: false`: the contact is with the
+bot's people now and comes back only as a new `OPEN_CONVERSATION`, so pausing
+the chat would make the agent ignore a returning contact. The handoff route
+still disarms the follow-up. When the close fails the send fails too and the
+session stays, so the handoff can be retried. No human takeover or release
+event is published in this mode: the bot owns the human phase.
+
 ## Pending for follow-up PRs
 
 - Template management (create, list, sync): this plugin only sends templates.
@@ -382,3 +482,8 @@ app that wants the agent back once the person is done listens for this event.
   format it does not match ends in a 422, never in a transfer of the wrong
   conversation.
 - Rate limits for `POST /channels/whatsapp/messages` and for the Sales APIs.
+- Live chat mode: whether Zenvia NLU signs its webhook calls with the same
+  HS256 token it asks of us (the guide documents only our side), whether
+  `CLOSE_CONVERSATION` tolerates extra fields (a handoff summary), which key
+  spelling it expects (`conversationId` is the one its endpoint validates),
+  and whether `contact.phone` ever carries the country code.

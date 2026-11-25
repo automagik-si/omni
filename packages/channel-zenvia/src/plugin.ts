@@ -24,6 +24,9 @@ import type { ChannelType, ContentType } from '@omni/core/types';
 
 import { ZENVIA_CAPABILITIES } from './capabilities';
 import { ZenviaClient } from './client';
+import { type ConnectorHost, type ConnectorInbound, ZenviaConnectorRuntime } from './connector/runtime';
+import { ZENVIA_CONNECTOR_ENVS, type ZenviaConnectorConfig, type ZenviaConnectorEnv } from './connector/types';
+import { handleZenviaConnectorWebhookRequest } from './handlers/connector-webhook';
 import { handleZenviaWebhookRequest } from './handlers/webhook';
 import { type HandoffRoutingMiss, parseHandoffRouting, resolveHandoffGroup } from './handoff-routing';
 import { ZenviaSalesClient } from './sales-client';
@@ -50,6 +53,7 @@ import {
   resolveHandoffMode,
 } from './utils/handoff';
 import { toSenderId, toZenviaPhone } from './utils/identity';
+import { omniTypeForMime } from './utils/media-type';
 import { type HostResolver, resolveHostAddresses } from './utils/public-host';
 
 const ZENVIA_MEDIA_TYPES: ReadonlySet<string> = new Set(['image', 'audio', 'video', 'document']);
@@ -70,6 +74,7 @@ interface ZenviaInstanceState {
   config: ZenviaConfig;
   dedupeCache: DedupeCache;
   sentRecipients: ThreadStarterCache<string>;
+  connector?: ZenviaConnectorRuntime;
 }
 
 type TransferOutcome =
@@ -101,6 +106,10 @@ export class ZenviaPlugin extends BaseChannelPlugin {
   async connect(instanceId: string, config: InstanceConfig): Promise<void> {
     this.dropInstanceState(instanceId);
     const zenviaConfig = readZenviaConfig(config);
+    if (zenviaConfig.connector) {
+      await this.connectLiveChat(instanceId, config, zenviaConfig, zenviaConfig.connector);
+      return;
+    }
 
     this.logger.info('Connecting Zenvia instance', { instanceId, senderId: zenviaConfig.senderId });
 
@@ -165,6 +174,146 @@ export class ZenviaPlugin extends BaseChannelPlugin {
     this.logger.info('Zenvia instance connected', { instanceId, senderId: zenviaConfig.senderId });
   }
 
+  private async connectLiveChat(
+    instanceId: string,
+    config: InstanceConfig,
+    zenviaConfig: ZenviaConfig,
+    connector: ZenviaConnectorConfig,
+  ): Promise<void> {
+    this.logger.info('Connecting Zenvia instance as a live chat (Agent Connector)', {
+      instanceId,
+      slug: connector.slug,
+      integrationId: connector.integrationId,
+      env: connector.env,
+    });
+    if (!zenviaConfig.handoffGroupId && !zenviaConfig.handoffRouting) {
+      this.logger.warn(
+        'Zenvia live chat has no handoff queue (zenviaHandoffGroupId or zenviaHandoffRouting); handoffs will be refused',
+        { instanceId },
+      );
+    }
+
+    const state: ZenviaInstanceState = {
+      client: new ZenviaClient({ apiToken: zenviaConfig.apiToken, resolveHost: this.hostResolver }),
+      config: zenviaConfig,
+      dedupeCache: createInboundDedupeCache(),
+      sentRecipients: createThreadStarterCache<string>({
+        ttlMs: SENT_RECIPIENT_TTL_MS,
+        maxSize: SENT_RECIPIENT_MAX_ENTRIES,
+      }),
+    };
+    state.connector = new ZenviaConnectorRuntime(
+      instanceId,
+      connector,
+      this.storage,
+      { handoffGroupId: zenviaConfig.handoffGroupId, handoffRouting: zenviaConfig.handoffRouting },
+      this.connectorHost(instanceId, state),
+    );
+    this.zenviaInstances.set(instanceId, state);
+
+    await this.updateInstanceStatus(instanceId, config, {
+      state: 'connected',
+      since: new Date(),
+      message: 'Configured as a Zenvia live chat (Agent Connector)',
+    });
+    await this.emitInstanceConnected(instanceId, {
+      profileName: 'Zenvia live chat',
+      ownerIdentifier: zenviaConfig.senderId || `zenvia-connector:${connector.slug}/${connector.integrationId}`,
+    });
+  }
+
+  private connectorHost(instanceId: string, state: ZenviaInstanceState): ConnectorHost {
+    return {
+      logger: this.logger,
+      publish: (inbound) => this.publishConnectorInbound(instanceId, state, inbound),
+      sent: async ({ externalId, chatId, message }) => {
+        await this.emitMessageSent({
+          instanceId,
+          externalId,
+          chatId,
+          to: message.to,
+          content: { type: message.content.type, text: message.content.text, mediaUrl: message.content.mediaUrl },
+          replyToId: message.replyTo,
+          senderAgentId: message.metadata?.senderAgentId as string | undefined,
+        });
+      },
+      failed: async ({ chatId, error, retryable }) => {
+        await this.emitMessageFailed({ instanceId, chatId, error, retryable });
+      },
+      loadMedia: (message) => this.loadOutboundMedia(instanceId, state, message),
+    };
+  }
+
+  private async loadOutboundMedia(
+    instanceId: string,
+    state: ZenviaInstanceState,
+    message: OutgoingMessage,
+  ): Promise<{ bytes: Uint8Array; mimeType: string }> {
+    const { content } = message;
+    const fallbackMime = content.mimeType || 'application/octet-stream';
+    if (content.localPath) {
+      const file = Bun.file(content.localPath);
+      return {
+        bytes: new Uint8Array(await file.arrayBuffer()),
+        mimeType: content.mimeType || file.type || fallbackMime,
+      };
+    }
+    if (!content.mediaUrl) {
+      throw new ZenviaApiError(
+        ZenviaErrorCode.INVALID_REQUEST,
+        `Media send requires content.mediaUrl or content.localPath (type=${content.type})`,
+      );
+    }
+    const res = await state.client.downloadFile(content.mediaUrl);
+    downloadGuard.checkResponse(res, this.logger, { instanceId, channel: 'zenvia' });
+    const bytes = await res.arrayBuffer();
+    downloadGuard.checkSize(bytes.byteLength, this.logger, { instanceId, channel: 'zenvia' });
+    const mimeType = res.headers.get('content-type')?.split(';')[0]?.trim() || fallbackMime;
+    return { bytes: new Uint8Array(bytes), mimeType };
+  }
+
+  private async publishConnectorInbound(
+    instanceId: string,
+    state: ZenviaInstanceState,
+    inbound: ConnectorInbound,
+  ): Promise<boolean> {
+    if (state.dedupeCache.isDuplicate(instanceId, inbound.externalId, 'zenvia', this.logger)) {
+      this.logger.debug('[zenvia] duplicate connector inbound dropped', { instanceId, externalId: inbound.externalId });
+      return false;
+    }
+    try {
+      const content: ExtractedInboundContent = { ...inbound.content };
+      if (!this.sanitizeInboundContent(instanceId, inbound.externalId, content)) return false;
+
+      const timings = this.captureInboundTimings(inbound.timestampMs);
+      const correlationId = await this.emitMessageReceived({
+        instanceId,
+        externalId: inbound.externalId,
+        chatId: inbound.chatId,
+        from: inbound.chatId,
+        senderName: inbound.senderName,
+        content: {
+          type: content.type,
+          text: content.text,
+          mediaId: content.mediaId,
+          mimeType: content.mimeType,
+        },
+        ...(inbound.sessionStart ? { sessionStart: true } : {}),
+        rawPayload: {
+          ...inbound.rawPayload,
+          ...(inbound.senderName ? { pushName: inbound.senderName } : {}),
+          platformTimestampMs: inbound.timestampMs,
+        },
+        timings,
+      });
+      if (timings) this.captureT2(correlationId, timings);
+      return true;
+    } catch (err) {
+      state.dedupeCache.release(instanceId, inbound.externalId);
+      throw err;
+    }
+  }
+
   async disconnect(instanceId: string): Promise<void> {
     this.logger.info('Disconnecting Zenvia instance', { instanceId });
 
@@ -183,6 +332,13 @@ export class ZenviaPlugin extends BaseChannelPlugin {
     const state = this.zenviaInstances.get(instanceId);
     if (!state) {
       return { success: false, error: 'Zenvia instance not connected', retryable: false, timestamp: Date.now() };
+    }
+    if (state.connector) {
+      const correlationId = message.metadata?.correlationId as string | undefined;
+      if (correlationId) this.captureT10(correlationId);
+      const result = await state.connector.send(message);
+      if (correlationId && result.success) this.captureT11(correlationId);
+      return result;
     }
 
     const { to, metadata } = message;
@@ -442,12 +598,20 @@ export class ZenviaPlugin extends BaseChannelPlugin {
     if (!state) {
       return new Response('Instance not connected', { status: 503 });
     }
+    if (state.connector && state.config.connector) {
+      return handleZenviaConnectorWebhookRequest(request, this, instanceId, state.connector, {
+        connector: state.config.connector,
+        webhookVerifyToken: state.config.webhookVerifyToken,
+      });
+    }
 
     return handleZenviaWebhookRequest(request, this, instanceId, state.config.webhookVerifyToken);
   }
 
   async downloadInboundMedia(instanceId: string, fileUrl: string): Promise<{ buffer: Buffer; mimeType: string }> {
     const state = this.requireInstanceState(instanceId, 'downloadInboundMedia');
+    const stored = await state.connector?.download(fileUrl);
+    if (stored) return stored;
 
     const res = await state.client.downloadFile(fileUrl);
     downloadGuard.checkResponse(res, this.logger, { instanceId, channel: 'zenvia' });
@@ -483,6 +647,14 @@ export class ZenviaPlugin extends BaseChannelPlugin {
       : Array.from(this.zenviaInstances.entries());
 
     for (const [id, state] of states) {
+      if (state.config.connector) {
+        checks.push({
+          name: `zenvia:${id}`,
+          status: 'pass',
+          message: `Live chat ${state.config.connector.slug}/${state.config.connector.integrationId} configured`,
+        });
+        continue;
+      }
       const ok = await state.client.ping();
       checks.push({
         name: `zenvia:${id}`,
@@ -904,6 +1076,18 @@ function readZenviaConfig(config: InstanceConfig): ZenviaConfig {
   const handoffUserId = pick('zenviaHandoffUserId');
   const handoffRouting = parseHandoffRouting(creds.zenviaHandoffRouting ?? opts.zenviaHandoffRouting);
 
+  const connectorSlug = pick('zenviaConnectorSlug');
+  if (connectorSlug) {
+    return {
+      apiToken: apiToken ?? '',
+      senderId: senderId ? toSenderId(senderId) : '',
+      connector: readConnectorConfig(connectorSlug, pick),
+      webhookVerifyToken,
+      handoffGroupId,
+      handoffRouting,
+    };
+  }
+
   if (!apiToken) {
     throw new ZenviaApiError(ZenviaErrorCode.AUTH_FAILED, 'zenviaApiToken is required to connect a zenvia instance');
   }
@@ -939,6 +1123,37 @@ function readZenviaConfig(config: InstanceConfig): ZenviaConfig {
   };
 }
 
+function readConnectorConfig(slug: string, pick: (key: string) => string | undefined): ZenviaConnectorConfig {
+  const integrationId = pick('zenviaConnectorIntegrationId');
+  const accessToken = pick('zenviaConnectorAccessToken');
+  const accessKey = pick('zenviaConnectorAccessKey');
+  const env = pick('zenviaConnectorEnv');
+  const missing = [
+    integrationId ? undefined : 'zenviaConnectorIntegrationId',
+    accessToken ? undefined : 'zenviaConnectorAccessToken',
+    accessKey ? undefined : 'zenviaConnectorAccessKey',
+  ].filter(Boolean);
+  if (!integrationId || !accessToken || !accessKey) {
+    throw new ZenviaApiError(
+      ZenviaErrorCode.INVALID_REQUEST,
+      `zenviaConnectorSlug selects the Zenvia live chat (Agent Connector) mode, which also needs ${missing.join(', ')}`,
+    );
+  }
+  if (env && !(ZENVIA_CONNECTOR_ENVS as readonly string[]).includes(env)) {
+    throw new ZenviaApiError(
+      ZenviaErrorCode.INVALID_REQUEST,
+      `zenviaConnectorEnv must be one of ${ZENVIA_CONNECTOR_ENVS.join(', ')}`,
+    );
+  }
+  return {
+    slug,
+    integrationId,
+    accessToken,
+    accessKey,
+    ...(env ? { env: env as ZenviaConnectorEnv } : {}),
+  };
+}
+
 function isHandoffSolution(value: string): value is ZenviaHandoffSolution {
   return (ZENVIA_HANDOFF_SOLUTIONS as readonly string[]).includes(value);
 }
@@ -965,13 +1180,6 @@ function extractInboundContent(content: ZenviaInboundContent): ExtractedInboundC
     default:
       return null;
   }
-}
-
-function omniTypeForMime(mimeType: string | undefined): ContentType {
-  if (mimeType?.startsWith('image/')) return 'image';
-  if (mimeType?.startsWith('audio/')) return 'audio';
-  if (mimeType?.startsWith('video/')) return 'video';
-  return 'document';
 }
 
 function extractFileContent(content: ZenviaInboundContent): ExtractedInboundContent | null {

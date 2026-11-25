@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import type { ZenviaConnectorConfig } from './connector/types';
 import type { ZenviaHandoffRouting } from './handoff-routing';
 
 export const ZENVIA_HANDOFF_SOLUTIONS = ['conversion', 'zenvia_chat', 'nlu'] as const;
@@ -8,6 +9,7 @@ export type ZenviaHandoffSolution = (typeof ZENVIA_HANDOFF_SOLUTIONS)[number];
 export interface ZenviaConfig {
   apiToken: string;
   senderId: string;
+  connector?: ZenviaConnectorConfig;
   handoffSolution?: ZenviaHandoffSolution;
   webhookVerifyToken?: string;
   salesApiKey?: string;
