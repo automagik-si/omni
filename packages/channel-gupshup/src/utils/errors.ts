@@ -72,10 +72,24 @@ export function mapGupshupError(error: unknown, httpStatus?: number): GupshupErr
   }
 
   if (error instanceof Error) {
+    if (hasTransientNetworkCode(error)) return new GupshupError(GupshupErrorCode.SEND_FAILED, error.message, true);
     return fromErrorMessage(error.message);
   }
 
   return new GupshupError(GupshupErrorCode.UNKNOWN, String(error), false);
+}
+
+function networkCode(error: unknown): unknown {
+  return typeof error === 'object' && error !== null ? (error as { code?: unknown }).code : undefined;
+}
+
+export function isConnectionReset(error: unknown): boolean {
+  return networkCode(error) === 'ECONNRESET';
+}
+
+function hasTransientNetworkCode(error: unknown): boolean {
+  const code = networkCode(error);
+  return code === 'ECONNRESET' || code === 'ETIMEDOUT';
 }
 
 function fromHttpStatus(status: number, message: string): GupshupError {
@@ -117,6 +131,7 @@ export function isRetryable(error: unknown): boolean {
   if (error instanceof GupshupError) return error.recoverable;
 
   if (error instanceof Error) {
+    if (hasTransientNetworkCode(error)) return true;
     const msg = error.message.toLowerCase();
     if (msg.includes('429') || msg.includes('rate limit')) return true;
     if (msg.includes('500') || msg.includes('502') || msg.includes('503')) return true;

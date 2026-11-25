@@ -9,7 +9,7 @@
 
 import { describe, expect, it, spyOn } from 'bun:test';
 import { GupshupClient } from '../client';
-import { GupshupError } from '../utils/errors';
+import { GupshupError, isRetryable, mapGupshupError } from '../utils/errors';
 
 const CALLBACK_URL = 'https://callbacks.gupshup.io/custom/abc123';
 const AUTH_TOKEN = 'Bearer test-auth-token';
@@ -283,5 +283,90 @@ describe('GupshupClient — send HANDOFF customerFields', () => {
 
     expect(postedBody(fetchSpy)).not.toHaveProperty('customerFields');
     fetchSpy.mockRestore();
+  });
+});
+
+describe('GupshupClient — connection reset', () => {
+  const RESET_MESSAGE =
+    'The socket connection was closed unexpectedly. For more information, pass `verbose: true` in the second argument to fetch()';
+
+  function connectionReset(): TypeError {
+    return Object.assign(new TypeError(RESET_MESSAGE), { code: 'ECONNRESET' });
+  }
+
+  function clientWithoutDelay(): GupshupClient {
+    return new GupshupClient(CALLBACK_URL, AUTH_TOKEN, EVENT_ID, 0);
+  }
+
+  async function sendError(client: GupshupClient): Promise<unknown> {
+    try {
+      await client.send('5511888880000', { type: 'TEXT', text: 'hi' });
+    } catch (error) {
+      return error;
+    }
+    return undefined;
+  }
+
+  it('posts the same body once more when the connection is reset before a response', async () => {
+    const fetchSpy = spyOn(globalThis, 'fetch')
+      .mockRejectedValueOnce(connectionReset())
+      .mockResolvedValueOnce(makeOkResponse({ messageId: 'gs-1' }));
+    try {
+      const response = await clientWithoutDelay().send('5511888880000', { type: 'TEXT', text: 'Hello!' });
+
+      expect(response).toEqual({ messageId: 'gs-1' });
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+      const [first, second] = fetchSpy.mock.calls.map((call) => (call[1] as RequestInit).body);
+      expect(second).toBe(first);
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it('gives up after the second reset, with the reset as the error', async () => {
+    const fetchSpy = spyOn(globalThis, 'fetch')
+      .mockRejectedValueOnce(connectionReset())
+      .mockRejectedValueOnce(connectionReset());
+    try {
+      const error = await sendError(clientWithoutDelay());
+
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+      expect(error).toBeInstanceOf(TypeError);
+      expect((error as { code?: string }).code).toBe('ECONNRESET');
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it('does not post again after another network error', async () => {
+    const fetchSpy = spyOn(globalThis, 'fetch').mockRejectedValueOnce(
+      Object.assign(new TypeError('Unable to connect'), { code: 'ConnectionRefused' }),
+    );
+    try {
+      const error = await sendError(clientWithoutDelay());
+
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      expect((error as Error).message).toBe('Unable to connect');
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it('does not post again after an HTTP error response', async () => {
+    const fetchSpy = spyOn(globalThis, 'fetch').mockResolvedValueOnce(makeErrorResponse(503, { status: 'error' }));
+    try {
+      const error = await sendError(clientWithoutDelay());
+
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      expect(error).toBeInstanceOf(GupshupError);
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it('classifies a reset by its code, which the message does not name', () => {
+    expect(isRetryable(connectionReset())).toBe(true);
+    expect(mapGupshupError(connectionReset()).recoverable).toBe(true);
+    expect(isRetryable(new TypeError(RESET_MESSAGE))).toBe(false);
   });
 });
