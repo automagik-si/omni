@@ -109,6 +109,7 @@ export const ZenviaHandoffRoutingSchema = z
   });
 
 export const ZENVIA_HANDOFF_SOLUTIONS = ['conversion', 'zenvia_chat', 'nlu'] as const;
+export const ZENVIA_CONNECTOR_ENVS = ['homol', 'prod'] as const;
 
 type NullableOptional<T extends z.ZodRawShape> = { [K in keyof T]: z.ZodOptional<z.ZodNullable<T[K]>> };
 
@@ -137,7 +138,7 @@ const zenviaInstanceFields = {
   }),
   zenviaHandoffGroupId: z.string().openapi({
     description:
-      'Zenvia group dedicated to the chatbot; handoffs transfer the conversation to it (through the Sales API with zenviaSalesApiKey, the Conversations API otherwise). Read by the plugin at connect: restart the instance after changing it',
+      'Zenvia group dedicated to the chatbot; handoffs transfer the conversation to it (through the Sales API with zenviaSalesApiKey, the Conversations API otherwise). In live chat mode (zenviaConnectorSlug) it is the default queue sent as the CLOSE_CONVERSATION reason instead. Read by the plugin at connect: restart the instance after changing it',
   }),
   zenviaHandoffUserId: z.string().openapi({
     description:
@@ -145,11 +146,33 @@ const zenviaInstanceFields = {
   }),
   zenviaHandoffRouting: ZenviaHandoffRoutingSchema.openapi({
     description:
-      'Routes a handoff to a Zenvia group by the value of one handoffFields key: { field, groups: { <value>: <groupId> } }. zenviaHandoffGroupId is the fallback for an unmapped or missing value; without it such a handoff is refused (422). Read by the plugin at connect: restart the instance after changing it. null clears it',
+      'Routes a handoff to a Zenvia group by the value of one handoffFields key: { field, groups: { <value>: <groupId> } }. zenviaHandoffGroupId is the fallback for an unmapped or missing value; without it such a handoff is refused (422). In live chat mode (zenviaConnectorSlug) each mapped value is the queue sent as the CLOSE_CONVERSATION reason, the string the Zenvia NLU bot branches on. Read by the plugin at connect: restart the instance after changing it. null clears it',
+  }),
+  zenviaConnectorSlug: z.string().max(128).openapi({
+    description:
+      'Zenvia NLU Agent Connector account slug ({slug} in https://agent.altubots.com/altu-connector/{slug}/{integrationId}). Setting it runs the instance as a live chat behind a Zenvia NLU bot: the Channels API is not used and zenviaApiToken, zenviaSenderId and webhookVerifyToken become optional. Read by the plugin at connect: restart the instance after changing it',
+  }),
+  zenviaConnectorIntegrationId: z.string().max(128).openapi({
+    description:
+      'Zenvia NLU live chat integration id ({integrationId} of the connector endpoint). Required in live chat mode. Read by the plugin at connect: restart the instance after changing it',
+  }),
+  zenviaConnectorAccessToken: z.string().openapi({
+    description:
+      'Access token of the Zenvia NLU live chat integration, carried as the access_token claim of every JWT. Required in live chat mode. Sealed at rest and write-only: never returned',
+    writeOnly: true,
+  }),
+  zenviaConnectorAccessKey: z.string().openapi({
+    description:
+      'Access key of the Zenvia NLU live chat integration, the HS256 key that signs and verifies every JWT. Required in live chat mode. Sealed at rest and write-only: never returned',
+    writeOnly: true,
+  }),
+  zenviaConnectorEnv: z.enum(ZENVIA_CONNECTOR_ENVS).openapi({
+    description:
+      'Which webhook of the integration Zenvia NLU answers on, sent as ?env= on every call: homol or prod (its default). Read by the plugin at connect: restart the instance after changing it',
   }),
   webhookVerifyToken: z.string().openapi({
     description:
-      'Shared secret the webhook of a Gupshup, ASC, ASC Flow or Zenvia instance checks. On Zenvia the subscription sends it as the x-webhook-token header or the token query parameter, and the instance does not connect without it. Sealed at rest and write-only: never returned. null clears it',
+      'Shared secret the webhook of a Gupshup, ASC, ASC Flow or Zenvia instance checks. On Zenvia the subscription sends it as the x-webhook-token header or the token query parameter, and the instance does not connect without it (except in live chat mode, where a JWT authorizes the connector events). Sealed at rest and write-only: never returned. null clears it',
     writeOnly: true,
   }),
 };
@@ -171,6 +194,9 @@ const zenviaInstanceResponseShape = nullableOptional({
   zenviaHandoffGroupId: zenviaInstanceFields.zenviaHandoffGroupId,
   zenviaHandoffUserId: zenviaInstanceFields.zenviaHandoffUserId,
   zenviaHandoffRouting: zenviaInstanceFields.zenviaHandoffRouting,
+  zenviaConnectorSlug: zenviaInstanceFields.zenviaConnectorSlug,
+  zenviaConnectorIntegrationId: zenviaInstanceFields.zenviaConnectorIntegrationId,
+  zenviaConnectorEnv: zenviaInstanceFields.zenviaConnectorEnv,
 });
 
 /**

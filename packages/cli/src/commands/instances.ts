@@ -174,6 +174,11 @@ function applyZenviaFields(body: Record<string, unknown>, opts: Record<string, u
   if (typeof opts.zenviaHandoffRouting === 'string' && opts.zenviaHandoffRouting.length > 0) {
     body.zenviaHandoffRouting = parseZenviaHandoffRouting(opts.zenviaHandoffRouting);
   }
+  setVal(body, 'zenviaConnectorSlug', opts.zenviaConnectorSlug);
+  setVal(body, 'zenviaConnectorIntegrationId', opts.zenviaConnectorIntegrationId);
+  setVal(body, 'zenviaConnectorAccessToken', opts.zenviaConnectorAccessToken);
+  setVal(body, 'zenviaConnectorAccessKey', opts.zenviaConnectorAccessKey);
+  setVal(body, 'zenviaConnectorEnv', opts.zenviaConnectorEnv);
 }
 
 /** Extract TTS, access, token, trigger fields from CLI options into body */
@@ -261,6 +266,8 @@ const SECRET_BODY_FIELDS = [
   'hermesPassword',
   'zenviaApiToken',
   'zenviaSalesApiKey',
+  'zenviaConnectorAccessToken',
+  'zenviaConnectorAccessKey',
 ] as const;
 
 /** Mask a secret for display, matching the API's `get` shape (`xoxp-****9bdc`) */
@@ -562,6 +569,14 @@ export function createInstancesCommand(): Command {
       '--zenvia-handoff-routing <json>',
       'Zenvia queue-to-group map (JSON): {"field":"<handoffFields key>","groups":{"<value>":"<groupId>"}}; --zenvia-handoff-group-id is the fallback',
     )
+    .option(
+      '--zenvia-connector-slug <slug>',
+      'Zenvia NLU Agent Connector account slug; runs the instance as a live chat behind a Zenvia NLU bot (no API token or sender needed)',
+    )
+    .option('--zenvia-connector-integration-id <id>', 'Zenvia NLU live chat integration id (live chat mode)')
+    .option('--zenvia-connector-access-token <token>', 'Zenvia NLU live chat integration access token (live chat mode)')
+    .option('--zenvia-connector-access-key <key>', 'Zenvia NLU live chat integration access key (live chat mode)')
+    .option('--zenvia-connector-env <env>', 'Zenvia NLU webhook environment: homol or prod (live chat mode)')
     // Twilio WhatsApp
     .option('--twilio-account-sid <sid>', 'Twilio Account SID')
     .option('--twilio-auth-token <token>', 'Twilio Auth Token')
@@ -1320,6 +1335,26 @@ export function createInstancesCommand(): Command {
     .option(
       '--zenvia-handoff-routing <json>',
       'Zenvia queue-to-group map (JSON object, use "null" to clear). The plugin reads it at connect: restart the instance for the change to take effect',
+    )
+    .option(
+      '--zenvia-connector-slug <slug>',
+      'Zenvia NLU Agent Connector account slug, selects the live chat mode (use "null" to clear). The plugin reads it at connect: restart the instance for the change to take effect',
+    )
+    .option(
+      '--zenvia-connector-integration-id <id>',
+      'Zenvia NLU live chat integration id (use "null" to clear). The plugin reads it at connect: restart the instance for the change to take effect',
+    )
+    .option(
+      '--zenvia-connector-access-token <token>',
+      'Zenvia NLU live chat integration access token (use "null" to clear). The plugin reads it at connect: restart the instance for the change to take effect',
+    )
+    .option(
+      '--zenvia-connector-access-key <key>',
+      'Zenvia NLU live chat integration access key (use "null" to clear). The plugin reads it at connect: restart the instance for the change to take effect',
+    )
+    .option(
+      '--zenvia-connector-env <env>',
+      'Zenvia NLU webhook environment, homol or prod (use "null" to clear). The plugin reads it at connect: restart the instance for the change to take effect',
     )
     // Trigger events
     .option('--trigger-events <events>', 'Trigger events (comma-separated, use "null" to clear)')

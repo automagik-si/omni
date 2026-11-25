@@ -33,6 +33,7 @@ import {
   SelfHistorySchema,
   SelfMessagesSchema,
   SelfReceiptSchema,
+  ZENVIA_CONNECTOR_ENVS,
   ZENVIA_HANDOFF_SOLUTIONS,
   ZenviaHandoffRoutingSchema,
 } from '../../schemas/openapi/instances';
@@ -54,6 +55,7 @@ import type { AppVariables } from '../../types';
 const log = createLogger('api:instances');
 
 type ZenviaHandoffSolution = (typeof ZENVIA_HANDOFF_SOLUTIONS)[number];
+type ZenviaConnectorEnv = (typeof ZENVIA_CONNECTOR_ENVS)[number];
 
 const instancesRoutes = new Hono<{ Variables: AppVariables }>();
 
@@ -287,6 +289,35 @@ const createInstanceSchema = z.object({
     .describe(
       'Routes a handoff to a Zenvia group by the value of one handoffFields key: { field, groups: { <value>: <groupId> } }. zenviaHandoffGroupId is the fallback for an unmapped or missing value; without it such a handoff is refused (422). Read by the plugin at connect: restart the instance after changing it. null clears it',
     ),
+  zenviaConnectorSlug: z
+    .string()
+    .max(128)
+    .optional()
+    .nullable()
+    .describe(
+      'Zenvia NLU Agent Connector account slug. Setting it runs the instance as a live chat behind a Zenvia NLU bot instead of the Channels API',
+    ),
+  zenviaConnectorIntegrationId: z
+    .string()
+    .max(128)
+    .optional()
+    .nullable()
+    .describe('Zenvia NLU live chat integration id (live chat mode)'),
+  zenviaConnectorAccessToken: z
+    .string()
+    .optional()
+    .nullable()
+    .describe('Zenvia NLU live chat integration access token (live chat mode)'),
+  zenviaConnectorAccessKey: z
+    .string()
+    .optional()
+    .nullable()
+    .describe('Zenvia NLU live chat integration access key, the JWT signing key (live chat mode)'),
+  zenviaConnectorEnv: z
+    .enum(ZENVIA_CONNECTOR_ENVS)
+    .optional()
+    .nullable()
+    .describe('Zenvia NLU webhook environment the live chat answers on (sent as ?env=)'),
   ascFlowBaseUrl: z
     .string()
     .optional()
@@ -624,6 +655,8 @@ const SENSITIVE_INSTANCE_FIELDS = [
   'ascFlowChave',
   'zenviaApiToken',
   'zenviaSalesApiKey',
+  'zenviaConnectorAccessToken',
+  'zenviaConnectorAccessKey',
 ] as const;
 
 /**
@@ -783,6 +816,11 @@ type InstanceConnectionOptionsInput = {
   zenviaHandoffGroupId?: string | null;
   zenviaHandoffUserId?: string | null;
   zenviaHandoffRouting?: ZenviaHandoffRouting | null;
+  zenviaConnectorSlug?: string | null;
+  zenviaConnectorIntegrationId?: string | null;
+  zenviaConnectorAccessToken?: string | null;
+  zenviaConnectorAccessKey?: string | null;
+  zenviaConnectorEnv?: ZenviaConnectorEnv | null;
   metaAccessToken?: string | null;
   metaPhoneNumberId?: string | null;
   metaWabaId?: string | null;
@@ -892,6 +930,11 @@ function applyZenviaConnectionOptions(
     zenviaHandoffGroupId?: string | null;
     zenviaHandoffUserId?: string | null;
     zenviaHandoffRouting?: ZenviaHandoffRouting | null;
+    zenviaConnectorSlug?: string | null;
+    zenviaConnectorIntegrationId?: string | null;
+    zenviaConnectorAccessToken?: string | null;
+    zenviaConnectorAccessKey?: string | null;
+    zenviaConnectorEnv?: string | null;
     webhookVerifyToken?: string | null;
   },
 ): void {
@@ -902,7 +945,25 @@ function applyZenviaConnectionOptions(
   if (input.zenviaHandoffGroupId) options.zenviaHandoffGroupId = input.zenviaHandoffGroupId;
   if (input.zenviaHandoffUserId) options.zenviaHandoffUserId = input.zenviaHandoffUserId;
   if (input.zenviaHandoffRouting) options.zenviaHandoffRouting = input.zenviaHandoffRouting;
+  applyZenviaConnectorOptions(options, input);
   if (input.webhookVerifyToken) options.webhookVerifyToken = input.webhookVerifyToken;
+}
+
+function applyZenviaConnectorOptions(
+  options: Record<string, unknown>,
+  input: {
+    zenviaConnectorSlug?: string | null;
+    zenviaConnectorIntegrationId?: string | null;
+    zenviaConnectorAccessToken?: string | null;
+    zenviaConnectorAccessKey?: string | null;
+    zenviaConnectorEnv?: string | null;
+  },
+): void {
+  if (input.zenviaConnectorSlug) options.zenviaConnectorSlug = input.zenviaConnectorSlug;
+  if (input.zenviaConnectorIntegrationId) options.zenviaConnectorIntegrationId = input.zenviaConnectorIntegrationId;
+  if (input.zenviaConnectorAccessToken) options.zenviaConnectorAccessToken = input.zenviaConnectorAccessToken;
+  if (input.zenviaConnectorAccessKey) options.zenviaConnectorAccessKey = input.zenviaConnectorAccessKey;
+  if (input.zenviaConnectorEnv) options.zenviaConnectorEnv = input.zenviaConnectorEnv;
 }
 
 function applyAscFlowConnectionOptions(
@@ -1322,6 +1383,11 @@ instancesRoutes.post('/', zValidator('json', createInstanceSchema), async (c) =>
     zenviaHandoffGroupId: instance.zenviaHandoffGroupId,
     zenviaHandoffUserId: instance.zenviaHandoffUserId,
     zenviaHandoffRouting: instance.zenviaHandoffRouting,
+    zenviaConnectorSlug: instance.zenviaConnectorSlug,
+    zenviaConnectorIntegrationId: instance.zenviaConnectorIntegrationId,
+    zenviaConnectorAccessToken: instance.zenviaConnectorAccessToken,
+    zenviaConnectorAccessKey: instance.zenviaConnectorAccessKey,
+    zenviaConnectorEnv: instance.zenviaConnectorEnv,
     // No meta* threading here: createInstanceSchema carries no Meta fields, so
     // a whatsapp-business row is never credentialed at create — credentials
     // arrive via the whatsapp-cloud connect/OAuth route.
@@ -1902,6 +1968,18 @@ const connectInstanceSchema = z.object({
   zenviaHandoffRouting: ZenviaHandoffRoutingSchema.optional().describe(
     'Routes a handoff to a Zenvia group by the value of one handoffFields key (see POST /instances)',
   ),
+  zenviaConnectorSlug: z
+    .string()
+    .max(128)
+    .optional()
+    .describe('Zenvia NLU Agent Connector account slug; selects the live chat mode (see POST /instances)'),
+  zenviaConnectorIntegrationId: z.string().max(128).optional().describe('Zenvia NLU live chat integration id'),
+  zenviaConnectorAccessToken: z.string().optional().describe('Zenvia NLU live chat integration access token'),
+  zenviaConnectorAccessKey: z.string().optional().describe('Zenvia NLU live chat integration access key'),
+  zenviaConnectorEnv: z
+    .enum(ZENVIA_CONNECTOR_ENVS)
+    .optional()
+    .describe('Zenvia NLU webhook environment the live chat answers on (sent as ?env=)'),
   webhookVerifyToken: z
     .string()
     .min(1)
@@ -1967,6 +2045,7 @@ function mergeZenviaFields(
     | 'zenviaHandoffGroupId'
     | 'zenviaHandoffUserId'
     | 'zenviaHandoffRouting'
+    | ZenviaConnectorField
   >,
   body: Pick<
     ConnectInstanceBody,
@@ -1978,6 +2057,7 @@ function mergeZenviaFields(
     | 'zenviaHandoffGroupId'
     | 'zenviaHandoffUserId'
     | 'zenviaHandoffRouting'
+    | ZenviaConnectorField
   >,
 ) {
   return {
@@ -1988,6 +2068,27 @@ function mergeZenviaFields(
     zenviaHandoffGroupId: body.zenviaHandoffGroupId ?? instance.zenviaHandoffGroupId,
     zenviaHandoffUserId: body.zenviaHandoffUserId ?? instance.zenviaHandoffUserId,
     zenviaHandoffRouting: body.zenviaHandoffRouting ?? instance.zenviaHandoffRouting,
+    ...mergeZenviaConnectorFields(instance, body),
+  };
+}
+
+type ZenviaConnectorField =
+  | 'zenviaConnectorSlug'
+  | 'zenviaConnectorIntegrationId'
+  | 'zenviaConnectorAccessToken'
+  | 'zenviaConnectorAccessKey'
+  | 'zenviaConnectorEnv';
+
+function mergeZenviaConnectorFields(
+  instance: Pick<InstanceRecord, ZenviaConnectorField>,
+  body: Pick<ConnectInstanceBody, ZenviaConnectorField>,
+) {
+  return {
+    zenviaConnectorSlug: body.zenviaConnectorSlug ?? instance.zenviaConnectorSlug,
+    zenviaConnectorIntegrationId: body.zenviaConnectorIntegrationId ?? instance.zenviaConnectorIntegrationId,
+    zenviaConnectorAccessToken: body.zenviaConnectorAccessToken ?? instance.zenviaConnectorAccessToken,
+    zenviaConnectorAccessKey: body.zenviaConnectorAccessKey ?? instance.zenviaConnectorAccessKey,
+    zenviaConnectorEnv: body.zenviaConnectorEnv ?? instance.zenviaConnectorEnv,
   };
 }
 

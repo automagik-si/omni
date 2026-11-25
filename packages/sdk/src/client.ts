@@ -371,6 +371,11 @@ export interface CreateInstanceBody {
   zenviaHandoffUserId?: string;
   zenviaHandoffSolution?: 'conversion' | 'zenvia_chat' | 'nlu';
   zenviaHandoffRouting?: { field: string; groups: Record<string, string> };
+  zenviaConnectorSlug?: string;
+  zenviaConnectorIntegrationId?: string;
+  zenviaConnectorAccessToken?: string;
+  zenviaConnectorAccessKey?: string;
+  zenviaConnectorEnv?: 'homol' | 'prod';
 }
 
 type ZenviaInstanceConfigKey =
@@ -381,7 +386,12 @@ type ZenviaInstanceConfigKey =
   | 'zenviaHandoffGroupId'
   | 'zenviaHandoffUserId'
   | 'zenviaHandoffSolution'
-  | 'zenviaHandoffRouting';
+  | 'zenviaHandoffRouting'
+  | 'zenviaConnectorSlug'
+  | 'zenviaConnectorIntegrationId'
+  | 'zenviaConnectorAccessToken'
+  | 'zenviaConnectorAccessKey'
+  | 'zenviaConnectorEnv';
 
 export type UpdateInstanceBody = Partial<Instance> &
   Pick<components['schemas']['CreateInstanceRequest'], ZenviaInstanceConfigKey>;
@@ -1208,6 +1218,11 @@ export interface ConnectInstanceBody {
   zenviaHandoffUserId?: string;
   zenviaHandoffSolution?: 'conversion' | 'zenvia_chat' | 'nlu';
   zenviaHandoffRouting?: { field: string; groups: Record<string, string> };
+  zenviaConnectorSlug?: string;
+  zenviaConnectorIntegrationId?: string;
+  zenviaConnectorAccessToken?: string;
+  zenviaConnectorAccessKey?: string;
+  zenviaConnectorEnv?: 'homol' | 'prod';
   webhookVerifyToken?: string;
   /** WhatsApp-specific connection options */
   whatsapp?: {

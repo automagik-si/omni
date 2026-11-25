@@ -1014,6 +1014,11 @@ export const instances = pgTable(
     zenviaHandoffGroupId: varchar('zenvia_handoff_group_id', { length: 64 }),
     zenviaHandoffUserId: varchar('zenvia_handoff_user_id', { length: 64 }),
     zenviaHandoffRouting: jsonb('zenvia_handoff_routing').$type<ZenviaHandoffRouting>(),
+    zenviaConnectorSlug: varchar('zenvia_connector_slug', { length: 128 }),
+    zenviaConnectorIntegrationId: varchar('zenvia_connector_integration_id', { length: 128 }),
+    zenviaConnectorAccessToken: text('zenvia_connector_access_token'),
+    zenviaConnectorAccessKey: text('zenvia_connector_access_key'),
+    zenviaConnectorEnv: varchar('zenvia_connector_env', { length: 16 }).$type<'homol' | 'prod'>(),
 
     // ---- ASC platform Flow Configuration ----
     // Per-instance credentials for the ASC platform REST API (/rest/v2), the

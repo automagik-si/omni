@@ -71,6 +71,25 @@ describe('SDK Type Safety (compile-time)', () => {
     expect(connect.zenviaHandoffSolution).toBe('nlu');
   });
 
+  test('instance create, connect and update bodies accept the Zenvia live chat configuration', () => {
+    const create: CreateInstanceBody = {
+      name: 'zenvia-live-chat',
+      channel: 'zenvia',
+      zenviaConnectorSlug: 'tenant-slug',
+      zenviaConnectorIntegrationId: '42',
+      zenviaConnectorAccessToken: 'access-token',
+      zenviaConnectorAccessKey: 'access-key',
+      zenviaConnectorEnv: 'homol',
+      zenviaHandoffRouting: { field: 'queue', groups: { 'queue-a': 'branch_a' } },
+    };
+    const connect: ConnectInstanceBody = { zenviaConnectorAccessKey: 'rotated-key', zenviaConnectorEnv: 'prod' };
+    const update: UpdateInstanceBody = { zenviaConnectorSlug: null, zenviaConnectorEnv: null };
+
+    expect(create.zenviaConnectorEnv).toBe('homol');
+    expect(connect.zenviaConnectorEnv).toBe('prod');
+    expect(update.zenviaConnectorSlug).toBeNull();
+  });
+
   test('instance connect body accepts a webhook verify token to rotate it', () => {
     const connect: ConnectInstanceBody = { webhookVerifyToken: 'rotated-token' };
 
