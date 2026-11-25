@@ -2524,7 +2524,7 @@ function buildMessageTrigger(
       chatId,
       messageId: messages[0]?.payload.externalId ?? '',
       threadId,
-      ...(messages[0]?.payload.sessionStart === true ? { sessionStart: true as const } : {}),
+      ...(messages.some((m) => m.payload.sessionStart === true) ? { sessionStart: true as const } : {}),
     },
     sender: {
       platformUserId: senderId,
@@ -4330,13 +4330,14 @@ async function applySessionStartGate(
   instanceId: string,
   chatId: string,
   chatSettings: ChatSettingsForGate | null,
-  firstMessage: BufferedMessage,
+  messages: readonly BufferedMessage[],
   msgTimestamp: number,
   trustedTenantId?: string,
 ): Promise<'skip' | 'pass' | { resumedAt: string }> {
-  if (firstMessage.payload.sessionStart !== true || chatSettings?.agentPaused !== true || !chatRecordId) {
-    return 'pass';
-  }
+  const starter = messages.find((m) => m.payload.sessionStart === true);
+  if (!starter || chatSettings?.agentPaused !== true || !chatRecordId) return 'pass';
+  const currentResumedAt = chatSettings.agentResumedAt ? new Date(chatSettings.agentResumedAt).getTime() : Number.NaN;
+  if (Number.isFinite(currentResumedAt) && msgTimestamp < currentResumedAt) return 'pass';
   const resumedAt = new Date(msgTimestamp - 1).toISOString();
   try {
     await runDispatchDb(services.db, trustedTenantId, () =>
@@ -4359,7 +4360,7 @@ async function applySessionStartGate(
   log.info('New channel session resumed a paused agent', {
     instanceId,
     chatId,
-    externalId: firstMessage.payload.externalId,
+    externalId: starter.payload.externalId,
     resumedAt,
   });
   return { resumedAt };
@@ -4370,9 +4371,11 @@ async function passesChatStateGates(
   db: Database,
   instanceId: string,
   chatId: string,
-  firstMessage: BufferedMessage,
+  messages: readonly BufferedMessage[],
   trustedTenantId?: string,
 ): Promise<boolean> {
+  const firstMessage = messages[0];
+  if (!firstMessage) return false;
   const chatRecord = await runDispatchDb(db, trustedTenantId, () =>
     services.chats.findByExternalIdSmart(instanceId, chatId),
   );
@@ -4398,7 +4401,7 @@ async function passesChatStateGates(
           instanceId,
           chatId,
           chatSettings,
-          firstMessage,
+          messages,
           msgTimestamp,
           trustedTenantId,
         );
@@ -4489,7 +4492,7 @@ async function processAgentResponse(
     return;
   }
 
-  if (!(await passesChatStateGates(services, db, instance.id, chatId, firstMessage, dispatchTenantId))) {
+  if (!(await passesChatStateGates(services, db, instance.id, chatId, messages, dispatchTenantId))) {
     ackHandle.remove();
     return;
   }

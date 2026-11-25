@@ -432,7 +432,11 @@ agent providers see it as `executionContext.source.sessionStart`.
 
 Sessions live in plugin storage (database-backed, 7 days), keyed by instance
 and contact, with the reverse map from conversation to contact, so a redeploy
-keeps them.
+keeps them. A conversation that was closed or replaced by a newer
+`OPEN_CONVERSATION` is remembered for the same 7 days: a late event of it is
+acknowledged and ignored, while an event of a conversation never seen (an
+`OPEN_CONVERSATION` that was missed) adopts the contact's session. Writes to
+one contact's session are serialized within the process.
 
 **Outbound.** Only a contact with an open session can be written to; any other
 send fails with `no open Zenvia live chat for this contact` (rejected, not

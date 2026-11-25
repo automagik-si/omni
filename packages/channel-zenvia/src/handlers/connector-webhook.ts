@@ -43,12 +43,36 @@ async function readJson(
   const declared = Number(request.headers.get('content-length'));
   if (Number.isFinite(declared) && declared > limit) return { ok: false };
   try {
-    const text = await request.text();
-    if (text.length > limit) return { ok: false };
-    return { ok: true, body: JSON.parse(text), size: text.length };
+    const bytes = await readLimited(request, limit);
+    if (!bytes) return { ok: false };
+    return { ok: true, body: JSON.parse(new TextDecoder().decode(bytes)), size: bytes.byteLength };
   } catch {
     return { ok: false };
   }
+}
+
+async function readLimited(request: Request, limit: number): Promise<Uint8Array | undefined> {
+  if (!request.body) return new Uint8Array();
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > limit) {
+      await reader.cancel().catch(() => undefined);
+      return undefined;
+    }
+    chunks.push(value);
+  }
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return out;
 }
 
 export async function handleZenviaConnectorWebhookRequest(

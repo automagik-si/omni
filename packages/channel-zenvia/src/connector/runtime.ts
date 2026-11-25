@@ -223,7 +223,8 @@ export class ZenviaConnectorRuntime {
     const params = ConnectorMessageParametersSchema.safeParse(event.parameters ?? {});
     const data = params.success ? params.data : {};
     const located = await this.sessionFor(conversationId, event, data.contact);
-    if (!located) return reply(400, 'missing contact phone and identifier');
+    if (located === 'missing-contact') return reply(400, 'missing contact phone and identifier');
+    if (located === 'stale') return reply(200, 'OK');
 
     const text = joinConnectorTexts(data.messages);
     const location = data.location;
@@ -271,7 +272,8 @@ export class ZenviaConnectorRuntime {
     const fileId = data.file?.id;
     if (!isConnectorFileId(fileId)) return reply(400, 'missing file id');
     const located = await this.sessionFor(conversationId, event, data.contact);
-    if (!located) return reply(400, 'missing contact phone and identifier');
+    if (located === 'missing-contact') return reply(400, 'missing contact phone and identifier');
+    if (located === 'stale') return reply(200, 'OK');
 
     const stored = await this.files.get(fileId);
     const mimeType = data.file?.contentType?.trim() || stored?.contentType;
@@ -332,24 +334,32 @@ export class ZenviaConnectorRuntime {
     conversationId: string,
     event: ConnectorEvent,
     contact: Parameters<typeof connectorChatId>[0],
-  ): Promise<{ chatId: string; session: ConnectorSession } | undefined> {
+  ): Promise<{ chatId: string; session: ConnectorSession } | 'missing-contact' | 'stale'> {
     const chatId = (await this.sessions.chatOf(conversationId)) ?? connectorChatId(contact, event.identifier);
-    if (!chatId) return undefined;
+    if (!chatId) return 'missing-contact';
     const session = await this.sessions.get(chatId);
     if (session?.conversationId === conversationId) return { chatId, session };
 
-    const adopted: ConnectorSession = {
+    const adopted = await this.sessions.adopt(chatId, {
       conversationId,
       ...(event.identifier ? { identifier: event.identifier } : {}),
       openedAt: Date.now(),
-    };
-    await this.sessions.open(chatId, adopted);
+    });
+    if (!adopted) {
+      this.host.logger.warn('[zenvia] connector event for a replaced or closed conversation ignored', {
+        instanceId: this.instanceId,
+        conversationId,
+        action: event.action,
+      });
+      return 'stale';
+    }
     this.host.logger.warn('[zenvia] connector event for a conversation without a session; adopting it', {
       instanceId: this.instanceId,
       conversationId,
-      replacedConversationId: session?.conversationId,
+      replacedConversationId: adopted.replaced,
     });
-    return { chatId, session: adopted };
+    if (adopted.replaced) this.startedClaims.delete(adopted.replaced);
+    return { chatId, session: adopted.session };
   }
 
   private async publish(
@@ -369,7 +379,7 @@ export class ZenviaConnectorRuntime {
     } finally {
       if (sessionStart && !published) this.startedClaims.delete(session.conversationId);
     }
-    if (sessionStart && published) await this.sessions.markStarted(chatId, session);
+    if (sessionStart && published) await this.sessions.markStarted(chatId, session.conversationId);
   }
 
   private claimSessionStart(session: ConnectorSession): boolean {
@@ -517,7 +527,17 @@ export class ZenviaConnectorRuntime {
     const fileId = await this.client.uploadFile(conversationId, mimeType, media.bytes);
     const response = await this.client.sendFile(conversationId, this.agent, fileId);
     const caption = outboundText(message, message.content.caption ?? message.content.text);
-    if (caption.trim()) await this.client.sendMessage(conversationId, this.agent, [caption]);
+    if (caption.trim()) {
+      try {
+        await this.client.sendMessage(conversationId, this.agent, [caption]);
+      } catch (err) {
+        this.host.logger.error('[zenvia] connector caption failed after the file was delivered', {
+          instanceId: this.instanceId,
+          conversationId,
+          error: errorText(err),
+        });
+      }
+    }
     return response.requestId ?? fileId;
   }
 

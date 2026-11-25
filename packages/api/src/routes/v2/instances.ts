@@ -2068,16 +2068,17 @@ function mergeZenviaFields(
     zenviaHandoffGroupId: body.zenviaHandoffGroupId ?? instance.zenviaHandoffGroupId,
     zenviaHandoffUserId: body.zenviaHandoffUserId ?? instance.zenviaHandoffUserId,
     zenviaHandoffRouting: body.zenviaHandoffRouting ?? instance.zenviaHandoffRouting,
-    ...mergeZenviaConnectorFields(instance, body),
   };
 }
 
-type ZenviaConnectorField =
-  | 'zenviaConnectorSlug'
-  | 'zenviaConnectorIntegrationId'
-  | 'zenviaConnectorAccessToken'
-  | 'zenviaConnectorAccessKey'
-  | 'zenviaConnectorEnv';
+const ZENVIA_CONNECTOR_FIELDS = [
+  'zenviaConnectorSlug',
+  'zenviaConnectorIntegrationId',
+  'zenviaConnectorAccessToken',
+  'zenviaConnectorAccessKey',
+  'zenviaConnectorEnv',
+] as const;
+type ZenviaConnectorField = (typeof ZENVIA_CONNECTOR_FIELDS)[number];
 
 function mergeZenviaConnectorFields(
   instance: Pick<InstanceRecord, ZenviaConnectorField>,
@@ -2096,8 +2097,12 @@ function zenviaConnectPersistFields(
   instance: Parameters<typeof mergeZenviaFields>[0],
   body: Parameters<typeof mergeZenviaFields>[1] & Pick<ConnectInstanceBody, 'webhookVerifyToken'>,
 ): Record<string, unknown> {
+  const suppliedConnector = Object.fromEntries(
+    ZENVIA_CONNECTOR_FIELDS.filter((field) => body[field] !== undefined).map((field) => [field, body[field]]),
+  );
   return {
     ...mergeZenviaFields(instance, body),
+    ...suppliedConnector,
     ...(body.webhookVerifyToken ? { webhookVerifyToken: body.webhookVerifyToken } : {}),
   };
 }
@@ -2149,6 +2154,7 @@ function buildConnectConnectionOptions(
     ascToken: body.ascToken ?? instance.ascToken,
     ascOriginador: body.ascOriginador ?? instance.ascOriginador,
     ...mergeZenviaFields(instance, body),
+    ...mergeZenviaConnectorFields(instance, body),
     metaAccessToken: instance.metaAccessToken,
     metaPhoneNumberId: instance.metaPhoneNumberId,
     metaWabaId: instance.metaWabaId,

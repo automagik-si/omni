@@ -841,7 +841,7 @@ export class ZenviaPlugin extends BaseChannelPlugin {
 
   async handleConversationStatus(instanceId: string, event: ZenviaConversationStatusEvent): Promise<void> {
     const state = this.zenviaInstances.get(instanceId);
-    if (!state) return;
+    if (!state || state.connector) return;
 
     const { conversation } = event;
     const status = normalizeConversationStatus(conversation.status);

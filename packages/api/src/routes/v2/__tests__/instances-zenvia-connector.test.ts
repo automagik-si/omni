@@ -139,6 +139,7 @@ describe('POST /instances/:id/connect - the persisted live chat config reaches t
 
     expect(res.status).toBe(200);
     expect(captured.connectOptions).toMatchObject(CONNECTOR);
+    for (const field of Object.keys(CONNECTOR)) expect(captured.updated ?? {}).not.toHaveProperty(field);
   });
 
   test('a body value wins over the row and is persisted', async () => {

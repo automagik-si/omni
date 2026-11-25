@@ -375,6 +375,57 @@ describe('connector mode', () => {
       expect(await runtime?.sessions.chatOf(CONVERSATION_ID)).toBeUndefined();
     });
 
+    it('ignores a delayed message of a replaced conversation and keeps the new session', async () => {
+      fetchSpy = okFetch();
+      await connect(plugin);
+      await plugin.handleWebhook(post(openEvent()));
+      await plugin.handleWebhook(
+        post(openEvent(undefined, { conversationId: OTHER_CONVERSATION_ID, requestId: 'r2' })),
+      );
+
+      const res = await plugin.handleWebhook(post(messageEvent('late-a', ['old'])));
+
+      expect(res.status).toBe(200);
+      expect(received(eventBus)).toEqual([]);
+      const runtime = plugin.getInstanceState(instanceId)?.connector;
+      expect((await runtime?.sessions.get(CHAT_ID))?.conversationId).toBe(OTHER_CONVERSATION_ID);
+    });
+
+    it('adopts a message of an unknown conversation when the open was missed', async () => {
+      fetchSpy = okFetch();
+      await connect(plugin);
+      await plugin.handleWebhook(post(openEvent()));
+
+      await plugin.handleWebhook(post(messageEvent('new-b', ['hi'], { conversationID: OTHER_CONVERSATION_ID })));
+
+      expect(received(eventBus)[0]).toMatchObject({ externalId: 'new-b', sessionStart: true });
+      const runtime = plugin.getInstanceState(instanceId)?.connector;
+      expect((await runtime?.sessions.get(CHAT_ID))?.conversationId).toBe(OTHER_CONVERSATION_ID);
+    });
+
+    it('does not publish human takeover events in live chat mode', async () => {
+      await connect(plugin, { webhookVerifyToken: 'channels-secret', zenviaSenderId: '551140000000' });
+
+      await plugin.handleWebhook(
+        post(
+          {
+            type: 'CONVERSATION_STATUS',
+            conversation: {
+              id: 'c1',
+              status: 'CLAIMED',
+              userId: 'u1',
+              channel: 'whatsapp',
+              from: '551140000000',
+              to: CHAT_ID,
+            },
+          },
+          { 'x-webhook-token': 'channels-secret' },
+        ),
+      );
+
+      expect((eventBus.published as Published[]).some((e) => e.type === 'chat.human_takeover')).toBe(false);
+    });
+
     it('retries a failed ACCEPT_CONVERSATION once without holding the 200', async () => {
       fetchSpy = spyOn(globalThis, 'fetch').mockImplementation((async () =>
         jsonResponse({ message: 'Unexpected error' }, 500)) as unknown as typeof fetch);
@@ -548,6 +599,32 @@ describe('connector mode', () => {
       fetchSpy.mockImplementation((async () => jsonResponse({ message: 'nope' }, 200)) as unknown as typeof fetch);
       const notOk = await plugin.sendMessage(instanceId, { to: CHAT_ID, content: { type: 'text', text: 'a' } });
       expect(notOk).toMatchObject({ success: false, retryable: false, rejected: true });
+    });
+
+    it('reports a delivered file as sent even when the caption after it fails', async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'zenvia-connector-'));
+      const path = join(dir, 'card.png');
+      await writeFile(path, Buffer.from([1, 2, 3]));
+      try {
+        fetchSpy = okFetch();
+        await connect(plugin);
+        await plugin.handleWebhook(post(openEvent()));
+        await plugin.getInstanceState(instanceId)?.connector?.settle();
+        fetchSpy.mockImplementation((async (_input: unknown, init?: RequestInit) => {
+          const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+          if (body.action === 'SEND_MESSAGE') return jsonResponse({ message: 'down' }, 503);
+          return jsonResponse({ requestId: 'r', message: 'OK', fileId: 'altu-file-2' });
+        }) as unknown as typeof fetch);
+
+        const result = await plugin.sendMessage(instanceId, {
+          to: CHAT_ID,
+          content: { type: 'image', localPath: path, mimeType: 'image/png', caption: 'your card' },
+        });
+
+        expect(result.success).toBe(true);
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
     });
 
     it('uploads a local file and sends it, then the caption', async () => {

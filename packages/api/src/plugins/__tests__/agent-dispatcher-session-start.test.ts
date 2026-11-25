@@ -52,7 +52,7 @@ describe('passesChatStateGates — sessionStart', () => {
     const platformMs = Date.now() - 5_000;
     const h = harness({ agentPaused: true, agentResumedAt: '2020-01-01T00:00:00.000Z', keep: 'me' });
 
-    const passed = await passesChatStateGates(h.services, db, INSTANCE_ID, CHAT_ID, message(true, platformMs));
+    const passed = await passesChatStateGates(h.services, db, INSTANCE_ID, CHAT_ID, [message(true, platformMs)]);
 
     expect(passed).toBe(true);
     expect(h.updates).toHaveLength(1);
@@ -66,7 +66,7 @@ describe('passesChatStateGates — sessionStart', () => {
   test('a closed (terminal) chat stays skipped even with sessionStart', async () => {
     const h = harness({ closed: true, agentPaused: true, closeOutcome: 'won' });
 
-    const passed = await passesChatStateGates(h.services, db, INSTANCE_ID, CHAT_ID, message(true));
+    const passed = await passesChatStateGates(h.services, db, INSTANCE_ID, CHAT_ID, [message(true)]);
 
     expect(passed).toBe(false);
     expect(h.updates).toEqual([]);
@@ -75,30 +75,56 @@ describe('passesChatStateGates — sessionStart', () => {
   test('without the flag a paused chat is still skipped and untouched', async () => {
     const h = harness({ agentPaused: true });
 
-    expect(await passesChatStateGates(h.services, db, INSTANCE_ID, CHAT_ID, message())).toBe(false);
-    expect(await passesChatStateGates(h.services, db, INSTANCE_ID, CHAT_ID, message(false))).toBe(false);
+    expect(await passesChatStateGates(h.services, db, INSTANCE_ID, CHAT_ID, [message()])).toBe(false);
+    expect(await passesChatStateGates(h.services, db, INSTANCE_ID, CHAT_ID, [message(false)])).toBe(false);
     expect(h.updates).toEqual([]);
   });
 
   test('sessionStart on a chat that is not paused writes nothing and dispatches', async () => {
     const h = harness({ agentPaused: false });
 
-    expect(await passesChatStateGates(h.services, db, INSTANCE_ID, CHAT_ID, message(true))).toBe(true);
+    expect(await passesChatStateGates(h.services, db, INSTANCE_ID, CHAT_ID, [message(true)])).toBe(true);
     expect(h.updates).toEqual([]);
   });
 
   test('a failed resume write defers the dispatch instead of answering a paused chat', async () => {
     const h = harness({ agentPaused: true }, true);
 
-    expect(await passesChatStateGates(h.services, db, INSTANCE_ID, CHAT_ID, message(true))).toBe(false);
+    expect(await passesChatStateGates(h.services, db, INSTANCE_ID, CHAT_ID, [message(true)])).toBe(false);
   });
 
   test('without the flag a message older than agentResumedAt is still dropped', async () => {
     const h = harness({ agentResumedAt: new Date(Date.now() + 60_000).toISOString() });
 
-    expect(await passesChatStateGates(h.services, db, INSTANCE_ID, CHAT_ID, message(undefined, Date.now()))).toBe(
+    expect(await passesChatStateGates(h.services, db, INSTANCE_ID, CHAT_ID, [message(undefined, Date.now())])).toBe(
       false,
     );
+  });
+
+  test('a delayed session start older than the current agentResumedAt does not resume', async () => {
+    const resumedAt = new Date(Date.now() - 1_000).toISOString();
+    const h = harness({ agentPaused: true, agentResumedAt: resumedAt });
+
+    const passed = await passesChatStateGates(h.services, db, INSTANCE_ID, CHAT_ID, [
+      message(true, Date.now() - 60_000),
+    ]);
+
+    expect(passed).toBe(false);
+    expect(h.updates).toEqual([]);
+  });
+
+  test('a session start later in the batch resumes the chat and keeps the whole batch', async () => {
+    const platformMs = Date.now() - 5_000;
+    const h = harness({ agentPaused: true });
+
+    const passed = await passesChatStateGates(h.services, db, INSTANCE_ID, CHAT_ID, [
+      message(undefined, platformMs),
+      message(true, platformMs + 1_000),
+    ]);
+
+    expect(passed).toBe(true);
+    expect(h.updates[0]?.agentPaused).toBe(false);
+    expect(new Date(String(h.updates[0]?.agentResumedAt)).getTime()).toBeLessThan(platformMs);
   });
 });
 
@@ -123,8 +149,9 @@ describe('buildMessageTrigger — sessionStart', () => {
     );
   }
 
-  test('marks the trigger source only when the first message starts a session', () => {
+  test('marks the trigger source when any message of the batch starts a session', () => {
     expect(trigger([message(true)]).source.sessionStart).toBe(true);
+    expect(trigger([message(), message(true)]).source.sessionStart).toBe(true);
     expect(trigger([message()]).source).not.toHaveProperty('sessionStart');
     expect(trigger([message(false)]).source).not.toHaveProperty('sessionStart');
   });
