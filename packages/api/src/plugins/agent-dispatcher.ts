@@ -100,6 +100,7 @@ import type { ResolvedRoute } from '../services/route-resolver';
 import { publishTurnOpen } from '../services/turn-events';
 import { scopedHandle } from '../tenancy/tenant-scope';
 import { runInWorkerTenantScope } from '../tenancy/worker-tenant-context';
+import { isPersonlessChannel } from '../utils/canonical-handle';
 import { fetchMediaUrl } from '../utils/safe-media-fetch';
 import { AgentDispatchLimiter, loadAgentDispatchLimiterConfig } from './agent-dispatch-limiter';
 import { getPlugin } from './loader';
@@ -110,7 +111,7 @@ import {
   MessageDebouncer,
   type QueuedBehindActiveRunInfo,
 } from './message-debouncer';
-import { extractPlatformTimestamp } from './message-persistence';
+import { extractPlatformTimestamp, resolveSenderIdentityForWorkItem } from './message-persistence';
 import { createSessionStorage } from './session-storage';
 
 const log = createLogger('agent-dispatcher');
@@ -2000,6 +2001,128 @@ async function resolvePersonId(
   }
 
   return undefined;
+}
+
+interface SenderPersonWait {
+  maxWaitMs: number;
+  initialDelayMs: number;
+  maxDelayMs: number;
+}
+
+const SENDER_PERSON_WAIT: SenderPersonWait = { maxWaitMs: 60_000, initialDelayMs: 200, maxDelayMs: 5_000 };
+
+interface SenderPersonResult {
+  personId?: string;
+  error?: unknown;
+}
+
+async function lookupSenderPersonId(
+  services: Services,
+  channel: ChannelType,
+  instanceId: string,
+  senderId: string,
+  trustedTenantId?: string,
+): Promise<string | undefined> {
+  const identity = await runDispatchDb(services.db, trustedTenantId, () =>
+    services.persons.getIdentityByPlatformId(channel, instanceId, senderId),
+  );
+  return identity?.personId ?? undefined;
+}
+
+async function ensureSenderPersonId(
+  services: Services,
+  channel: ChannelType,
+  instanceId: string,
+  message: Pick<BufferedMessage, 'payload' | 'metadata'>,
+): Promise<SenderPersonResult> {
+  const { payload, metadata } = message;
+  if (metadata.personId) return { personId: metadata.personId };
+  if (!payload.from) return {};
+
+  const existing = await lookupSenderPersonId(services, channel, instanceId, payload.from, metadata.trustedTenantId);
+  if (existing) return { personId: existing };
+  if (!metadata.channelType || isPersonlessChannel(channel)) return {};
+
+  try {
+    const identity = await resolveSenderIdentityForWorkItem(
+      services,
+      payload,
+      {
+        instanceId,
+        personId: metadata.personId,
+        platformIdentityId: metadata.platformIdentityId,
+        channelType: metadata.channelType,
+      },
+      channel,
+      metadata.trustedTenantId ?? null,
+    );
+    return { personId: identity.personId };
+  } catch (error) {
+    return { error };
+  }
+}
+
+async function resolveDispatchPersonId(
+  services: Services,
+  channel: ChannelType,
+  instanceId: string,
+  message: Pick<BufferedMessage, 'payload' | 'metadata'>,
+  wait: SenderPersonWait = SENDER_PERSON_WAIT,
+): Promise<SenderPersonResult> {
+  const ensured = await ensureSenderPersonId(services, channel, instanceId, message);
+  if (ensured.personId || ensured.error === undefined) return ensured;
+
+  const senderId = message.payload.from ?? '';
+  const deadline = Date.now() + wait.maxWaitMs;
+  let delay = wait.initialDelayMs;
+  while (Date.now() < deadline) {
+    await sleep(Math.min(delay, Math.max(0, deadline - Date.now())));
+    const personId = await lookupSenderPersonId(
+      services,
+      channel,
+      instanceId,
+      senderId,
+      message.metadata.trustedTenantId,
+    );
+    if (personId) return { personId };
+    delay = Math.min(delay * 2, wait.maxDelayMs);
+  }
+  return ensured;
+}
+
+async function resolveRoutePersonId(
+  services: Services,
+  channel: ChannelType,
+  instanceId: string,
+  chatRecordId: string | undefined,
+  message: Pick<BufferedMessage, 'payload' | 'metadata'>,
+): Promise<string | undefined> {
+  if (!chatRecordId) return message.metadata.personId;
+  const sender = await ensureSenderPersonId(services, channel, instanceId, message);
+  if (sender.error !== undefined) {
+    log.warn('Sender identity not resolved before route matching', {
+      instanceId,
+      chatId: message.payload.chatId,
+      error: String(sender.error),
+    });
+  }
+  return sender.personId;
+}
+
+function logUnresolvedSender(
+  instanceId: string,
+  message: Pick<BufferedMessage, 'payload' | 'metadata'>,
+  error: unknown,
+) {
+  log.error('Dropping inbound: could not resolve person ID', {
+    instanceId,
+    chatId: message.payload.chatId,
+    sender: message.payload.from,
+    externalId: message.payload.externalId,
+    reason: 'could not resolve person ID',
+    error: error === undefined ? undefined : String(error),
+    traceId: message.metadata.traceId,
+  });
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -4376,17 +4499,10 @@ async function processAgentResponse(
   // discrete DB block below runs in its world.
   const dispatchTenantId = firstMessage.metadata.trustedTenantId;
 
-  // Resolve person ID (waits for message-persistence to create identity)
-  const personId = await resolvePersonId(
-    services,
-    channel,
-    instance.id,
-    senderId,
-    firstMessage.metadata.personId,
-    dispatchTenantId,
-  );
+  const sender = await resolveDispatchPersonId(services, channel, instance.id, firstMessage);
+  const personId = sender.personId;
   if (!personId) {
-    logDrop('could not resolve person ID', firstMessage.payload, instance.id);
+    logUnresolvedSender(instance.id, firstMessage, sender.error);
     ackHandle.remove();
     return;
   }
@@ -6255,17 +6371,18 @@ export async function setupAgentDispatcher(
               services.chats.findByExternalIdSmart(instance.id, payload.chatId),
             );
 
-            // Resolve person ID for route matching. metadata.personId may not be set yet
-            // (message-persistence runs in parallel), so fall back to identity lookup.
             const channel = (metadata.channelType ?? instance.channel) as ChannelType;
-            const earlyPersonId = await resolvePersonId(
-              services,
-              channel,
-              instance.id,
-              payload.from,
-              metadata.personId,
-              trustedTenantId,
-            );
+            const earlyPersonId = await resolveRoutePersonId(services, channel, instance.id, chat?.id, {
+              payload,
+              metadata: {
+                instanceId: instance.id,
+                channelType: metadata.channelType,
+                personId: metadata.personId,
+                platformIdentityId: metadata.platformIdentityId,
+                traceId,
+                trustedTenantId,
+              },
+            });
 
             const resolution = await resolveEffectiveInstance(
               services,
@@ -6695,6 +6812,8 @@ export const __test__ = {
   resolveQuotedMessage,
   resolveContactName,
   resolvePersonId,
+  ensureSenderPersonId,
+  resolveDispatchPersonId,
   resolveLidMentionBot,
   resolveEffectiveReplyFilter,
   resolveSlackThreadReply,
