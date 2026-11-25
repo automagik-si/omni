@@ -47,6 +47,23 @@ const log = createLogger('agent-replay');
 /** Maximum look-back window for replay (24 hours) */
 const MAX_REPLAY_WINDOW_MS = 24 * 60 * 60 * 1000;
 
+export const REPLAY_MAX_AGE_ENV = 'OMNI_AGENT_REPLAY_MAX_AGE_MS';
+
+export function loadReplayMaxAgeMs(env: Record<string, string | undefined> = process.env): number {
+  const raw = env[REPLAY_MAX_AGE_ENV]?.trim();
+  if (!raw) return MAX_REPLAY_WINDOW_MS;
+  const parsed = Number(raw);
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+    log.warn('Invalid replay max age, using default', {
+      key: REPLAY_MAX_AGE_ENV,
+      value: raw,
+      fallback: MAX_REPLAY_WINDOW_MS,
+    });
+    return MAX_REPLAY_WINDOW_MS;
+  }
+  return Math.min(parsed, MAX_REPLAY_WINDOW_MS);
+}
+
 export interface ReplayOptions {
   /** Instance ID to replay messages for */
   instanceId: string;
@@ -56,6 +73,7 @@ export interface ReplayOptions {
    * Hard-capped at 24 hours ago regardless.
    */
   since?: Date;
+  maxAgeMs?: number;
 }
 
 export interface ReplayResult {
@@ -82,6 +100,7 @@ export class AgentReplayService {
   constructor(
     private readonly pool: Database,
     private eventBus: EventBus,
+    private readonly reconnectMaxAgeMs: number = loadReplayMaxAgeMs(),
   ) {}
 
   /**
@@ -137,10 +156,17 @@ export class AgentReplayService {
       return;
     }
 
-    log.info('Starting replay on reconnect', { instanceId, since: since.toISOString() });
+    log.info('Starting replay on reconnect', {
+      instanceId,
+      since: since.toISOString(),
+      maxAgeMs: this.reconnectMaxAgeMs,
+    });
 
     try {
-      const result = await this.replayMissedMessages({ instanceId, since }, trustedTenantId);
+      const result = await this.replayMissedMessages(
+        { instanceId, since, maxAgeMs: this.reconnectMaxAgeMs },
+        trustedTenantId,
+      );
       log.info('Replay complete', {
         instanceId,
         replayed: result.replayed,
@@ -163,7 +189,8 @@ export class AgentReplayService {
   async replayMissedMessages(options: ReplayOptions, trustedTenantId?: string | null): Promise<ReplayResult> {
     const { instanceId } = options;
     const now = new Date();
-    const cutoff = new Date(now.getTime() - MAX_REPLAY_WINDOW_MS);
+    const maxAgeMs = Math.min(options.maxAgeMs ?? MAX_REPLAY_WINDOW_MS, MAX_REPLAY_WINDOW_MS);
+    const cutoff = new Date(now.getTime() - maxAgeMs);
 
     // Clamp since to 24h window
     const since = options.since && options.since > cutoff ? options.since : cutoff;
