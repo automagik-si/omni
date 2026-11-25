@@ -45,6 +45,7 @@ export function buildOmniExecutionContext(context: AgentTrigger): OmniExecutionC
       chatId: context.source.chatId,
       ...(context.source.threadId ? { threadId: context.source.threadId } : {}),
       messageId: context.source.messageId,
+      ...(context.source.sessionStart === true ? { sessionStart: true as const } : {}),
     },
     session: {
       id: sessionId,
@@ -75,6 +76,7 @@ export function buildOmniEnv(
     OMNI_SESSION: executionContext.session.id,
     OMNI_TRACE_ID: executionContext.trace.id,
     OMNI_THREAD: executionContext.source.threadId,
+    OMNI_SESSION_START: executionContext.source.sessionStart ? '1' : undefined,
     OMNI_EXTERNAL_USER_ID: executionContext.customer?.externalUserId,
     OMNI_CUSTOMER_ID: executionContext.customer?.customerId,
     OMNI_ORGANIZATION_ID: executionContext.customer?.organizationId,

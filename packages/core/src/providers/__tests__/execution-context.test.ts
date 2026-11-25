@@ -57,6 +57,17 @@ describe('execution context', () => {
     expect(context.identity.personId).toBeUndefined();
   });
 
+  it('carries sessionStart only when the trigger marks a new channel session', () => {
+    const started = { ...trigger, source: { ...trigger.source, sessionStart: true as const } };
+
+    expect(buildOmniExecutionContext(started).source.sessionStart).toBe(true);
+    expect(buildOmniEnv(started).OMNI_SESSION_START).toBe('1');
+    expect(buildProviderRequestContext(started).executionContext?.source.sessionStart).toBe(true);
+
+    expect(buildOmniExecutionContext(trigger).source).not.toHaveProperty('sessionStart');
+    expect(buildOmniEnv(trigger)).not.toHaveProperty('OMNI_SESSION_START');
+  });
+
   it('builds CLI env with legacy aliases and customer IDs', () => {
     const env = buildOmniEnv(trigger);
 

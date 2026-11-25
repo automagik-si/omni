@@ -429,6 +429,7 @@ export interface OmniExecutionContext {
     chatId: string;
     threadId?: string;
     messageId: string;
+    sessionStart?: true;
   };
   session: {
     id: string;
@@ -501,6 +502,7 @@ export interface AgentTrigger {
     messageId: string;
     /** Thread/topic identifier (e.g. Telegram forum topic, Slack thread) */
     threadId?: string;
+    sessionStart?: true;
   };
   /** Sender information */
   sender: {

@@ -348,6 +348,7 @@ export interface MessageReceivedPayload {
    * is per-observer, every instance that journals the message agrees on it.
    */
   senderInstanceId?: string;
+  sessionStart?: boolean;
   rawPayload?: Record<string, unknown>;
 }
 
