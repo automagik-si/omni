@@ -85,9 +85,13 @@ export function registerChannelSchemas(registry: OpenAPIRegistry): void {
     description:
       'Receives the events of a Zenvia subscription for one instance. Unauthenticated by contract: Zenvia signs nothing, ' +
       'so authenticity rests on the unguessable instance id in the path plus the instance webhookVerifyToken, which ' +
-      'the subscription echoes as the fixed x-webhook-token header and the plugin requires on every request. ' +
+      'the subscription echoes as the fixed x-webhook-token header and the plugin requires on every request. Where ' +
+      'Zenvia takes only a URL (the sandbox webhook), the token may come as the token query parameter instead; the ' +
+      'header wins when both are present. ' +
       'MESSAGE events with direction IN become message.received and MESSAGE_STATUS events become delivered, read or ' +
-      'failed. Every other event is acknowledged with 200 and ignored.',
+      'failed. CONVERSATION_STATUS events of the instance sender become chat.human_takeover when a user is assigned ' +
+      '(distributed, claimed or transferred to a user) and chat.human_released when the conversation is closed. ' +
+      'Every other event is acknowledged with 200 and ignored.',
     security: [],
     request: {
       params: z.object({ instanceId: z.string().uuid().openapi({ description: 'Zenvia instance id' }) }),
@@ -98,7 +102,10 @@ export function registerChannelSchemas(registry: OpenAPIRegistry): void {
     },
     responses: {
       200: { description: 'Event acknowledged', content: { 'text/plain': { schema: z.string() } } },
-      401: { description: 'The x-webhook-token header is missing or does not match the instance webhookVerifyToken' },
+      401: {
+        description:
+          'Neither the x-webhook-token header nor the token query parameter is present, or the one used does not match the instance webhookVerifyToken',
+      },
       503: {
         description:
           'No connected Zenvia instance with this id yet (Zenvia may redeliver), or the Zenvia plugin is not loaded',

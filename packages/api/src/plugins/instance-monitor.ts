@@ -244,6 +244,11 @@ export function buildInstanceConnectOptions(instance: {
   zenviaHandoffGroupId?: string | null;
   zenviaHandoffUserId?: string | null;
   zenviaHandoffRouting?: ZenviaHandoffRouting | null;
+  zenviaConnectorSlug?: string | null;
+  zenviaConnectorIntegrationId?: string | null;
+  zenviaConnectorAccessToken?: string | null;
+  zenviaConnectorAccessKey?: string | null;
+  zenviaConnectorEnv?: string | null;
   ascFlowBaseUrl?: string | null;
   ascFlowLogin?: string | null;
   ascFlowChave?: string | null;
@@ -377,9 +382,20 @@ function applyZenviaOptions(
     zenviaHandoffGroupId?: string | null;
     zenviaHandoffUserId?: string | null;
     zenviaHandoffRouting?: ZenviaHandoffRouting | null;
+    zenviaConnectorSlug?: string | null;
+    zenviaConnectorIntegrationId?: string | null;
+    zenviaConnectorAccessToken?: string | null;
+    zenviaConnectorAccessKey?: string | null;
+    zenviaConnectorEnv?: string | null;
     webhookVerifyToken?: string | null;
   },
 ): void {
+  if (instance.zenviaConnectorSlug) options.zenviaConnectorSlug = instance.zenviaConnectorSlug;
+  if (instance.zenviaConnectorIntegrationId)
+    options.zenviaConnectorIntegrationId = instance.zenviaConnectorIntegrationId;
+  if (instance.zenviaConnectorAccessToken) options.zenviaConnectorAccessToken = instance.zenviaConnectorAccessToken;
+  if (instance.zenviaConnectorAccessKey) options.zenviaConnectorAccessKey = instance.zenviaConnectorAccessKey;
+  if (instance.zenviaConnectorEnv) options.zenviaConnectorEnv = instance.zenviaConnectorEnv;
   if (instance.zenviaApiToken) options.zenviaApiToken = instance.zenviaApiToken;
   if (instance.zenviaSenderId) options.zenviaSenderId = instance.zenviaSenderId;
   if (instance.zenviaHandoffSolution) options.zenviaHandoffSolution = instance.zenviaHandoffSolution;

@@ -1372,7 +1372,8 @@ Forward-only journal subscriptions cover `access.>`, `chat.>`, `identity.>`, `pe
 all new-family types; unclassified family types are excluded until classified.
 
 Sensitive access events (pairing approved, owner/device/connect-link/key lifecycle),
-identity events, instance connect/disconnect, and chat idle/handoff/closed events require
+identity events, instance connect/disconnect, and chat idle/handoff/closed/human takeover/human
+released events require
 `isAdminTierKey`: a literal `*` scope **and** `instanceIds === null`. IDs-only record changes,
 `chat.archived`, and `instance.updated` use normal instance visibility. Restricted keys
 cannot see new-family no-instance rows, including through aggregates and trace relatives.

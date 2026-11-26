@@ -35,11 +35,19 @@ function messageEvent(message: Record<string, unknown>, direction: 'IN' | 'OUT' 
 }
 
 function post(payload: unknown, headers: Record<string, string> = { 'x-webhook-token': VERIFY_TOKEN }): Request {
-  return new Request(WEBHOOK_URL, {
+  return postTo(WEBHOOK_URL, payload, headers);
+}
+
+function postTo(url: string, payload: unknown, headers: Record<string, string> = {}): Request {
+  return new Request(url, {
     method: 'POST',
     body: JSON.stringify(payload),
     headers: { 'content-type': 'application/json', ...headers },
   });
+}
+
+function withToken(token: string): string {
+  return `${WEBHOOK_URL}?token=${encodeURIComponent(token)}`;
 }
 
 type Published = { type: string; payload: unknown };
@@ -317,8 +325,8 @@ describe('Zenvia webhook', () => {
     expect(received(eventBus)).toHaveLength(0);
   });
 
-  it('acks conversation status events without emitting', async () => {
-    const res = await plugin.handleWebhook(post({ type: 'CONVERSATION_STATUS', conversationStatus: {} }));
+  it('acks event types it does not handle without emitting', async () => {
+    const res = await plugin.handleWebhook(post({ type: 'CONTACT', contact: {} }));
     expect(res.status).toBe(200);
     expect(eventBus.published).toHaveLength(0);
   });
@@ -365,6 +373,93 @@ describe('Zenvia webhook', () => {
       expect(wrong.status).toBe(401);
       expect(right.status).toBe(200);
       expect(received(eventBus).map((e) => e.externalId)).toEqual(['m-right']);
+    });
+
+    it('accepts the token as the token query parameter when there is no header', async () => {
+      const res = await plugin.handleWebhook(
+        postTo(withToken(VERIFY_TOKEN), messageEvent({ id: 'm-query', contents: [{ type: 'text', text: 'x' }] })),
+      );
+      expect(res.status).toBe(200);
+      expect(received(eventBus).map((e) => e.externalId)).toEqual(['m-query']);
+    });
+
+    it('rejects a wrong or empty token query parameter', async () => {
+      const wrong = await plugin.handleWebhook(
+        postTo(withToken('nope'), messageEvent({ id: 'm-query-wrong', contents: [{ type: 'text', text: 'x' }] })),
+      );
+      const empty = await plugin.handleWebhook(
+        postTo(withToken(''), messageEvent({ id: 'm-query-empty', contents: [{ type: 'text', text: 'x' }] })),
+      );
+      expect(wrong.status).toBe(401);
+      expect(empty.status).toBe(401);
+      expect(received(eventBus)).toHaveLength(0);
+    });
+
+    it('lets the header win over the query parameter', async () => {
+      const wrongHeader = await plugin.handleWebhook(
+        postTo(
+          withToken(VERIFY_TOKEN),
+          messageEvent({ id: 'm-wrong-header', contents: [{ type: 'text', text: 'x' }] }),
+          {
+            'x-webhook-token': 'nope',
+          },
+        ),
+      );
+      const rightHeader = await plugin.handleWebhook(
+        postTo(withToken('nope'), messageEvent({ id: 'm-right-header', contents: [{ type: 'text', text: 'x' }] }), {
+          'x-webhook-token': VERIFY_TOKEN,
+        }),
+      );
+      expect(wrongHeader.status).toBe(401);
+      expect(rightHeader.status).toBe(200);
+      expect(received(eventBus).map((e) => e.externalId)).toEqual(['m-right-header']);
+    });
+
+    it('never logs the supplied token', async () => {
+      const logger = plugin.getLogger();
+      const lines: string[] = [];
+      for (const level of ['debug', 'info', 'warn', 'error'] as const) {
+        spyOn(logger, level).mockImplementation((...args: unknown[]) => {
+          lines.push(JSON.stringify(args));
+        });
+      }
+      const supplied = 'leaked-token-value';
+
+      await plugin.handleWebhook(
+        postTo(withToken(supplied), messageEvent({ id: 'm-log', contents: [{ type: 'text', text: 'x' }] })),
+      );
+
+      expect(lines.length).toBeGreaterThan(0);
+      expect(lines.some((line) => line.includes(supplied))).toBe(false);
+    });
+  });
+
+  describe('sandbox sender keyword', () => {
+    const SANDBOX_KEYWORD = 'secret-drive';
+
+    beforeEach(async () => {
+      await setup({ zenviaSenderId: SANDBOX_KEYWORD });
+    });
+
+    it('accepts an inbound message addressed to the keyword the instance is configured with', async () => {
+      const res = await plugin.handleWebhook(
+        postTo(
+          withToken(VERIFY_TOKEN),
+          messageEvent({ id: 'm-sandbox', to: SANDBOX_KEYWORD, contents: [{ type: 'text', text: 'Hi' }] }),
+        ),
+      );
+      expect(res.status).toBe(200);
+      expect(received(eventBus)).toEqual([
+        expect.objectContaining({ externalId: 'm-sandbox', chatId: CONTACT, from: CONTACT }),
+      ]);
+    });
+
+    it('drops a message addressed to another keyword or to a number', async () => {
+      await plugin.handleWebhook(
+        post(messageEvent({ id: 'm-other-keyword', to: 'other-keyword', contents: [{ type: 'text', text: 'x' }] })),
+      );
+      await plugin.handleWebhook(post(messageEvent({ id: 'm-number', contents: [{ type: 'text', text: 'x' }] })));
+      expect(received(eventBus)).toHaveLength(0);
     });
   });
 

@@ -7,13 +7,22 @@ interface SchemaObject {
   required?: string[];
 }
 
-const SECRET_FIELDS = ['zenviaApiToken', 'zenviaSalesApiKey', 'webhookVerifyToken'];
+const SECRET_FIELDS = [
+  'zenviaApiToken',
+  'zenviaSalesApiKey',
+  'webhookVerifyToken',
+  'zenviaConnectorAccessToken',
+  'zenviaConnectorAccessKey',
+];
 const PLAIN_FIELDS = [
   'zenviaSenderId',
   'zenviaHandoffSolution',
   'zenviaHandoffGroupId',
   'zenviaHandoffUserId',
   'zenviaHandoffRouting',
+  'zenviaConnectorSlug',
+  'zenviaConnectorIntegrationId',
+  'zenviaConnectorEnv',
 ];
 const ZENVIA_FIELDS = [...SECRET_FIELDS, ...PLAIN_FIELDS];
 
@@ -90,6 +99,15 @@ describe('OpenAPI documents the Zenvia instance configuration', () => {
       ]);
       const routing = props(body).zenviaHandoffRouting as SchemaObject | undefined;
       expect(Object.keys(props(routing ?? {})).sort()).toEqual(['field', 'groups']);
+    }
+  });
+
+  test('the live chat env lists homol and prod', () => {
+    for (const body of [component('CreateInstanceRequest'), updateBody(), component('ConnectInstanceRequest')]) {
+      expect([...((props(body).zenviaConnectorEnv?.enum as string[] | undefined) ?? [])].sort()).toEqual([
+        'homol',
+        'prod',
+      ]);
     }
   });
 

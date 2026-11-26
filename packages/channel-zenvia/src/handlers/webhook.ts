@@ -1,17 +1,29 @@
 import { timingSafeEqual } from 'node:crypto';
 
 import type { ZenviaPlugin } from '../plugin';
-import { ZenviaEventEnvelopeSchema, ZenviaMessageEventSchema, ZenviaMessageStatusEventSchema } from '../types';
+import {
+  ZenviaConversationStatusEventSchema,
+  ZenviaEventEnvelopeSchema,
+  ZenviaMessageEventSchema,
+  ZenviaMessageStatusEventSchema,
+} from '../types';
 
 const MAX_BODY_BYTES = 1024 * 1024;
 
 const TOKEN_HEADER = 'x-webhook-token';
+const TOKEN_QUERY_PARAM = 'token';
 
 function tokensMatch(supplied: string | null, expected: string): boolean {
   if (supplied === null) return false;
   const a = Buffer.from(supplied);
   const b = Buffer.from(expected);
   return a.length === b.length && timingSafeEqual(a, b);
+}
+
+function suppliedToken(request: Request): string | null {
+  const fromHeader = request.headers.get(TOKEN_HEADER);
+  if (fromHeader !== null) return fromHeader;
+  return new URL(request.url).searchParams.get(TOKEN_QUERY_PARAM);
 }
 
 export async function handleZenviaWebhookRequest(
@@ -22,7 +34,7 @@ export async function handleZenviaWebhookRequest(
 ): Promise<Response> {
   const logger = plugin.getLogger();
 
-  if (verifyToken && !tokensMatch(request.headers.get(TOKEN_HEADER), verifyToken)) {
+  if (verifyToken && !tokensMatch(suppliedToken(request), verifyToken)) {
     logger.warn('[zenvia] webhook token missing or mismatched — rejecting', { instanceId });
     return new Response('Unauthorized', { status: 401 });
   }
@@ -78,6 +90,9 @@ export async function handleZenviaEvent(plugin: ZenviaPlugin, instanceId: string
     case 'MESSAGE_STATUS':
       await dispatchStatusEvent(plugin, instanceId, payload);
       return;
+    case 'CONVERSATION_STATUS':
+      await dispatchConversationStatusEvent(plugin, instanceId, payload);
+      return;
     default:
       logger.debug('[zenvia] ignoring unsupported webhook event', { instanceId, type: envelope.data.type });
   }
@@ -123,6 +138,29 @@ async function dispatchStatusEvent(plugin: ZenviaPlugin, instanceId: string, pay
     await plugin.handleStatusUpdate(instanceId, parsed.data);
   } catch (err) {
     logger.warn('[zenvia] failed to emit status event', { instanceId, err: String(err) });
+    throw err;
+  }
+}
+
+async function dispatchConversationStatusEvent(
+  plugin: ZenviaPlugin,
+  instanceId: string,
+  payload: unknown,
+): Promise<void> {
+  const logger = plugin.getLogger();
+  const parsed = ZenviaConversationStatusEventSchema.safeParse(payload);
+  if (!parsed.success) {
+    logger.warn('[zenvia] CONVERSATION_STATUS event failed schema validation', {
+      instanceId,
+      issues: parsed.error.issues.slice(0, 5),
+    });
+    return;
+  }
+
+  try {
+    await plugin.handleConversationStatus(instanceId, parsed.data);
+  } catch (err) {
+    logger.warn('[zenvia] failed to emit conversation status event', { instanceId, err: String(err) });
     throw err;
   }
 }

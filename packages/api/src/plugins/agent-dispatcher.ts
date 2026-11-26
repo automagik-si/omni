@@ -2524,6 +2524,7 @@ function buildMessageTrigger(
       chatId,
       messageId: messages[0]?.payload.externalId ?? '',
       threadId,
+      ...(messages.some((m) => m.payload.sessionStart === true) ? { sessionStart: true as const } : {}),
     },
     sender: {
       platformUserId: senderId,
@@ -4323,6 +4324,106 @@ async function applyCloseContactGate(
   }
 }
 
+async function applySessionStartGate(
+  services: Services,
+  chatRecordId: string | null,
+  instanceId: string,
+  chatId: string,
+  chatSettings: ChatSettingsForGate | null,
+  messages: readonly BufferedMessage[],
+  msgTimestamp: number,
+  trustedTenantId?: string,
+): Promise<'skip' | 'pass' | { resumedAt: string }> {
+  const starter = messages.find((m) => m.payload.sessionStart === true);
+  if (!starter || chatSettings?.agentPaused !== true || !chatRecordId) return 'pass';
+  const currentResumedAt = chatSettings.agentResumedAt ? new Date(chatSettings.agentResumedAt).getTime() : Number.NaN;
+  if (Number.isFinite(currentResumedAt) && msgTimestamp < currentResumedAt) return 'pass';
+  const resumedAt = new Date(msgTimestamp - 1).toISOString();
+  try {
+    await runDispatchDb(services.db, trustedTenantId, () =>
+      services.chats.update(chatRecordId, {
+        settings: {
+          ...(chatSettings as Record<string, unknown>),
+          agentPaused: false,
+          agentResumedAt: resumedAt,
+        } as Record<string, unknown>,
+      }),
+    );
+  } catch (err) {
+    log.warn('Failed to resume the agent on a new channel session, deferring dispatch', {
+      instanceId,
+      chatId,
+      error: String(err),
+    });
+    return 'skip';
+  }
+  log.info('New channel session resumed a paused agent', {
+    instanceId,
+    chatId,
+    externalId: starter.payload.externalId,
+    resumedAt,
+  });
+  return { resumedAt };
+}
+
+async function passesChatStateGates(
+  services: Services,
+  db: Database,
+  instanceId: string,
+  chatId: string,
+  messages: readonly BufferedMessage[],
+  trustedTenantId?: string,
+): Promise<boolean> {
+  const firstMessage = messages[0];
+  if (!firstMessage) return false;
+  const chatRecord = await runDispatchDb(db, trustedTenantId, () =>
+    services.chats.findByExternalIdSmart(instanceId, chatId),
+  );
+  const chatSettings = chatRecord?.settings as ChatSettingsForGate | null;
+
+  const closeGate = await applyCloseContactGate(
+    services,
+    chatRecord?.id ?? null,
+    instanceId,
+    chatId,
+    chatSettings,
+    trustedTenantId,
+  );
+  if (closeGate === 'skip') return false;
+
+  const msgTimestamp = (extractPlatformTimestamp(firstMessage.payload.rawPayload, Date.now()) ?? new Date()).getTime();
+  const sessionGate =
+    closeGate === 'reopened'
+      ? 'pass'
+      : await applySessionStartGate(
+          services,
+          chatRecord?.id ?? null,
+          instanceId,
+          chatId,
+          chatSettings,
+          messages,
+          msgTimestamp,
+          trustedTenantId,
+        );
+  if (sessionGate === 'skip') return false;
+  const resumedBySession = sessionGate !== 'pass';
+
+  if (chatSettings?.agentPaused === true && closeGate !== 'reopened' && !resumedBySession) {
+    logDrop('agent paused (handoff active)', firstMessage.payload, instanceId);
+    return false;
+  }
+
+  const resumedAtSetting = resumedBySession ? sessionGate.resumedAt : chatSettings?.agentResumedAt;
+  if (resumedAtSetting && msgTimestamp < new Date(resumedAtSetting).getTime()) {
+    logDrop('pre-resume message (arrived during handoff window)', firstMessage.payload, instanceId, {
+      msgTimestamp: new Date(msgTimestamp).toISOString(),
+      resumedAt: resumedAtSetting,
+    });
+    return false;
+  }
+  return true;
+}
+
 function sendAgentAckMessage(channel: ChannelType, instanceId: string, chatId: string, message: string | null): void {
   if (!message) return;
   // The ack precedes the reply and must not count as an answered turn (#912).
@@ -4391,52 +4492,9 @@ async function processAgentResponse(
     return;
   }
 
-  // ── Close-contact gate — runs BEFORE the handoff/agentPaused gate ──
-  // See applyCloseContactGate() for the full semantics.
-  const chatRecord = await runDispatchDb(db, dispatchTenantId, () =>
-    services.chats.findByExternalIdSmart(instance.id, chatId),
-  );
-  const chatSettings = chatRecord?.settings as ChatSettingsForGate | null;
-
-  const gateResult = await applyCloseContactGate(
-    services,
-    chatRecord?.id ?? null,
-    instance.id,
-    chatId,
-    chatSettings,
-    dispatchTenantId,
-  );
-  if (gateResult === 'skip') {
+  if (!(await passesChatStateGates(services, db, instance.id, chatId, messages, dispatchTenantId))) {
     ackHandle.remove();
     return;
-  }
-
-  // ── Handoff gate — skip dispatch if agent is paused (human takeover active) ──
-  // Also drop messages received before the agent was last resumed (NATS redelivery
-  // of pre-handoff messages that queue up while agentPaused=true).
-  // After the close-contact gate above, a residual `agentPaused: true` here is a
-  // genuine handoff pause (not a close-contact terminal/cooldown).
-  const isAgentPaused = chatSettings?.agentPaused === true && gateResult !== 'reopened';
-  if (isAgentPaused) {
-    logDrop('agent paused (handoff active)', firstMessage.payload, instance.id);
-    ackHandle.remove();
-    return;
-  }
-  // Drop messages older than agentResumedAt — these are NATS redeliveries of
-  // messages that arrived during the handoff window and should not be processed.
-  if (chatSettings?.agentResumedAt) {
-    const resumedAt = new Date(chatSettings.agentResumedAt).getTime();
-    const msgTimestamp = (
-      extractPlatformTimestamp(firstMessage.payload.rawPayload, Date.now()) ?? new Date()
-    ).getTime();
-    if (msgTimestamp < resumedAt) {
-      logDrop('pre-resume message (arrived during handoff window)', firstMessage.payload, instance.id, {
-        msgTimestamp: new Date(msgTimestamp).toISOString(),
-        resumedAt: chatSettings.agentResumedAt,
-      });
-      ackHandle.remove();
-      return;
-    }
   }
 
   // ── Session Reset Check + Activity Recording (post-personId guard) ──
@@ -6707,6 +6765,8 @@ export const __test__ = {
   fetchSenderMetadata,
   fetchChatMetadata,
   applyCloseContactGate,
+  passesChatStateGates,
+  buildMessageTrigger,
   downloadToTempFile,
   mediaCompletions,
   mediaResultCache,

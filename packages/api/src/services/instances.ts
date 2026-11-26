@@ -84,6 +84,8 @@ const SEALED_CREDENTIAL_COLUMNS = [
   'twilioAuthToken',
   'zenviaApiToken',
   'zenviaSalesApiKey',
+  'zenviaConnectorAccessToken',
+  'zenviaConnectorAccessKey',
 ] as const satisfies readonly (keyof Instance)[];
 
 /**

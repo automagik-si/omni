@@ -537,6 +537,14 @@ export abstract class BaseChannelPlugin implements ChannelPlugin {
     await this.publishEventInternal('message.read', payload, instanceId);
   }
 
+  protected async emitChatHumanTakeover(payload: EventPayloadMap['chat.human_takeover']): Promise<void> {
+    await this.publishEventInternal('chat.human_takeover', payload, payload.instanceId);
+  }
+
+  protected async emitChatHumanReleased(payload: EventPayloadMap['chat.human_released']): Promise<void> {
+    await this.publishEventInternal('chat.human_released', payload, payload.instanceId);
+  }
+
   /**
    * Emit reaction.received event
    *

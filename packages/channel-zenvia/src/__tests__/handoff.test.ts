@@ -51,12 +51,17 @@ describe('resolveHandoffMode', () => {
     expect(resolveHandoffMode(base)).toBeNull();
   });
 
-  it('transfers with a routing map and no default group, but only together with the Sales key', () => {
+  it('transfers with a routing map and no default group, with or without the Sales key', () => {
     const handoffRouting = { field: 'queue_field', groups: { 'queue-a': 'group-1' } };
 
     expect(resolveHandoffMode({ ...base, salesApiKey: 'k', handoffRouting })).toBe('transfer');
-    expect(resolveHandoffMode({ ...base, handoffRouting })).toBeNull();
-    expect(resolveHandoffMode({ ...base, handoffRouting, handoffSolution: 'nlu' })).toBe('routing');
+    expect(resolveHandoffMode({ ...base, handoffRouting })).toBe('transfer');
+    expect(resolveHandoffMode({ ...base, handoffRouting, handoffSolution: 'nlu' })).toBe('transfer');
+  });
+
+  it('transfers with a group and no Sales key, even with a solution', () => {
+    expect(resolveHandoffMode({ ...base, handoffGroupId: 'g' })).toBe('transfer');
+    expect(resolveHandoffMode({ ...base, handoffGroupId: 'g', handoffSolution: 'nlu' })).toBe('transfer');
   });
 });
 

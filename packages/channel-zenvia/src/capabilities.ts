@@ -51,6 +51,8 @@ export const ZENVIA_CAPABILITIES: ChannelCapabilities = {
   ],
   events: {
     emits: [
+      'chat.human_released',
+      'chat.human_takeover',
       'instance.connected',
       'instance.disconnected',
       'message.delivered',

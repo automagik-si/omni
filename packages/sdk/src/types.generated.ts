@@ -4191,7 +4191,7 @@ export interface paths {
         put?: never;
         /**
          * Zenvia subscription webhook (public)
-         * @description Receives the events of a Zenvia subscription for one instance. Unauthenticated by contract: Zenvia signs nothing, so authenticity rests on the unguessable instance id in the path plus the instance webhookVerifyToken, which the subscription echoes as the fixed x-webhook-token header and the plugin requires on every request. MESSAGE events with direction IN become message.received and MESSAGE_STATUS events become delivered, read or failed. Every other event is acknowledged with 200 and ignored.
+         * @description Receives the events of a Zenvia subscription for one instance. Unauthenticated by contract: Zenvia signs nothing, so authenticity rests on the unguessable instance id in the path plus the instance webhookVerifyToken, which the subscription echoes as the fixed x-webhook-token header and the plugin requires on every request. Where Zenvia takes only a URL (the sandbox webhook), the token may come as the token query parameter instead; the header wins when both are present. MESSAGE events with direction IN become message.received and MESSAGE_STATUS events become delivered, read or failed. CONVERSATION_STATUS events of the instance sender become chat.human_takeover when a user is assigned (distributed, claimed or transferred to a user) and chat.human_released when the conversation is closed. Every other event is acknowledged with 200 and ignored.
          */
         post: operations["receiveZenviaWebhook"];
         delete?: never;
@@ -6616,19 +6616,28 @@ export interface components {
              * @enum {string|null}
              */
             zenviaHandoffSolution?: "conversion" | "zenvia_chat" | "nlu" | null;
-            /** @description Sales group dedicated to the chatbot; handoffs transfer the prospect to it. Read by the plugin at connect: restart the instance after changing it */
+            /** @description Zenvia group dedicated to the chatbot; handoffs transfer the conversation to it (through the Sales API with zenviaSalesApiKey, the Conversations API otherwise). In live chat mode (zenviaConnectorSlug) it is the default queue sent as the CLOSE_CONVERSATION reason instead. Read by the plugin at connect: restart the instance after changing it */
             zenviaHandoffGroupId?: string | null;
-            /** @description Optional agent inside the handoff group the prospect is transferred to. Read by the plugin at connect: restart the instance after changing it */
+            /** @description Optional agent inside the handoff group the conversation is transferred to. Read by the plugin at connect: restart the instance after changing it */
             zenviaHandoffUserId?: string | null;
-            /** @description Routes a handoff to a Sales group by the value of one handoffFields key: { field, groups: { <value>: <groupId> } }. zenviaHandoffGroupId is the fallback for an unmapped or missing value; without it such a handoff is refused (422). Read by the plugin at connect: restart the instance after changing it. null clears it */
+            /** @description Routes a handoff to a Zenvia group by the value of one handoffFields key: { field, groups: { <value>: <groupId> } }. zenviaHandoffGroupId is the fallback for an unmapped or missing value; without it such a handoff is refused (422). In live chat mode (zenviaConnectorSlug) each mapped value is the queue sent as the CLOSE_CONVERSATION reason, the string the Zenvia NLU bot branches on. Read by the plugin at connect: restart the instance after changing it. null clears it */
             zenviaHandoffRouting?: {
-                /** @description Key of handoffFields whose value picks the Sales group */
+                /** @description Key of handoffFields whose value picks the handoff group */
                 field: string;
-                /** @description Maps a value of the field to a Sales group id. Values compare trimmed, with inner whitespace collapsed and ignoring case; two keys that become equal are rejected. Only string values match */
+                /** @description Maps a value of the field to a Zenvia group id. Values compare trimmed, with inner whitespace collapsed and ignoring case; two keys that become equal are rejected. Only string values match */
                 groups: {
                     [key: string]: string;
                 };
             } | null;
+            /** @description Zenvia NLU Agent Connector account slug ({slug} in https://agent.altubots.com/altu-connector/{slug}/{integrationId}). Setting it runs the instance as a live chat behind a Zenvia NLU bot: the Channels API is not used and zenviaApiToken, zenviaSenderId and webhookVerifyToken become optional. Read by the plugin at connect: restart the instance after changing it */
+            zenviaConnectorSlug?: string | null;
+            /** @description Zenvia NLU live chat integration id ({integrationId} of the connector endpoint). Required in live chat mode. Read by the plugin at connect: restart the instance after changing it */
+            zenviaConnectorIntegrationId?: string | null;
+            /**
+             * @description Which webhook of the integration Zenvia NLU answers on, sent as ?env= on every call: homol or prod (its default). Read by the plugin at connect: restart the instance after changing it
+             * @enum {string|null}
+             */
+            zenviaConnectorEnv?: "homol" | "prod" | null;
             /**
              * Format: date-time
              * @description Creation timestamp
@@ -6853,22 +6862,35 @@ export interface components {
              * @enum {string|null}
              */
             zenviaHandoffSolution?: "conversion" | "zenvia_chat" | "nlu" | null;
-            /** @description Zenvia Sales API key, not the same token as zenviaApiToken. Sealed at rest and write-only: never returned */
+            /** @description Zenvia Sales API key, not the same token as zenviaApiToken. With it a handoff transfers through the Sales API; without it, through the Conversations API with zenviaApiToken. Sealed at rest and write-only: never returned */
             zenviaSalesApiKey?: string | null;
-            /** @description Sales group dedicated to the chatbot; handoffs transfer the prospect to it. Read by the plugin at connect: restart the instance after changing it */
+            /** @description Zenvia group dedicated to the chatbot; handoffs transfer the conversation to it (through the Sales API with zenviaSalesApiKey, the Conversations API otherwise). In live chat mode (zenviaConnectorSlug) it is the default queue sent as the CLOSE_CONVERSATION reason instead. Read by the plugin at connect: restart the instance after changing it */
             zenviaHandoffGroupId?: string | null;
-            /** @description Optional agent inside the handoff group the prospect is transferred to. Read by the plugin at connect: restart the instance after changing it */
+            /** @description Optional agent inside the handoff group the conversation is transferred to. Read by the plugin at connect: restart the instance after changing it */
             zenviaHandoffUserId?: string | null;
-            /** @description Routes a handoff to a Sales group by the value of one handoffFields key: { field, groups: { <value>: <groupId> } }. zenviaHandoffGroupId is the fallback for an unmapped or missing value; without it such a handoff is refused (422). Read by the plugin at connect: restart the instance after changing it. null clears it */
+            /** @description Routes a handoff to a Zenvia group by the value of one handoffFields key: { field, groups: { <value>: <groupId> } }. zenviaHandoffGroupId is the fallback for an unmapped or missing value; without it such a handoff is refused (422). In live chat mode (zenviaConnectorSlug) each mapped value is the queue sent as the CLOSE_CONVERSATION reason, the string the Zenvia NLU bot branches on. Read by the plugin at connect: restart the instance after changing it. null clears it */
             zenviaHandoffRouting?: {
-                /** @description Key of handoffFields whose value picks the Sales group */
+                /** @description Key of handoffFields whose value picks the handoff group */
                 field: string;
-                /** @description Maps a value of the field to a Sales group id. Values compare trimmed, with inner whitespace collapsed and ignoring case; two keys that become equal are rejected. Only string values match */
+                /** @description Maps a value of the field to a Zenvia group id. Values compare trimmed, with inner whitespace collapsed and ignoring case; two keys that become equal are rejected. Only string values match */
                 groups: {
                     [key: string]: string;
                 };
             } | null;
-            /** @description Shared secret the webhook of a Gupshup, ASC, ASC Flow or Zenvia instance checks. On Zenvia the subscription sends it as x-webhook-token and the instance does not connect without it. Sealed at rest and write-only: never returned. null clears it */
+            /** @description Zenvia NLU Agent Connector account slug ({slug} in https://agent.altubots.com/altu-connector/{slug}/{integrationId}). Setting it runs the instance as a live chat behind a Zenvia NLU bot: the Channels API is not used and zenviaApiToken, zenviaSenderId and webhookVerifyToken become optional. Read by the plugin at connect: restart the instance after changing it */
+            zenviaConnectorSlug?: string | null;
+            /** @description Zenvia NLU live chat integration id ({integrationId} of the connector endpoint). Required in live chat mode. Read by the plugin at connect: restart the instance after changing it */
+            zenviaConnectorIntegrationId?: string | null;
+            /** @description Access token of the Zenvia NLU live chat integration, carried as the access_token claim of every JWT. Required in live chat mode. Sealed at rest and write-only: never returned */
+            zenviaConnectorAccessToken?: string | null;
+            /** @description Access key of the Zenvia NLU live chat integration, the HS256 key that signs and verifies every JWT. Required in live chat mode. Sealed at rest and write-only: never returned */
+            zenviaConnectorAccessKey?: string | null;
+            /**
+             * @description Which webhook of the integration Zenvia NLU answers on, sent as ?env= on every call: homol or prod (its default). Read by the plugin at connect: restart the instance after changing it
+             * @enum {string|null}
+             */
+            zenviaConnectorEnv?: "homol" | "prod" | null;
+            /** @description Shared secret the webhook of a Gupshup, ASC, ASC Flow or Zenvia instance checks. On Zenvia the subscription sends it as the x-webhook-token header or the token query parameter, and the instance does not connect without it (except in live chat mode, where a JWT authorizes the connector events). Sealed at rest and write-only: never returned. null clears it */
             webhookVerifyToken?: string | null;
         };
         InstanceStatus: {
@@ -6934,21 +6956,34 @@ export interface components {
              * @enum {string}
              */
             zenviaHandoffSolution?: "conversion" | "zenvia_chat" | "nlu";
-            /** @description Zenvia Sales API key, not the same token as zenviaApiToken. Sealed at rest and write-only: never returned */
+            /** @description Zenvia Sales API key, not the same token as zenviaApiToken. With it a handoff transfers through the Sales API; without it, through the Conversations API with zenviaApiToken. Sealed at rest and write-only: never returned */
             zenviaSalesApiKey?: string;
-            /** @description Sales group dedicated to the chatbot; handoffs transfer the prospect to it. Read by the plugin at connect: restart the instance after changing it */
+            /** @description Zenvia group dedicated to the chatbot; handoffs transfer the conversation to it (through the Sales API with zenviaSalesApiKey, the Conversations API otherwise). In live chat mode (zenviaConnectorSlug) it is the default queue sent as the CLOSE_CONVERSATION reason instead. Read by the plugin at connect: restart the instance after changing it */
             zenviaHandoffGroupId?: string;
-            /** @description Optional agent inside the handoff group the prospect is transferred to. Read by the plugin at connect: restart the instance after changing it */
+            /** @description Optional agent inside the handoff group the conversation is transferred to. Read by the plugin at connect: restart the instance after changing it */
             zenviaHandoffUserId?: string;
-            /** @description Routes a handoff to a Sales group by the value of one handoffFields key: { field, groups: { <value>: <groupId> } }. zenviaHandoffGroupId is the fallback for an unmapped or missing value; without it such a handoff is refused (422). Read by the plugin at connect: restart the instance after changing it. null clears it */
+            /** @description Routes a handoff to a Zenvia group by the value of one handoffFields key: { field, groups: { <value>: <groupId> } }. zenviaHandoffGroupId is the fallback for an unmapped or missing value; without it such a handoff is refused (422). In live chat mode (zenviaConnectorSlug) each mapped value is the queue sent as the CLOSE_CONVERSATION reason, the string the Zenvia NLU bot branches on. Read by the plugin at connect: restart the instance after changing it. null clears it */
             zenviaHandoffRouting?: {
-                /** @description Key of handoffFields whose value picks the Sales group */
+                /** @description Key of handoffFields whose value picks the handoff group */
                 field: string;
-                /** @description Maps a value of the field to a Sales group id. Values compare trimmed, with inner whitespace collapsed and ignoring case; two keys that become equal are rejected. Only string values match */
+                /** @description Maps a value of the field to a Zenvia group id. Values compare trimmed, with inner whitespace collapsed and ignoring case; two keys that become equal are rejected. Only string values match */
                 groups: {
                     [key: string]: string;
                 };
             };
+            /** @description Zenvia NLU Agent Connector account slug ({slug} in https://agent.altubots.com/altu-connector/{slug}/{integrationId}). Setting it runs the instance as a live chat behind a Zenvia NLU bot: the Channels API is not used and zenviaApiToken, zenviaSenderId and webhookVerifyToken become optional. Read by the plugin at connect: restart the instance after changing it */
+            zenviaConnectorSlug?: string;
+            /** @description Zenvia NLU live chat integration id ({integrationId} of the connector endpoint). Required in live chat mode. Read by the plugin at connect: restart the instance after changing it */
+            zenviaConnectorIntegrationId?: string;
+            /** @description Access token of the Zenvia NLU live chat integration, carried as the access_token claim of every JWT. Required in live chat mode. Sealed at rest and write-only: never returned */
+            zenviaConnectorAccessToken?: string;
+            /** @description Access key of the Zenvia NLU live chat integration, the HS256 key that signs and verifies every JWT. Required in live chat mode. Sealed at rest and write-only: never returned */
+            zenviaConnectorAccessKey?: string;
+            /**
+             * @description Which webhook of the integration Zenvia NLU answers on, sent as ?env= on every call: homol or prod (its default). Read by the plugin at connect: restart the instance after changing it
+             * @enum {string}
+             */
+            zenviaConnectorEnv?: "homol" | "prod";
             /** @description Zenvia only. Replaces the stored webhook verify token and is persisted on a successful connect, so it can be rotated; omit it to keep the stored one. Sealed at rest and write-only: never returned. Ignored for other channels */
             webhookVerifyToken?: string;
         };
@@ -13537,22 +13572,35 @@ export interface operations {
                      * @enum {string|null}
                      */
                     zenviaHandoffSolution?: "conversion" | "zenvia_chat" | "nlu" | null;
-                    /** @description Zenvia Sales API key, not the same token as zenviaApiToken. Sealed at rest and write-only: never returned */
+                    /** @description Zenvia Sales API key, not the same token as zenviaApiToken. With it a handoff transfers through the Sales API; without it, through the Conversations API with zenviaApiToken. Sealed at rest and write-only: never returned */
                     zenviaSalesApiKey?: string | null;
-                    /** @description Sales group dedicated to the chatbot; handoffs transfer the prospect to it. Read by the plugin at connect: restart the instance after changing it */
+                    /** @description Zenvia group dedicated to the chatbot; handoffs transfer the conversation to it (through the Sales API with zenviaSalesApiKey, the Conversations API otherwise). In live chat mode (zenviaConnectorSlug) it is the default queue sent as the CLOSE_CONVERSATION reason instead. Read by the plugin at connect: restart the instance after changing it */
                     zenviaHandoffGroupId?: string | null;
-                    /** @description Optional agent inside the handoff group the prospect is transferred to. Read by the plugin at connect: restart the instance after changing it */
+                    /** @description Optional agent inside the handoff group the conversation is transferred to. Read by the plugin at connect: restart the instance after changing it */
                     zenviaHandoffUserId?: string | null;
-                    /** @description Routes a handoff to a Sales group by the value of one handoffFields key: { field, groups: { <value>: <groupId> } }. zenviaHandoffGroupId is the fallback for an unmapped or missing value; without it such a handoff is refused (422). Read by the plugin at connect: restart the instance after changing it. null clears it */
+                    /** @description Routes a handoff to a Zenvia group by the value of one handoffFields key: { field, groups: { <value>: <groupId> } }. zenviaHandoffGroupId is the fallback for an unmapped or missing value; without it such a handoff is refused (422). In live chat mode (zenviaConnectorSlug) each mapped value is the queue sent as the CLOSE_CONVERSATION reason, the string the Zenvia NLU bot branches on. Read by the plugin at connect: restart the instance after changing it. null clears it */
                     zenviaHandoffRouting?: {
-                        /** @description Key of handoffFields whose value picks the Sales group */
+                        /** @description Key of handoffFields whose value picks the handoff group */
                         field: string;
-                        /** @description Maps a value of the field to a Sales group id. Values compare trimmed, with inner whitespace collapsed and ignoring case; two keys that become equal are rejected. Only string values match */
+                        /** @description Maps a value of the field to a Zenvia group id. Values compare trimmed, with inner whitespace collapsed and ignoring case; two keys that become equal are rejected. Only string values match */
                         groups: {
                             [key: string]: string;
                         };
                     } | null;
-                    /** @description Shared secret the webhook of a Gupshup, ASC, ASC Flow or Zenvia instance checks. On Zenvia the subscription sends it as x-webhook-token and the instance does not connect without it. Sealed at rest and write-only: never returned. null clears it */
+                    /** @description Zenvia NLU Agent Connector account slug ({slug} in https://agent.altubots.com/altu-connector/{slug}/{integrationId}). Setting it runs the instance as a live chat behind a Zenvia NLU bot: the Channels API is not used and zenviaApiToken, zenviaSenderId and webhookVerifyToken become optional. Read by the plugin at connect: restart the instance after changing it */
+                    zenviaConnectorSlug?: string | null;
+                    /** @description Zenvia NLU live chat integration id ({integrationId} of the connector endpoint). Required in live chat mode. Read by the plugin at connect: restart the instance after changing it */
+                    zenviaConnectorIntegrationId?: string | null;
+                    /** @description Access token of the Zenvia NLU live chat integration, carried as the access_token claim of every JWT. Required in live chat mode. Sealed at rest and write-only: never returned */
+                    zenviaConnectorAccessToken?: string | null;
+                    /** @description Access key of the Zenvia NLU live chat integration, the HS256 key that signs and verifies every JWT. Required in live chat mode. Sealed at rest and write-only: never returned */
+                    zenviaConnectorAccessKey?: string | null;
+                    /**
+                     * @description Which webhook of the integration Zenvia NLU answers on, sent as ?env= on every call: homol or prod (its default). Read by the plugin at connect: restart the instance after changing it
+                     * @enum {string|null}
+                     */
+                    zenviaConnectorEnv?: "homol" | "prod" | null;
+                    /** @description Shared secret the webhook of a Gupshup, ASC, ASC Flow or Zenvia instance checks. On Zenvia the subscription sends it as the x-webhook-token header or the token query parameter, and the instance does not connect without it (except in live chat mode, where a JWT authorizes the connector events). Sealed at rest and write-only: never returned. null clears it */
                     webhookVerifyToken?: string | null;
                 };
             };
@@ -13935,22 +13983,35 @@ export interface operations {
                      * @enum {string|null}
                      */
                     zenviaHandoffSolution?: "conversion" | "zenvia_chat" | "nlu" | null;
-                    /** @description Zenvia Sales API key, not the same token as zenviaApiToken. Sealed at rest and write-only: never returned */
+                    /** @description Zenvia Sales API key, not the same token as zenviaApiToken. With it a handoff transfers through the Sales API; without it, through the Conversations API with zenviaApiToken. Sealed at rest and write-only: never returned */
                     zenviaSalesApiKey?: string | null;
-                    /** @description Sales group dedicated to the chatbot; handoffs transfer the prospect to it. Read by the plugin at connect: restart the instance after changing it */
+                    /** @description Zenvia group dedicated to the chatbot; handoffs transfer the conversation to it (through the Sales API with zenviaSalesApiKey, the Conversations API otherwise). In live chat mode (zenviaConnectorSlug) it is the default queue sent as the CLOSE_CONVERSATION reason instead. Read by the plugin at connect: restart the instance after changing it */
                     zenviaHandoffGroupId?: string | null;
-                    /** @description Optional agent inside the handoff group the prospect is transferred to. Read by the plugin at connect: restart the instance after changing it */
+                    /** @description Optional agent inside the handoff group the conversation is transferred to. Read by the plugin at connect: restart the instance after changing it */
                     zenviaHandoffUserId?: string | null;
-                    /** @description Routes a handoff to a Sales group by the value of one handoffFields key: { field, groups: { <value>: <groupId> } }. zenviaHandoffGroupId is the fallback for an unmapped or missing value; without it such a handoff is refused (422). Read by the plugin at connect: restart the instance after changing it. null clears it */
+                    /** @description Routes a handoff to a Zenvia group by the value of one handoffFields key: { field, groups: { <value>: <groupId> } }. zenviaHandoffGroupId is the fallback for an unmapped or missing value; without it such a handoff is refused (422). In live chat mode (zenviaConnectorSlug) each mapped value is the queue sent as the CLOSE_CONVERSATION reason, the string the Zenvia NLU bot branches on. Read by the plugin at connect: restart the instance after changing it. null clears it */
                     zenviaHandoffRouting?: {
-                        /** @description Key of handoffFields whose value picks the Sales group */
+                        /** @description Key of handoffFields whose value picks the handoff group */
                         field: string;
-                        /** @description Maps a value of the field to a Sales group id. Values compare trimmed, with inner whitespace collapsed and ignoring case; two keys that become equal are rejected. Only string values match */
+                        /** @description Maps a value of the field to a Zenvia group id. Values compare trimmed, with inner whitespace collapsed and ignoring case; two keys that become equal are rejected. Only string values match */
                         groups: {
                             [key: string]: string;
                         };
                     } | null;
-                    /** @description Shared secret the webhook of a Gupshup, ASC, ASC Flow or Zenvia instance checks. On Zenvia the subscription sends it as x-webhook-token and the instance does not connect without it. Sealed at rest and write-only: never returned. null clears it */
+                    /** @description Zenvia NLU Agent Connector account slug ({slug} in https://agent.altubots.com/altu-connector/{slug}/{integrationId}). Setting it runs the instance as a live chat behind a Zenvia NLU bot: the Channels API is not used and zenviaApiToken, zenviaSenderId and webhookVerifyToken become optional. Read by the plugin at connect: restart the instance after changing it */
+                    zenviaConnectorSlug?: string | null;
+                    /** @description Zenvia NLU live chat integration id ({integrationId} of the connector endpoint). Required in live chat mode. Read by the plugin at connect: restart the instance after changing it */
+                    zenviaConnectorIntegrationId?: string | null;
+                    /** @description Access token of the Zenvia NLU live chat integration, carried as the access_token claim of every JWT. Required in live chat mode. Sealed at rest and write-only: never returned */
+                    zenviaConnectorAccessToken?: string | null;
+                    /** @description Access key of the Zenvia NLU live chat integration, the HS256 key that signs and verifies every JWT. Required in live chat mode. Sealed at rest and write-only: never returned */
+                    zenviaConnectorAccessKey?: string | null;
+                    /**
+                     * @description Which webhook of the integration Zenvia NLU answers on, sent as ?env= on every call: homol or prod (its default). Read by the plugin at connect: restart the instance after changing it
+                     * @enum {string|null}
+                     */
+                    zenviaConnectorEnv?: "homol" | "prod" | null;
+                    /** @description Shared secret the webhook of a Gupshup, ASC, ASC Flow or Zenvia instance checks. On Zenvia the subscription sends it as the x-webhook-token header or the token query parameter, and the instance does not connect without it (except in live chat mode, where a JWT authorizes the connector events). Sealed at rest and write-only: never returned. null clears it */
                     webhookVerifyToken?: string | null;
                     agentReplyFilter?: {
                         /** @enum {string} */
@@ -14477,21 +14538,34 @@ export interface operations {
                      * @enum {string}
                      */
                     zenviaHandoffSolution?: "conversion" | "zenvia_chat" | "nlu";
-                    /** @description Zenvia Sales API key, not the same token as zenviaApiToken. Sealed at rest and write-only: never returned */
+                    /** @description Zenvia Sales API key, not the same token as zenviaApiToken. With it a handoff transfers through the Sales API; without it, through the Conversations API with zenviaApiToken. Sealed at rest and write-only: never returned */
                     zenviaSalesApiKey?: string;
-                    /** @description Sales group dedicated to the chatbot; handoffs transfer the prospect to it. Read by the plugin at connect: restart the instance after changing it */
+                    /** @description Zenvia group dedicated to the chatbot; handoffs transfer the conversation to it (through the Sales API with zenviaSalesApiKey, the Conversations API otherwise). In live chat mode (zenviaConnectorSlug) it is the default queue sent as the CLOSE_CONVERSATION reason instead. Read by the plugin at connect: restart the instance after changing it */
                     zenviaHandoffGroupId?: string;
-                    /** @description Optional agent inside the handoff group the prospect is transferred to. Read by the plugin at connect: restart the instance after changing it */
+                    /** @description Optional agent inside the handoff group the conversation is transferred to. Read by the plugin at connect: restart the instance after changing it */
                     zenviaHandoffUserId?: string;
-                    /** @description Routes a handoff to a Sales group by the value of one handoffFields key: { field, groups: { <value>: <groupId> } }. zenviaHandoffGroupId is the fallback for an unmapped or missing value; without it such a handoff is refused (422). Read by the plugin at connect: restart the instance after changing it. null clears it */
+                    /** @description Routes a handoff to a Zenvia group by the value of one handoffFields key: { field, groups: { <value>: <groupId> } }. zenviaHandoffGroupId is the fallback for an unmapped or missing value; without it such a handoff is refused (422). In live chat mode (zenviaConnectorSlug) each mapped value is the queue sent as the CLOSE_CONVERSATION reason, the string the Zenvia NLU bot branches on. Read by the plugin at connect: restart the instance after changing it. null clears it */
                     zenviaHandoffRouting?: {
-                        /** @description Key of handoffFields whose value picks the Sales group */
+                        /** @description Key of handoffFields whose value picks the handoff group */
                         field: string;
-                        /** @description Maps a value of the field to a Sales group id. Values compare trimmed, with inner whitespace collapsed and ignoring case; two keys that become equal are rejected. Only string values match */
+                        /** @description Maps a value of the field to a Zenvia group id. Values compare trimmed, with inner whitespace collapsed and ignoring case; two keys that become equal are rejected. Only string values match */
                         groups: {
                             [key: string]: string;
                         };
                     };
+                    /** @description Zenvia NLU Agent Connector account slug ({slug} in https://agent.altubots.com/altu-connector/{slug}/{integrationId}). Setting it runs the instance as a live chat behind a Zenvia NLU bot: the Channels API is not used and zenviaApiToken, zenviaSenderId and webhookVerifyToken become optional. Read by the plugin at connect: restart the instance after changing it */
+                    zenviaConnectorSlug?: string;
+                    /** @description Zenvia NLU live chat integration id ({integrationId} of the connector endpoint). Required in live chat mode. Read by the plugin at connect: restart the instance after changing it */
+                    zenviaConnectorIntegrationId?: string;
+                    /** @description Access token of the Zenvia NLU live chat integration, carried as the access_token claim of every JWT. Required in live chat mode. Sealed at rest and write-only: never returned */
+                    zenviaConnectorAccessToken?: string;
+                    /** @description Access key of the Zenvia NLU live chat integration, the HS256 key that signs and verifies every JWT. Required in live chat mode. Sealed at rest and write-only: never returned */
+                    zenviaConnectorAccessKey?: string;
+                    /**
+                     * @description Which webhook of the integration Zenvia NLU answers on, sent as ?env= on every call: homol or prod (its default). Read by the plugin at connect: restart the instance after changing it
+                     * @enum {string}
+                     */
+                    zenviaConnectorEnv?: "homol" | "prod";
                     /** @description Zenvia only. Replaces the stored webhook verify token and is persisted on a successful connect, so it can be rotated; omit it to keep the stored one. Sealed at rest and write-only: never returned. Ignored for other channels */
                     webhookVerifyToken?: string;
                 };
@@ -23960,7 +24034,7 @@ export interface operations {
                     "text/plain": string;
                 };
             };
-            /** @description The x-webhook-token header is missing or does not match the instance webhookVerifyToken */
+            /** @description Neither the x-webhook-token header nor the token query parameter is present, or the one used does not match the instance webhookVerifyToken */
             401: {
                 headers: {
                     [name: string]: unknown;

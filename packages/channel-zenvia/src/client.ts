@@ -1,6 +1,18 @@
 import { isIP } from 'node:net';
 
-import { type ZenviaOutboundMessage, type ZenviaSendResponse, ZenviaSendResponseSchema } from './types';
+import type { ZodType } from 'zod';
+
+import {
+  ZenviaConversationListSchema,
+  type ZenviaConversationTransfer,
+  type ZenviaGroups,
+  ZenviaGroupsSchema,
+  type ZenviaListedConversation,
+  ZenviaListedConversationSchema,
+  type ZenviaOutboundMessage,
+  type ZenviaSendResponse,
+  ZenviaSendResponseSchema,
+} from './types';
 import { ZenviaApiError, ZenviaErrorCode } from './utils/errors';
 import { parseJsonOrUndefined, readBodyText, zenviaErrorFromResponse, zenviaFetch } from './utils/http';
 import { type HostResolver, pinTarget, resolveHostAddresses, resolvePublicAddresses } from './utils/public-host';
@@ -71,6 +83,67 @@ export class ZenviaClient {
       parseJsonOrUndefined(await readBodyText(res, 'sendMessage')) ?? {},
     );
     return parsed.success ? parsed.data : {};
+  }
+
+  async listConversations(query: {
+    search: string;
+    sort: string;
+    size: number;
+    page: number;
+  }): Promise<{ conversations: ZenviaListedConversation[]; listed: number }> {
+    const params = new URLSearchParams({
+      search: query.search,
+      sort: query.sort,
+      size: String(query.size),
+      page: String(query.page),
+    });
+    const res = await this.request(`/conversations?${params.toString()}`, {
+      method: 'GET',
+      operation: 'listConversations',
+    });
+    const items = this.parse(
+      await readBodyText(res, 'listConversations'),
+      ZenviaConversationListSchema,
+      'listConversations',
+    );
+    const conversations = items.flatMap((item) => {
+      const conversation = ZenviaListedConversationSchema.safeParse(item);
+      return conversation.success ? [conversation.data] : [];
+    });
+    return { conversations, listed: items.length };
+  }
+
+  async addConversationNote(conversationId: string, text: string): Promise<void> {
+    const res = await this.request(`/conversations/${encodeURIComponent(conversationId)}/notes`, {
+      method: 'POST',
+      body: JSON.stringify({ text }),
+      operation: 'addConversationNote',
+    });
+    await readBodyText(res, 'addConversationNote');
+  }
+
+  async transferConversation(conversationId: string, target: ZenviaConversationTransfer): Promise<void> {
+    const res = await this.request(`/conversations/${encodeURIComponent(conversationId)}/actions/transfer`, {
+      method: 'POST',
+      body: JSON.stringify(target),
+      operation: 'transferConversation',
+    });
+    await readBodyText(res, 'transferConversation').catch(() => '');
+  }
+
+  async listGroups(): Promise<ZenviaGroups> {
+    const res = await this.request('/groups', { method: 'GET', operation: 'listGroups' });
+    return this.parse(await readBodyText(res, 'listGroups'), ZenviaGroupsSchema, 'listGroups');
+  }
+
+  private parse<T>(text: string, schema: ZodType<T>, operation: string): T {
+    const parsed = schema.safeParse(parseJsonOrUndefined(text));
+    if (!parsed.success) {
+      throw new ZenviaApiError(ZenviaErrorCode.UPSTREAM_ERROR, `Zenvia ${operation} returned an unexpected payload`, {
+        operation,
+      });
+    }
+    return parsed.data;
   }
 
   async downloadFile(fileUrl: string): Promise<Response> {

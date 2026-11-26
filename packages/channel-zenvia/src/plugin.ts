@@ -24,21 +24,27 @@ import type { ChannelType, ContentType } from '@omni/core/types';
 
 import { ZENVIA_CAPABILITIES } from './capabilities';
 import { ZenviaClient } from './client';
+import { type ConnectorHost, type ConnectorInbound, ZenviaConnectorRuntime } from './connector/runtime';
+import { ZENVIA_CONNECTOR_ENVS, type ZenviaConnectorConfig, type ZenviaConnectorEnv } from './connector/types';
+import { handleZenviaConnectorWebhookRequest } from './handlers/connector-webhook';
 import { handleZenviaWebhookRequest } from './handlers/webhook';
 import { type HandoffRoutingMiss, parseHandoffRouting, resolveHandoffGroup } from './handoff-routing';
 import { ZenviaSalesClient } from './sales-client';
 import {
   ZENVIA_HANDOFF_SOLUTIONS,
   type ZenviaConfig,
+  type ZenviaConversationStatusEvent,
   type ZenviaHandoffSolution,
   type ZenviaInboundContent,
   type ZenviaInboundMessage,
+  type ZenviaListedConversation,
   type ZenviaMessageStatusEvent,
   type ZenviaOutboundContent,
   type ZenviaOutboundMessage,
   type ZenviaReferral,
   type ZenviaSendResponse,
 } from './types';
+import { normalizeConversationStatus, pickOpenConversation } from './utils/conversations';
 import { ZenviaApiError, ZenviaErrorCode, isDefinitiveRefusal } from './utils/errors';
 import {
   HANDOFF_NOT_CONFIGURED_ERROR,
@@ -47,6 +53,7 @@ import {
   resolveHandoffMode,
 } from './utils/handoff';
 import { toSenderId, toZenviaPhone } from './utils/identity';
+import { omniTypeForMime } from './utils/media-type';
 import { type HostResolver, resolveHostAddresses } from './utils/public-host';
 
 const ZENVIA_MEDIA_TYPES: ReadonlySet<string> = new Set(['image', 'audio', 'video', 'document']);
@@ -57,12 +64,17 @@ const SENT_RECIPIENT_MAX_ENTRIES = 5000;
 const SENT_RECIPIENT_TTL_MS = 24 * 60 * 60 * 1000;
 const RECIPIENT_STATUS_CODES: ReadonlySet<string> = new Set(['DELIVERED', 'READ', 'REJECTED', 'NOT_DELIVERED']);
 
+const CONVERSATION_LOOKUP_SIZE = 100;
+const CONVERSATION_LOOKUP_MAX_PAGES = 5;
+const CONVERSATION_LOOKUP_SORT = 'createdAt,desc';
+
 interface ZenviaInstanceState {
   client: ZenviaClient;
   salesClient?: ZenviaSalesClient;
   config: ZenviaConfig;
   dedupeCache: DedupeCache;
   sentRecipients: ThreadStarterCache<string>;
+  connector?: ZenviaConnectorRuntime;
 }
 
 type TransferOutcome =
@@ -94,6 +106,10 @@ export class ZenviaPlugin extends BaseChannelPlugin {
   async connect(instanceId: string, config: InstanceConfig): Promise<void> {
     this.dropInstanceState(instanceId);
     const zenviaConfig = readZenviaConfig(config);
+    if (zenviaConfig.connector) {
+      await this.connectLiveChat(instanceId, config, zenviaConfig, zenviaConfig.connector);
+      return;
+    }
 
     this.logger.info('Connecting Zenvia instance', { instanceId, senderId: zenviaConfig.senderId });
 
@@ -111,11 +127,22 @@ export class ZenviaPlugin extends BaseChannelPlugin {
     let salesClient: ZenviaSalesClient | undefined;
     const hasTransferTarget = Boolean(zenviaConfig.handoffGroupId || zenviaConfig.handoffRouting);
     if (zenviaConfig.salesApiKey && hasTransferTarget) {
-      salesClient = new ZenviaSalesClient({ apiKey: zenviaConfig.salesApiKey });
-      await this.verifySalesAccess(instanceId, salesClient, zenviaConfig);
-    } else if (zenviaConfig.salesApiKey || hasTransferTarget || zenviaConfig.handoffUserId) {
+      const sales = new ZenviaSalesClient({ apiKey: zenviaConfig.salesApiKey });
+      salesClient = sales;
+      await this.verifyHandoffGroups(instanceId, zenviaConfig, {
+        api: 'Sales',
+        listedBy: 'the Sales key',
+        listGroups: () => sales.listGroups(),
+      });
+    } else if (hasTransferTarget) {
+      await this.verifyHandoffGroups(instanceId, zenviaConfig, {
+        api: 'Conversations',
+        listedBy: 'the API token',
+        listGroups: () => client.listGroups(),
+      });
+    } else if (zenviaConfig.salesApiKey || zenviaConfig.handoffUserId) {
       this.logger.warn(
-        'Zenvia Sales transfer needs zenviaSalesApiKey and a group (zenviaHandoffGroupId or zenviaHandoffRouting); it stays off',
+        'Zenvia handoff transfer needs a group (zenviaHandoffGroupId or zenviaHandoffRouting); it stays off',
         { instanceId },
       );
     }
@@ -147,6 +174,146 @@ export class ZenviaPlugin extends BaseChannelPlugin {
     this.logger.info('Zenvia instance connected', { instanceId, senderId: zenviaConfig.senderId });
   }
 
+  private async connectLiveChat(
+    instanceId: string,
+    config: InstanceConfig,
+    zenviaConfig: ZenviaConfig,
+    connector: ZenviaConnectorConfig,
+  ): Promise<void> {
+    this.logger.info('Connecting Zenvia instance as a live chat (Agent Connector)', {
+      instanceId,
+      slug: connector.slug,
+      integrationId: connector.integrationId,
+      env: connector.env,
+    });
+    if (!zenviaConfig.handoffGroupId && !zenviaConfig.handoffRouting) {
+      this.logger.warn(
+        'Zenvia live chat has no handoff queue (zenviaHandoffGroupId or zenviaHandoffRouting); handoffs will be refused',
+        { instanceId },
+      );
+    }
+
+    const state: ZenviaInstanceState = {
+      client: new ZenviaClient({ apiToken: zenviaConfig.apiToken, resolveHost: this.hostResolver }),
+      config: zenviaConfig,
+      dedupeCache: createInboundDedupeCache(),
+      sentRecipients: createThreadStarterCache<string>({
+        ttlMs: SENT_RECIPIENT_TTL_MS,
+        maxSize: SENT_RECIPIENT_MAX_ENTRIES,
+      }),
+    };
+    state.connector = new ZenviaConnectorRuntime(
+      instanceId,
+      connector,
+      this.storage,
+      { handoffGroupId: zenviaConfig.handoffGroupId, handoffRouting: zenviaConfig.handoffRouting },
+      this.connectorHost(instanceId, state),
+    );
+    this.zenviaInstances.set(instanceId, state);
+
+    await this.updateInstanceStatus(instanceId, config, {
+      state: 'connected',
+      since: new Date(),
+      message: 'Configured as a Zenvia live chat (Agent Connector)',
+    });
+    await this.emitInstanceConnected(instanceId, {
+      profileName: 'Zenvia live chat',
+      ownerIdentifier: zenviaConfig.senderId || `zenvia-connector:${connector.slug}/${connector.integrationId}`,
+    });
+  }
+
+  private connectorHost(instanceId: string, state: ZenviaInstanceState): ConnectorHost {
+    return {
+      logger: this.logger,
+      publish: (inbound) => this.publishConnectorInbound(instanceId, state, inbound),
+      sent: async ({ externalId, chatId, message }) => {
+        await this.emitMessageSent({
+          instanceId,
+          externalId,
+          chatId,
+          to: message.to,
+          content: { type: message.content.type, text: message.content.text, mediaUrl: message.content.mediaUrl },
+          replyToId: message.replyTo,
+          senderAgentId: message.metadata?.senderAgentId as string | undefined,
+        });
+      },
+      failed: async ({ chatId, error, retryable }) => {
+        await this.emitMessageFailed({ instanceId, chatId, error, retryable });
+      },
+      loadMedia: (message) => this.loadOutboundMedia(instanceId, state, message),
+    };
+  }
+
+  private async loadOutboundMedia(
+    instanceId: string,
+    state: ZenviaInstanceState,
+    message: OutgoingMessage,
+  ): Promise<{ bytes: Uint8Array; mimeType: string }> {
+    const { content } = message;
+    const fallbackMime = content.mimeType || 'application/octet-stream';
+    if (content.localPath) {
+      const file = Bun.file(content.localPath);
+      return {
+        bytes: new Uint8Array(await file.arrayBuffer()),
+        mimeType: content.mimeType || file.type || fallbackMime,
+      };
+    }
+    if (!content.mediaUrl) {
+      throw new ZenviaApiError(
+        ZenviaErrorCode.INVALID_REQUEST,
+        `Media send requires content.mediaUrl or content.localPath (type=${content.type})`,
+      );
+    }
+    const res = await state.client.downloadFile(content.mediaUrl);
+    downloadGuard.checkResponse(res, this.logger, { instanceId, channel: 'zenvia' });
+    const bytes = await res.arrayBuffer();
+    downloadGuard.checkSize(bytes.byteLength, this.logger, { instanceId, channel: 'zenvia' });
+    const mimeType = res.headers.get('content-type')?.split(';')[0]?.trim() || fallbackMime;
+    return { bytes: new Uint8Array(bytes), mimeType };
+  }
+
+  private async publishConnectorInbound(
+    instanceId: string,
+    state: ZenviaInstanceState,
+    inbound: ConnectorInbound,
+  ): Promise<boolean> {
+    if (state.dedupeCache.isDuplicate(instanceId, inbound.externalId, 'zenvia', this.logger)) {
+      this.logger.debug('[zenvia] duplicate connector inbound dropped', { instanceId, externalId: inbound.externalId });
+      return false;
+    }
+    try {
+      const content: ExtractedInboundContent = { ...inbound.content };
+      if (!this.sanitizeInboundContent(instanceId, inbound.externalId, content)) return false;
+
+      const timings = this.captureInboundTimings(inbound.timestampMs);
+      const correlationId = await this.emitMessageReceived({
+        instanceId,
+        externalId: inbound.externalId,
+        chatId: inbound.chatId,
+        from: inbound.chatId,
+        senderName: inbound.senderName,
+        content: {
+          type: content.type,
+          text: content.text,
+          mediaId: content.mediaId,
+          mimeType: content.mimeType,
+        },
+        ...(inbound.sessionStart ? { sessionStart: true } : {}),
+        rawPayload: {
+          ...inbound.rawPayload,
+          ...(inbound.senderName ? { pushName: inbound.senderName } : {}),
+          platformTimestampMs: inbound.timestampMs,
+        },
+        timings,
+      });
+      if (timings) this.captureT2(correlationId, timings);
+      return true;
+    } catch (err) {
+      state.dedupeCache.release(instanceId, inbound.externalId);
+      throw err;
+    }
+  }
+
   async disconnect(instanceId: string): Promise<void> {
     this.logger.info('Disconnecting Zenvia instance', { instanceId });
 
@@ -166,6 +333,13 @@ export class ZenviaPlugin extends BaseChannelPlugin {
     if (!state) {
       return { success: false, error: 'Zenvia instance not connected', retryable: false, timestamp: Date.now() };
     }
+    if (state.connector) {
+      const correlationId = message.metadata?.correlationId as string | undefined;
+      if (correlationId) this.captureT10(correlationId);
+      const result = await state.connector.send(message);
+      if (correlationId && result.success) this.captureT11(correlationId);
+      return result;
+    }
 
     const { to, metadata } = message;
 
@@ -175,7 +349,7 @@ export class ZenviaPlugin extends BaseChannelPlugin {
     const correlationId = metadata?.correlationId as string | undefined;
 
     let transferred = false;
-    if (metadata?.isHandoff === true && state.salesClient && resolveHandoffMode(state.config) === 'transfer') {
+    if (metadata?.isHandoff === true && resolveHandoffMode(state.config) === 'transfer') {
       const outcome = await this.transferToHuman(instanceId, state, to, metadata);
       if (!outcome.ok) return failedResult(outcome);
       transferred = true;
@@ -251,41 +425,14 @@ export class ZenviaPlugin extends BaseChannelPlugin {
     to: string,
     metadata: Record<string, unknown>,
   ): Promise<TransferOutcome> {
-    const sales = state.salesClient;
-    if (!sales) return { ok: false, error: HANDOFF_NOT_CONFIGURED_ERROR, retryable: false, rejected: true };
-
     const resolution = resolveHandoffGroup(state.config.handoffRouting, state.config.handoffGroupId, metadata);
     if (resolution.miss) this.logRoutingMiss(instanceId, resolution.miss, resolution.ok);
     if (!resolution.ok) return { ok: false, error: resolution.error, retryable: false, rejected: true };
-    const groupId = resolution.groupId;
 
     try {
-      const prospect = await sales.findProspectByPhone(to);
-      if (!prospect) {
-        return {
-          ok: false,
-          error:
-            'Zenvia handoff failed: no Sales prospect exists for this contact, so there is no conversation to transfer',
-          retryable: false,
-          rejected: true,
-        };
-      }
-
-      const userId = state.config.handoffUserId;
-      await sales.transferProspect(prospect.id, userId ? { group: groupId, user: userId } : { group: groupId });
-
-      const note = buildHandoffNote(metadata);
-      if (note) {
-        try {
-          await sales.createNote(prospect.id, note);
-        } catch (err) {
-          this.logger.warn('Zenvia handoff note failed after the transfer', {
-            instanceId,
-            error: err instanceof Error ? err.message : String(err),
-          });
-        }
-      }
-      return { ok: true };
+      return state.salesClient
+        ? await this.transferThroughSales(instanceId, state.salesClient, state.config, to, metadata, resolution.groupId)
+        : await this.transferThroughConversations(instanceId, state, to, metadata, resolution.groupId);
     } catch (err) {
       const isZenvia = err instanceof ZenviaApiError;
       return {
@@ -296,6 +443,90 @@ export class ZenviaPlugin extends BaseChannelPlugin {
         ...(isDefinitiveRefusal(err) ? { rejected: true as const } : {}),
       };
     }
+  }
+
+  private async transferThroughSales(
+    instanceId: string,
+    sales: ZenviaSalesClient,
+    config: ZenviaConfig,
+    to: string,
+    metadata: Record<string, unknown>,
+    groupId: string,
+  ): Promise<TransferOutcome> {
+    const prospect = await sales.findProspectByPhone(to);
+    if (!prospect) {
+      return {
+        ok: false,
+        error:
+          'Zenvia handoff failed: no Sales prospect exists for this contact, so there is no conversation to transfer',
+        retryable: false,
+        rejected: true,
+      };
+    }
+
+    const userId = config.handoffUserId;
+    await sales.transferProspect(prospect.id, userId ? { group: groupId, user: userId } : { group: groupId });
+
+    const note = buildHandoffNote(metadata);
+    if (note) {
+      try {
+        await sales.createNote(prospect.id, note);
+      } catch (err) {
+        this.logger.warn('Zenvia handoff note failed after the transfer', {
+          instanceId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+    return { ok: true };
+  }
+
+  private async transferThroughConversations(
+    instanceId: string,
+    state: ZenviaInstanceState,
+    to: string,
+    metadata: Record<string, unknown>,
+    groupId: string,
+  ): Promise<TransferOutcome> {
+    const contact = toZenviaPhone(to);
+    const lookup = contact ? await findOpenConversation(state, contact) : { found: undefined, exhausted: false };
+    if (lookup.exhausted) {
+      return {
+        ok: false,
+        error: `Zenvia handoff failed: no open conversation of the contact in the first ${CONVERSATION_LOOKUP_MAX_PAGES} pages of the search, so it could not be confirmed`,
+        retryable: true,
+      };
+    }
+    const conversation = lookup.found;
+    if (!conversation) {
+      return {
+        ok: false,
+        error:
+          'Zenvia handoff failed: the contact has no open conversation on this sender, so there is no conversation to transfer',
+        retryable: false,
+        rejected: true,
+      };
+    }
+
+    const note = buildHandoffNote(metadata);
+    if (note) {
+      try {
+        await state.client.addConversationNote(conversation.id, note);
+      } catch (err) {
+        this.logger.warn('Zenvia handoff note failed; transferring without it', {
+          instanceId,
+          conversationId: conversation.id,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    const userId = state.config.handoffUserId;
+    await state.client.transferConversation(
+      conversation.id,
+      userId ? { type: 'USER', groupId, userId } : { type: 'GROUP', groupId },
+    );
+    return { ok: true };
   }
 
   private logFarewellFailure(instanceId: string, errorCode: string | undefined, error: string): void {
@@ -321,25 +552,30 @@ export class ZenviaPlugin extends BaseChannelPlugin {
     );
   }
 
-  private async verifySalesAccess(instanceId: string, sales: ZenviaSalesClient, config: ZenviaConfig): Promise<void> {
+  private async verifyHandoffGroups(
+    instanceId: string,
+    config: ZenviaConfig,
+    source: { api: string; listedBy: string; listGroups: () => Promise<ReadonlyArray<{ id: string }>> },
+  ): Promise<void> {
     try {
-      const listed = new Set((await sales.listGroups()).map((group) => group.id));
+      const listed = new Set((await source.listGroups()).map((group) => group.id));
       if (config.handoffGroupId && !listed.has(config.handoffGroupId)) {
-        this.logger.warn('Zenvia handoff group not among the groups listed for the Sales key; transfers may fail', {
-          instanceId,
-        });
+        this.logger.warn(
+          `Zenvia handoff group not among the groups listed for ${source.listedBy}; transfers may fail`,
+          { instanceId },
+        );
       }
       const unlisted = [...new Set(Object.values(config.handoffRouting?.groups ?? {}))].filter(
         (groupId) => !listed.has(groupId),
       );
       if (unlisted.length > 0) {
         this.logger.warn(
-          'Zenvia handoff routing groups not among the groups listed for the Sales key; transfers to them may fail',
+          `Zenvia handoff routing groups not among the groups listed for ${source.listedBy}; transfers to them may fail`,
           { instanceId, groups: unlisted },
         );
       }
     } catch (err) {
-      this.logger.warn('Zenvia Sales API check failed on connect; handoff transfer is unverified', {
+      this.logger.warn(`Zenvia ${source.api} API check failed on connect; handoff transfer is unverified`, {
         instanceId,
         error: err instanceof Error ? err.message : String(err),
       });
@@ -362,12 +598,20 @@ export class ZenviaPlugin extends BaseChannelPlugin {
     if (!state) {
       return new Response('Instance not connected', { status: 503 });
     }
+    if (state.connector && state.config.connector) {
+      return handleZenviaConnectorWebhookRequest(request, this, instanceId, state.connector, {
+        connector: state.config.connector,
+        webhookVerifyToken: state.config.webhookVerifyToken,
+      });
+    }
 
     return handleZenviaWebhookRequest(request, this, instanceId, state.config.webhookVerifyToken);
   }
 
   async downloadInboundMedia(instanceId: string, fileUrl: string): Promise<{ buffer: Buffer; mimeType: string }> {
     const state = this.requireInstanceState(instanceId, 'downloadInboundMedia');
+    const stored = await state.connector?.download(fileUrl);
+    if (stored) return stored;
 
     const res = await state.client.downloadFile(fileUrl);
     downloadGuard.checkResponse(res, this.logger, { instanceId, channel: 'zenvia' });
@@ -403,6 +647,14 @@ export class ZenviaPlugin extends BaseChannelPlugin {
       : Array.from(this.zenviaInstances.entries());
 
     for (const [id, state] of states) {
+      if (state.config.connector) {
+        checks.push({
+          name: `zenvia:${id}`,
+          status: 'pass',
+          message: `Live chat ${state.config.connector.slug}/${state.config.connector.integrationId} configured`,
+        });
+        continue;
+      }
       const ok = await state.client.ping();
       checks.push({
         name: `zenvia:${id}`,
@@ -586,6 +838,111 @@ export class ZenviaPlugin extends BaseChannelPlugin {
         return;
     }
   }
+
+  async handleConversationStatus(instanceId: string, event: ZenviaConversationStatusEvent): Promise<void> {
+    const state = this.zenviaInstances.get(instanceId);
+    if (!state || state.connector) return;
+
+    const { conversation } = event;
+    const status = normalizeConversationStatus(conversation.status);
+    const logContext = { instanceId, conversationId: conversation.id, status };
+
+    const chatExternalId = conversationContact(conversation, state.config.senderId);
+    if (!chatExternalId) {
+      this.logger.debug('[zenvia] conversation status of another sender or channel dropped', logContext);
+      return;
+    }
+
+    const base = {
+      instanceId,
+      chatExternalId,
+      ...(conversation.id ? { providerConversationId: conversation.id } : {}),
+      providerStatus: status,
+      occurredAt: conversationStatusTime(event),
+    };
+
+    if (status === 'CLOSED') {
+      await this.emitChatHumanReleased({ ...base, ...releaseDetails(conversation) });
+      return;
+    }
+
+    const takeover = humanAttendant(status, conversation);
+    if (!takeover) {
+      this.logger.debug('[zenvia] conversation status without a human attendant ignored', logContext);
+      return;
+    }
+    await this.emitChatHumanTakeover({
+      ...base,
+      ...(takeover.attendantId ? { attendantId: takeover.attendantId } : {}),
+    });
+  }
+}
+
+type ZenviaConversation = ZenviaConversationStatusEvent['conversation'];
+
+async function findOpenConversation(
+  state: ZenviaInstanceState,
+  contact: string,
+): Promise<{ found: ZenviaListedConversation | undefined; exhausted: boolean }> {
+  for (let page = 1; page <= CONVERSATION_LOOKUP_MAX_PAGES; page++) {
+    const { conversations, listed } = await state.client.listConversations({
+      search: contact,
+      sort: CONVERSATION_LOOKUP_SORT,
+      size: CONVERSATION_LOOKUP_SIZE,
+      page,
+    });
+    const found = pickOpenConversation(conversations, contact, state.config.senderId);
+    if (found) return { found, exhausted: false };
+    if (listed < CONVERSATION_LOOKUP_SIZE) return { found: undefined, exhausted: false };
+  }
+  return { found: undefined, exhausted: true };
+}
+
+function conversationContact(conversation: ZenviaConversation, senderId: string): string | undefined {
+  if (conversation.channel?.toLowerCase() !== 'whatsapp') return undefined;
+  const { from, to } = conversation;
+  if (!from || !to) return undefined;
+  const fromSender = toSenderId(from) === senderId;
+  const toSender = toSenderId(to) === senderId;
+  if (fromSender === toSender) return undefined;
+  return toZenviaPhone(fromSender ? to : from) || undefined;
+}
+
+function conversationStatusTime(event: ZenviaConversationStatusEvent): number {
+  const parsed = Date.parse(event.conversation.statusTimestamp ?? event.timestamp ?? '');
+  return Number.isFinite(parsed) ? parsed : Date.now();
+}
+
+function humanAttendant(status: string, conversation: ZenviaConversation): { attendantId?: string } | undefined {
+  switch (status) {
+    case 'DISTRIBUTED_TO_USER':
+      return { attendantId: conversation.userId };
+    case 'CLAIMED':
+      return conversation.userId ? { attendantId: conversation.userId } : undefined;
+    case 'TRANSFERRED':
+      return conversation.newUserId || conversation.transferType === 'TRANSFER_TO_USER'
+        ? { attendantId: conversation.newUserId }
+        : undefined;
+    default:
+      return undefined;
+  }
+}
+
+function releaseDetails(conversation: ZenviaConversation): {
+  releasedBy?: 'attendant' | 'system';
+  releasedById?: string;
+  reason?: string;
+  reasonLabel?: string;
+} {
+  const actor = conversation.closedBy?.type?.toUpperCase();
+  const releasedBy = actor === 'USER' ? 'attendant' : actor === 'SYSTEM' ? 'system' : undefined;
+  const { closedBy, closeReason } = conversation;
+  return {
+    ...(releasedBy ? { releasedBy } : {}),
+    ...(closedBy?.id ? { releasedById: closedBy.id } : {}),
+    ...(closeReason?.key ? { reason: closeReason.key } : {}),
+    ...(closeReason?.name ? { reasonLabel: closeReason.name } : {}),
+  };
 }
 
 function disposeState(state: ZenviaInstanceState): void {
@@ -719,6 +1076,18 @@ function readZenviaConfig(config: InstanceConfig): ZenviaConfig {
   const handoffUserId = pick('zenviaHandoffUserId');
   const handoffRouting = parseHandoffRouting(creds.zenviaHandoffRouting ?? opts.zenviaHandoffRouting);
 
+  const connectorSlug = pick('zenviaConnectorSlug');
+  if (connectorSlug) {
+    return {
+      apiToken: apiToken ?? '',
+      senderId: senderId ? toSenderId(senderId) : '',
+      connector: readConnectorConfig(connectorSlug, pick),
+      webhookVerifyToken,
+      handoffGroupId,
+      handoffRouting,
+    };
+  }
+
   if (!apiToken) {
     throw new ZenviaApiError(ZenviaErrorCode.AUTH_FAILED, 'zenviaApiToken is required to connect a zenvia instance');
   }
@@ -738,7 +1107,7 @@ function readZenviaConfig(config: InstanceConfig): ZenviaConfig {
   if (!webhookVerifyToken) {
     throw new ZenviaApiError(
       ZenviaErrorCode.INVALID_REQUEST,
-      'webhookVerifyToken is required for a zenvia instance: Zenvia signs nothing, so the subscription must send it as x-webhook-token',
+      'webhookVerifyToken is required for a zenvia instance: Zenvia signs nothing, so the subscription must send it as the x-webhook-token header or the token query parameter of the webhook URL',
     );
   }
 
@@ -751,6 +1120,37 @@ function readZenviaConfig(config: InstanceConfig): ZenviaConfig {
     handoffGroupId,
     handoffUserId,
     handoffRouting,
+  };
+}
+
+function readConnectorConfig(slug: string, pick: (key: string) => string | undefined): ZenviaConnectorConfig {
+  const integrationId = pick('zenviaConnectorIntegrationId');
+  const accessToken = pick('zenviaConnectorAccessToken');
+  const accessKey = pick('zenviaConnectorAccessKey');
+  const env = pick('zenviaConnectorEnv');
+  const missing = [
+    integrationId ? undefined : 'zenviaConnectorIntegrationId',
+    accessToken ? undefined : 'zenviaConnectorAccessToken',
+    accessKey ? undefined : 'zenviaConnectorAccessKey',
+  ].filter(Boolean);
+  if (!integrationId || !accessToken || !accessKey) {
+    throw new ZenviaApiError(
+      ZenviaErrorCode.INVALID_REQUEST,
+      `zenviaConnectorSlug selects the Zenvia live chat (Agent Connector) mode, which also needs ${missing.join(', ')}`,
+    );
+  }
+  if (env && !(ZENVIA_CONNECTOR_ENVS as readonly string[]).includes(env)) {
+    throw new ZenviaApiError(
+      ZenviaErrorCode.INVALID_REQUEST,
+      `zenviaConnectorEnv must be one of ${ZENVIA_CONNECTOR_ENVS.join(', ')}`,
+    );
+  }
+  return {
+    slug,
+    integrationId,
+    accessToken,
+    accessKey,
+    ...(env ? { env: env as ZenviaConnectorEnv } : {}),
   };
 }
 
@@ -780,13 +1180,6 @@ function extractInboundContent(content: ZenviaInboundContent): ExtractedInboundC
     default:
       return null;
   }
-}
-
-function omniTypeForMime(mimeType: string | undefined): ContentType {
-  if (mimeType?.startsWith('image/')) return 'image';
-  if (mimeType?.startsWith('audio/')) return 'audio';
-  if (mimeType?.startsWith('video/')) return 'video';
-  return 'document';
 }
 
 function extractFileContent(content: ZenviaInboundContent): ExtractedInboundContent | null {

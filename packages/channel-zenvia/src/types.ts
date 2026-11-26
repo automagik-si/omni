@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import type { ZenviaConnectorConfig } from './connector/types';
 import type { ZenviaHandoffRouting } from './handoff-routing';
 
 export const ZENVIA_HANDOFF_SOLUTIONS = ['conversion', 'zenvia_chat', 'nlu'] as const;
@@ -8,6 +9,7 @@ export type ZenviaHandoffSolution = (typeof ZENVIA_HANDOFF_SOLUTIONS)[number];
 export interface ZenviaConfig {
   apiToken: string;
   senderId: string;
+  connector?: ZenviaConnectorConfig;
   handoffSolution?: ZenviaHandoffSolution;
   webhookVerifyToken?: string;
   salesApiKey?: string;
@@ -19,10 +21,33 @@ export interface ZenviaConfig {
 export const ZenviaSalesProspectSchema = z.object({ id: z.string().min(1) }).passthrough();
 export type ZenviaSalesProspect = z.infer<typeof ZenviaSalesProspectSchema>;
 
-export const ZenviaSalesGroupsSchema = z.array(
-  z.object({ id: z.string().min(1), name: z.string().optional(), displayName: z.string().optional() }).passthrough(),
-);
+const ZenviaGroupSchema = z
+  .object({ id: z.string().min(1), name: z.string().optional(), displayName: z.string().optional() })
+  .passthrough();
+
+export const ZenviaSalesGroupsSchema = z.array(ZenviaGroupSchema);
 export type ZenviaSalesGroups = z.infer<typeof ZenviaSalesGroupsSchema>;
+
+export const ZenviaGroupsSchema = z.array(ZenviaGroupSchema);
+export type ZenviaGroups = z.infer<typeof ZenviaGroupsSchema>;
+
+export const ZenviaListedConversationSchema = z
+  .object({
+    id: z.string().min(1),
+    status: z.string().min(1),
+    channel: z.string().optional().catch(undefined),
+    from: z.string().optional().catch(undefined),
+    to: z.string().optional().catch(undefined),
+    createdAt: z.string().optional().catch(undefined),
+  })
+  .passthrough();
+export type ZenviaListedConversation = z.infer<typeof ZenviaListedConversationSchema>;
+
+export const ZenviaConversationListSchema = z.array(z.unknown());
+
+export type ZenviaConversationTransfer =
+  | { type: 'GROUP'; groupId: string }
+  | { type: 'USER'; groupId: string; userId: string };
 
 export const ZenviaSalesTransferResponseSchema = z
   .object({
@@ -198,5 +223,45 @@ export const ZenviaMessageStatusEventSchema = z
   })
   .passthrough();
 export type ZenviaMessageStatusEvent = z.infer<typeof ZenviaMessageStatusEventSchema>;
+
+const ZenviaActorSchema = z
+  .object({
+    id: z.string().optional().catch(undefined),
+    type: z.string().optional().catch(undefined),
+  })
+  .passthrough();
+
+export const ZenviaConversationStatusEventSchema = z
+  .object({
+    id: z.string().optional(),
+    type: z.literal('CONVERSATION_STATUS'),
+    timestamp: z.string().optional(),
+    conversation: z
+      .object({
+        id: z.string().optional(),
+        status: z.string().min(1),
+        statusTimestamp: z.string().optional(),
+        channel: z.string().optional(),
+        from: z.string().optional(),
+        to: z.string().optional(),
+        contactId: z.string().optional(),
+        groupId: z.string().optional(),
+        userId: z.string().optional(),
+        transferType: z.string().optional(),
+        newUserId: z.string().optional(),
+        closedBy: ZenviaActorSchema.optional().catch(undefined),
+        closeReason: z
+          .object({
+            key: z.string().optional().catch(undefined),
+            name: z.string().optional().catch(undefined),
+          })
+          .passthrough()
+          .optional()
+          .catch(undefined),
+      })
+      .passthrough(),
+  })
+  .passthrough();
+export type ZenviaConversationStatusEvent = z.infer<typeof ZenviaConversationStatusEventSchema>;
 
 export const ZenviaEventEnvelopeSchema = z.object({ type: z.string() }).passthrough();

@@ -116,3 +116,49 @@ describe('instances update: help of the Zenvia flags', () => {
     }
   });
 });
+
+describe('instances create/update: the Zenvia live chat flags', () => {
+  const argv = [
+    '--zenvia-connector-slug',
+    'tenant-slug',
+    '--zenvia-connector-integration-id',
+    '42',
+    '--zenvia-connector-access-token',
+    'access-token',
+    '--zenvia-connector-access-key',
+    'access-key',
+    '--zenvia-connector-env',
+    'homol',
+  ];
+  const expected = {
+    zenviaConnectorSlug: 'tenant-slug',
+    zenviaConnectorIntegrationId: '42',
+    zenviaConnectorAccessToken: 'access-token',
+    zenviaConnectorAccessKey: 'access-key',
+    zenviaConnectorEnv: 'homol',
+  };
+
+  test('create and update write every connector field', () => {
+    expect(bodyOf('create', argv)).toMatchObject(expected);
+    expect(bodyOf('update', argv)).toMatchObject(expected);
+  });
+
+  test('update clears a connector field with "null" and its help says so', () => {
+    expect(bodyOf('update', ['--zenvia-connector-slug', 'null'])).toHaveProperty('zenviaConnectorSlug', null);
+    for (const flag of [
+      '--zenvia-connector-slug',
+      '--zenvia-connector-integration-id',
+      '--zenvia-connector-access-token',
+      '--zenvia-connector-access-key',
+      '--zenvia-connector-env',
+    ]) {
+      expect(description('update', flag)).toContain('"null"');
+      expect(description('update', flag)).toMatch(/restart the instance/);
+    }
+  });
+
+  test('absent flags leave the fields out', () => {
+    const body = bodyOf('create', []);
+    for (const key of Object.keys(expected)) expect(body).not.toHaveProperty(key);
+  });
+});

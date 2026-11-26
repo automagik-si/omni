@@ -11,11 +11,11 @@ export function normalizeRoutingValue(value: string): string {
 
 export const zenviaHandoffRoutingSchema = z
   .object({
-    field: z.string().trim().min(1).max(128).describe('Key of handoffFields whose value picks the Sales group'),
+    field: z.string().trim().min(1).max(128).describe('Key of handoffFields whose value picks the handoff group'),
     groups: z
       .record(z.string().min(1).max(256), z.string().trim().min(1).max(64))
       .describe(
-        'Maps a value of the field to a Sales group id. Values compare trimmed, with inner whitespace collapsed and ignoring case',
+        'Maps a value of the field to a Zenvia group id. Values compare trimmed, with inner whitespace collapsed and ignoring case',
       ),
   })
   .strict()
@@ -118,7 +118,7 @@ export function resolveHandoffGroup(
   if (!routing) {
     return defaultGroupId
       ? { ok: true, groupId: defaultGroupId }
-      : { ok: false, error: 'Zenvia handoff refused: no Sales group is configured (zenviaHandoffGroupId)' };
+      : { ok: false, error: 'Zenvia handoff refused: no handoff group is configured (zenviaHandoffGroupId)' };
   }
 
   const routed = findRoutedGroup(routing, meta);

@@ -45,6 +45,8 @@ describe('channel event capabilities match published events', () => {
   it('derives emit helpers from BaseChannelPlugin', () => {
     expect(helperTypes.get('emitMessageReceived')).toBe('message.received');
     expect(helperTypes.get('emitReactionReceived')).toBe('reaction.received');
+    expect(helperTypes.get('emitChatHumanTakeover')).toBe('chat.human_takeover');
+    expect(helperTypes.get('emitChatHumanReleased')).toBe('chat.human_released');
   });
 
   for (const pkg of channelPackages) {
