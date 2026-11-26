@@ -282,7 +282,7 @@ chatsRoutes.patch('/:id', zValidator('json', updateChatSchema), async (c) => {
   const body = c.req.valid('json');
   const services = c.get('services');
 
-  const chat = await services.chats.update(id, body);
+  const chat = await services.chats.update(id, body, { mergeSettings: true });
 
   return c.json({ data: chat });
 });
