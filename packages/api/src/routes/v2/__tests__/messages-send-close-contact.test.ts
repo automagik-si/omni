@@ -257,3 +257,83 @@ describe('POST /messages/send/close-contact — per-instance closeContactConfig'
     expect(closeUntil - before).toBeLessThanOrEqual(65_000);
   });
 });
+
+describe('POST /messages/send/close-contact — keepReachable', () => {
+  test('lost without keepReachable still closes and pauses the chat', async () => {
+    const { app, chatUpdates } = mountCloseContactRoute();
+
+    const res = await postCloseContact(app, { outcome: 'lost' });
+
+    const json = (await res.json()) as { data: Record<string, unknown> };
+    expect(json.data.terminal).toBe(true);
+    expect(chatUpdates[0]?.settings).toMatchObject({
+      keep: true,
+      closed: true,
+      agentPaused: true,
+      closeOutcome: 'lost',
+    });
+  });
+
+  test('lost with keepReachable writes neither closed nor agentPaused and keeps every other side effect', async () => {
+    const { app, sendMessage, auditValues, chatUpdates, disarm, publish } = mountCloseContactRoute();
+
+    const res = await postCloseContact(app, { outcome: 'lost', text: 'Goodbye', keepReachable: true });
+
+    expect(res.status).toBe(201);
+    const json = (await res.json()) as { data: Record<string, unknown> };
+    expect(json.data.status).toBe('closed');
+    expect(json.data.terminal).toBe(false);
+    expect(json.data.closeUntil).toBeNull();
+    expect(json.data.outcome).toBe('lost');
+
+    const settings = chatUpdates[0]?.settings as Record<string, unknown>;
+    expect(settings).toEqual({ keep: true, closeUntil: null, closeOutcome: 'lost' });
+    expect('closed' in settings).toBe(false);
+    expect('agentPaused' in settings).toBe(false);
+
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    expect(auditValues[0]).toMatchObject({ outcome: 'lost', text: 'Goodbye' });
+    expect(disarm).toHaveBeenCalledWith({ chatId: CHAT_ID, instanceId: INSTANCE_ID, reason: 'contact_closed' });
+    expect(publish.mock.calls.map((call) => call[0])).toContain('chat.closed');
+  });
+
+  test('won with keepReachable takes closeUntil from the instance cooldown for the outcome', async () => {
+    const { app, chatUpdates } = mountCloseContactRoute({ closeContactConfig: { won: { cooldownMs: 60_000 } } });
+    const before = Date.now();
+
+    const res = await postCloseContact(app, { outcome: 'won', keepReachable: true });
+
+    const json = (await res.json()) as { data: Record<string, unknown> };
+    expect(json.data.terminal).toBe(false);
+    const closeUntil = Date.parse(String(json.data.closeUntil));
+    expect(closeUntil - before).toBeGreaterThanOrEqual(59_000);
+    expect(closeUntil - before).toBeLessThanOrEqual(65_000);
+    expect(chatUpdates[0]?.settings).toMatchObject({ closeUntil: json.data.closeUntil, closeOutcome: 'won' });
+    expect('closed' in (chatUpdates[0]?.settings as Record<string, unknown>)).toBe(false);
+  });
+
+  test('an escalated soft close with keepReachable stays reachable for the outcome cooldown', async () => {
+    const { app, chatUpdates, escalationUpdates } = mountCloseContactRoute({ recentCloseCount: 3 });
+    const before = Date.now();
+
+    const res = await postCloseContact(app, { outcome: 'no_response', keepReachable: true });
+
+    const json = (await res.json()) as { data: Record<string, unknown> };
+    expect(json.data.terminal).toBe(false);
+    expect(json.data.escalated).toBe(true);
+    expect(escalationUpdates).toEqual([{ escalated: true }]);
+    const closeUntil = Date.parse(String(json.data.closeUntil));
+    expect(closeUntil - before).toBeGreaterThanOrEqual(48 * 60 * 60 * 1000 - 1000);
+    expect(closeUntil - before).toBeLessThanOrEqual(48 * 60 * 60 * 1000 + 5000);
+    expect('closed' in (chatUpdates[0]?.settings as Record<string, unknown>)).toBe(false);
+  });
+
+  test('keepReachable must be a boolean', async () => {
+    const { app, chatUpdates } = mountCloseContactRoute();
+
+    const res = await postCloseContact(app, { outcome: 'lost', keepReachable: 'yes' });
+
+    expect(res.status).toBe(400);
+    expect(chatUpdates).toHaveLength(0);
+  });
+});

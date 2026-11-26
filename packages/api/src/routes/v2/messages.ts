@@ -2098,6 +2098,33 @@ async function computeCloseContactTerminalState(
   return { terminal: false, escalated: false, closeUntil };
 }
 
+function planCloseContactChatState(
+  outcome: CloseContactOutcome,
+  computed: { terminal: boolean; closeUntil: Date | null },
+  keepReachable: boolean,
+  instanceOverrides: { closeContactConfig?: unknown } | null,
+): { terminal: boolean; closeUntil: Date | null; settings: Record<string, unknown> } {
+  if (keepReachable) {
+    const { cooldownMs } = resolveCloseContactConfig(outcome, instanceOverrides);
+    const closeUntil = computed.closeUntil ?? (cooldownMs !== null ? new Date(Date.now() + cooldownMs) : null);
+    return {
+      terminal: false,
+      closeUntil,
+      settings: { closeUntil: closeUntil?.toISOString() ?? null, closeOutcome: outcome },
+    };
+  }
+  return {
+    terminal: computed.terminal,
+    closeUntil: computed.closeUntil,
+    settings: {
+      ...(outcome === 'lost' ? { agentPaused: true } : {}),
+      closed: computed.terminal,
+      closeUntil: computed.closeUntil?.toISOString() ?? null,
+      closeOutcome: outcome,
+    },
+  };
+}
+
 /**
  * Decide what the close-contact route sends to the channel.
  *
@@ -2229,13 +2256,13 @@ messagesRoutes.post('/send/close-contact', zValidator('json', sendCloseContactSc
     .returning();
 
   // ── 3. Compute terminal state from outcome + recent history ──────────────
-  const { terminal, escalated, closeUntil } = await computeCloseContactTerminalState(
-    db,
-    data.chatId,
-    outcome,
-    auditRow?.id ?? null,
-    instance,
-  );
+  const computed = await computeCloseContactTerminalState(db, data.chatId, outcome, auditRow?.id ?? null, instance);
+  const { escalated } = computed;
+  const {
+    terminal,
+    closeUntil,
+    settings: closeSettings,
+  } = planCloseContactChatState(outcome, computed, data.keepReachable === true, instance);
 
   // ── 4. Update chat settings — emits chat.closed via chats service ────────
   //
@@ -2256,7 +2283,6 @@ messagesRoutes.post('/send/close-contact', zValidator('json', sendCloseContactSc
   //
   // The dispatcher's close-contact gate honours `closed === true` (hard
   // terminal) for skip and treats a pure soft cooldown as pass.
-  const shouldPauseAgent = outcome === 'lost';
   const closedAt = new Date();
   // Merge into existing settings — replacing the whole JSONB column here would
   // drop unrelated keys such as followUpConfig.
@@ -2264,10 +2290,7 @@ messagesRoutes.post('/send/close-contact', zValidator('json', sendCloseContactSc
   await services.chats.update(data.chatId, {
     settings: {
       ...((closeChat?.settings as Record<string, unknown>) ?? {}),
-      ...(shouldPauseAgent ? { agentPaused: true } : {}),
-      closed: terminal,
-      closeUntil: closeUntil?.toISOString() ?? null,
-      closeOutcome: outcome,
+      ...closeSettings,
     } as Record<string, unknown>,
   });
 
