@@ -51,3 +51,10 @@ export function resolveFollowUpConfig(inputs: FollowUpConfigInputs): FollowUpSeq
 
   return null;
 }
+
+export function isFollowUpSwitchedOff(inputs: FollowUpConfigInputs): boolean {
+  const closest = [inputs.chat, inputs.instance, inputs.agent].find(
+    (candidate) => candidate !== null && candidate !== undefined,
+  );
+  return closest?.enabled === false;
+}
