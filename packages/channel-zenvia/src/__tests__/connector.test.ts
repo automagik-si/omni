@@ -572,6 +572,23 @@ describe('connector mode', () => {
       expect((eventBus.published as Published[]).some((e) => e.type === 'message.sent')).toBe(true);
     });
 
+    it('signs every call with the bare JWT, without a Bearer scheme', async () => {
+      fetchSpy = okFetch();
+      await connect(plugin);
+      await plugin.handleWebhook(post(openEvent()));
+      await plugin.getInstanceState(instanceId)?.connector?.settle();
+
+      const headers = fetchSpy.mock.calls.map(
+        (args: unknown[]) => ((args[1] as RequestInit).headers as Record<string, string>).Authorization,
+      );
+      expect(headers.length).toBeGreaterThan(0);
+      for (const header of headers) {
+        expect(header).not.toStartWith('Bearer');
+        expect(header?.split('.')).toHaveLength(3);
+        expect(verifyConnectorToken(header ?? null, CREDENTIALS)).toEqual({ ok: true });
+      }
+    });
+
     it('appends the env to the endpoint', async () => {
       fetchSpy = okFetch();
       await connect(plugin, { zenviaConnectorEnv: 'homol' });

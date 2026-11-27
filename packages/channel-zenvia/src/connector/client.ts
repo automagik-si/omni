@@ -89,7 +89,7 @@ export class ZenviaConnectorClient {
       {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${signConnectorToken(this.credentials, now)}`,
+          Authorization: signConnectorToken(this.credentials, now),
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ ...event, timestamp: now }),
