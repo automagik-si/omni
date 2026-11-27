@@ -1,6 +1,7 @@
 import type { PluginStorage } from '@omni/channel-sdk';
 
 const CONNECTOR_SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const CONNECTOR_CLOSED_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 export interface ConnectorSession {
   conversationId: string;
@@ -8,7 +9,35 @@ export interface ConnectorSession {
   openedAt: number;
   name?: string;
   started?: boolean;
+  awaitingReplyUntil?: number;
 }
+
+export type ConnectorClosedBy = 'platform' | 'handoff';
+
+export interface ConnectorClosedSession {
+  conversationId: string;
+  closedAt: number;
+  by: ConnectorClosedBy;
+  identifier?: string;
+  name?: string;
+}
+
+export interface ConnectorReopenRequest {
+  chatId: string;
+  conversationId: string;
+  requestedAt: number;
+  expirationMinutes: number;
+  externalId?: string;
+  identifier?: string;
+  name?: string;
+}
+
+export type ReopenClaim =
+  | { kind: 'claimed'; request: ConnectorReopenRequest }
+  | { kind: 'open'; session: ConnectorSession }
+  | { kind: 'pending' }
+  | { kind: 'handoff' }
+  | { kind: 'none' };
 
 export class ConnectorSessionStore {
   private readonly locks = new Map<string, Promise<unknown>>();
@@ -28,6 +57,14 @@ export class ConnectorSessionStore {
 
   private retiredKey(conversationId: string): string {
     return `connector:retired:${this.instanceId}:${conversationId}`;
+  }
+
+  private closedKey(chatId: string): string {
+    return `connector:closed:${this.instanceId}:${chatId}`;
+  }
+
+  private reopenKey(conversationId: string): string {
+    return `connector:reopen:${this.instanceId}:${conversationId}`;
   }
 
   private async withChat<T>(chatId: string, fn: () => Promise<T>): Promise<T> {
@@ -50,6 +87,18 @@ export class ConnectorSessionStore {
     await this.storage.set(this.retiredKey(conversationId), true, CONNECTOR_SESSION_TTL_MS);
   }
 
+  private async store(chatId: string, session: ConnectorSession): Promise<void> {
+    await this.storage.set(this.sessionKey(chatId), session, CONNECTOR_SESSION_TTL_MS);
+    await this.storage.set(this.conversationKey(session.conversationId), chatId, CONNECTOR_SESSION_TTL_MS);
+  }
+
+  private async forgetClosed(chatId: string): Promise<void> {
+    const closed = await this.closedOf(chatId);
+    if (!closed) return;
+    await this.storage.delete(this.closedKey(chatId));
+    await this.storage.delete(this.reopenKey(closed.conversationId));
+  }
+
   async get(chatId: string): Promise<ConnectorSession | undefined> {
     const session = await this.storage.get<ConnectorSession>(this.sessionKey(chatId));
     return session && typeof session.conversationId === 'string' ? session : undefined;
@@ -60,6 +109,16 @@ export class ConnectorSessionStore {
     return typeof chatId === 'string' && chatId ? chatId : undefined;
   }
 
+  async closedOf(chatId: string): Promise<ConnectorClosedSession | undefined> {
+    const closed = await this.storage.get<ConnectorClosedSession>(this.closedKey(chatId));
+    return closed && typeof closed.conversationId === 'string' ? closed : undefined;
+  }
+
+  async reopenOf(conversationId: string): Promise<ConnectorReopenRequest | undefined> {
+    const request = await this.storage.get<ConnectorReopenRequest>(this.reopenKey(conversationId));
+    return request && typeof request.chatId === 'string' ? request : undefined;
+  }
+
   private async isRetired(conversationId: string): Promise<boolean> {
     return this.storage.has(this.retiredKey(conversationId));
   }
@@ -68,8 +127,8 @@ export class ConnectorSessionStore {
     return this.withChat(chatId, async () => {
       const previous = await this.get(chatId);
       if (previous && previous.conversationId !== session.conversationId) await this.retire(previous.conversationId);
-      await this.storage.set(this.sessionKey(chatId), session, CONNECTOR_SESSION_TTL_MS);
-      await this.storage.set(this.conversationKey(session.conversationId), chatId, CONNECTOR_SESSION_TTL_MS);
+      await this.forgetClosed(chatId);
+      await this.store(chatId, session);
       return previous;
     });
   }
@@ -83,8 +142,8 @@ export class ConnectorSessionStore {
       const current = await this.get(chatId);
       if (current?.conversationId === session.conversationId) return { session: current };
       if (current) await this.retire(current.conversationId);
-      await this.storage.set(this.sessionKey(chatId), session, CONNECTOR_SESSION_TTL_MS);
-      await this.storage.set(this.conversationKey(session.conversationId), chatId, CONNECTOR_SESSION_TTL_MS);
+      await this.forgetClosed(chatId);
+      await this.store(chatId, session);
       return { session, ...(current ? { replaced: current.conversationId } : {}) };
     });
   }
@@ -97,18 +156,142 @@ export class ConnectorSessionStore {
     });
   }
 
-  async close(conversationId: string): Promise<{ chatId: string; session: ConnectorSession } | undefined> {
-    const chatId = await this.chatOf(conversationId);
+  markReplied(chatId: string, conversationId: string): Promise<void> {
+    return this.withChat(chatId, async () => {
+      const current = await this.get(chatId);
+      if (current?.conversationId !== conversationId || current.awaitingReplyUntil === undefined) return;
+      const { awaitingReplyUntil: _, ...replied } = current;
+      await this.storage.set(this.sessionKey(chatId), replied, CONNECTOR_SESSION_TTL_MS);
+    });
+  }
+
+  async close(
+    conversationId: string,
+    by: ConnectorClosedBy = 'platform',
+    chatIdHint?: string,
+  ): Promise<{ chatId: string; session: ConnectorSession } | undefined> {
+    const chatId = (await this.chatOf(conversationId)) ?? (await this.reopenOf(conversationId))?.chatId ?? chatIdHint;
     if (!chatId) {
       await this.retire(conversationId);
       return undefined;
     }
     return this.withChat(chatId, async () => {
       await this.retire(conversationId);
+      await this.storage.delete(this.reopenKey(conversationId));
       const session = await this.get(chatId);
-      if (!session || session.conversationId !== conversationId) return undefined;
-      await this.storage.delete(this.sessionKey(chatId));
-      return { chatId, session };
+      const current = session?.conversationId === conversationId ? session : undefined;
+      if (current) await this.storage.delete(this.sessionKey(chatId));
+      await this.recordClosed(chatId, conversationId, by, current);
+      return current ? { chatId, session: current } : undefined;
+    });
+  }
+
+  private async recordClosed(
+    chatId: string,
+    conversationId: string,
+    by: ConnectorClosedBy,
+    current: ConnectorSession | undefined,
+  ): Promise<void> {
+    const prior = await this.closedOf(chatId);
+    const same = prior?.conversationId === conversationId ? prior : undefined;
+    if (same?.by === 'handoff' && by === 'platform') return;
+    if (!current && !same && by !== 'handoff') return;
+    const identifier = current?.identifier ?? same?.identifier;
+    const name = current?.name ?? same?.name;
+    const record: ConnectorClosedSession = {
+      conversationId,
+      closedAt: Date.now(),
+      by,
+      ...(identifier ? { identifier } : {}),
+      ...(name ? { name } : {}),
+    };
+    await this.storage.set(this.closedKey(chatId), record, CONNECTOR_CLOSED_TTL_MS);
+  }
+
+  claimReopen(
+    chatId: string,
+    params: { now: number; inFlightMs: number; expirationMinutes: number },
+  ): Promise<ReopenClaim> {
+    return this.withChat(chatId, async () => {
+      const session = await this.get(chatId);
+      if (session) return { kind: 'open', session };
+      const closed = await this.closedOf(chatId);
+      if (!closed) return { kind: 'none' };
+      if (closed.by === 'handoff') return { kind: 'handoff' };
+      const pending = await this.reopenOf(closed.conversationId);
+      if (pending && params.now - pending.requestedAt < params.inFlightMs) return { kind: 'pending' };
+      const request: ConnectorReopenRequest = {
+        chatId,
+        conversationId: closed.conversationId,
+        requestedAt: params.now,
+        expirationMinutes: params.expirationMinutes,
+        ...(closed.identifier ? { identifier: closed.identifier } : {}),
+        ...(closed.name ? { name: closed.name } : {}),
+      };
+      await this.storage.set(
+        this.reopenKey(closed.conversationId),
+        request,
+        params.expirationMinutes * 60_000 + params.inFlightMs,
+      );
+      return { kind: 'claimed', request };
+    });
+  }
+
+  reopenRequested(request: ConnectorReopenRequest, externalId: string): Promise<void> {
+    return this.withChat(request.chatId, async () => {
+      const current = await this.reopenOf(request.conversationId);
+      if (current?.requestedAt !== request.requestedAt) return;
+      await this.storage.set(
+        this.reopenKey(request.conversationId),
+        { ...current, externalId },
+        Math.max(1, current.requestedAt + current.expirationMinutes * 60_000 - Date.now()),
+      );
+    });
+  }
+
+  abandonReopen(request: ConnectorReopenRequest): Promise<void> {
+    return this.withChat(request.chatId, async () => {
+      const current = await this.reopenOf(request.conversationId);
+      if (current?.requestedAt === request.requestedAt)
+        await this.storage.delete(this.reopenKey(request.conversationId));
+    });
+  }
+
+  async acceptReopen(
+    conversationId: string,
+    now: number,
+  ): Promise<{ chatId: string; session: ConnectorSession; request: ConnectorReopenRequest } | undefined> {
+    const pending = await this.reopenOf(conversationId);
+    if (!pending) return undefined;
+    return this.withChat(pending.chatId, async () => {
+      const request = await this.reopenOf(conversationId);
+      if (!request) return undefined;
+      await this.storage.delete(this.reopenKey(conversationId));
+      const current = await this.get(request.chatId);
+      if (current && current.conversationId !== conversationId) return undefined;
+      const session: ConnectorSession = {
+        ...(current ?? {}),
+        conversationId,
+        ...(request.identifier ? { identifier: request.identifier } : {}),
+        ...(request.name ? { name: request.name } : {}),
+        openedAt: current?.openedAt ?? now,
+        started: true,
+        awaitingReplyUntil: request.requestedAt + request.expirationMinutes * 60_000,
+      };
+      await this.storage.delete(this.retiredKey(conversationId));
+      await this.storage.delete(this.closedKey(request.chatId));
+      await this.store(request.chatId, session);
+      return { chatId: request.chatId, session, request };
+    });
+  }
+
+  async rejectReopen(conversationId: string): Promise<ConnectorReopenRequest | undefined> {
+    const pending = await this.reopenOf(conversationId);
+    if (!pending) return undefined;
+    return this.withChat(pending.chatId, async () => {
+      const request = await this.reopenOf(conversationId);
+      if (request) await this.storage.delete(this.reopenKey(conversationId));
+      return request;
     });
   }
 }

@@ -9,7 +9,11 @@ export interface ZenviaConnectorConfig {
   accessToken: string;
   accessKey: string;
   env?: ZenviaConnectorEnv;
+  agentName?: string;
+  reopenExpirationMinutes?: number;
 }
+
+export const ZENVIA_CONNECTOR_REOPEN_MAX_MINUTES = 10_080;
 
 const looseId = z
   .union([z.string(), z.number()])
@@ -48,6 +52,7 @@ export const ConnectorEventSchema = z
     requestId: looseString,
     identifier: looseString,
     fileId: looseString,
+    reason: looseString,
     timestamp: z.union([z.number(), z.string()]).optional().catch(undefined),
     parameters: z.record(z.unknown()).optional().catch(undefined),
     file: z.record(z.unknown()).optional().catch(undefined),
@@ -94,6 +99,13 @@ export const ConnectorUploadedFileSchema = z
     contentType: looseString,
     name: looseString,
     buffer: z.unknown(),
+  })
+  .passthrough();
+
+export const ConnectorReplyParametersSchema = z
+  .object({
+    status: looseString,
+    reason: looseString,
   })
   .passthrough();
 

@@ -369,7 +369,10 @@ API. The bot calls `start_live_chat` with the integration; from then on Zenvia
 NLU sends the conversation to Omni and relays what Omni answers. When the
 agent hands off, Omni closes the live chat with the queue in `reason`, and the
 bot transfers the contact to people itself. A contact who comes back later
-starts again in the bot and reaches Omni as a new conversation.
+starts again in the bot and reaches Omni as a new conversation. When Zenvia
+NLU closes the live chat itself (the contact went idle past the integration's
+inactivity time, or closed it), the agent can still write to the contact: the
+send reopens the live chat with a WhatsApp template (see Reopen below).
 
 The mode is selected by `zenviaConnectorSlug`. With it set, `zenviaApiToken`,
 `zenviaSenderId` and `webhookVerifyToken` are optional and the Channels API is
@@ -383,19 +386,27 @@ against it).
 | `zenviaConnectorAccessToken`     | yes      | The integration's access token, carried as the `access_token` claim. Sealed at rest. |
 | `zenviaConnectorAccessKey`       | yes      | The integration's access key, the HS256 signing key of every token. Sealed at rest. |
 | `zenviaConnectorEnv`             | no       | `homol` \| `prod`, appended as `?env=` so Zenvia NLU answers on that environment's webhook. |
+| `zenviaConnectorReopenExpirationMinutes` | no | Whole minutes, 1 to 10080: the `expirationTime` of a `REOPEN_CONVERSATION`. Setting it turns reopening on; unset, a send to a closed live chat is refused. |
 | `zenviaHandoffGroupId`           | no       | Default queue value sent as the close `reason`. |
 | `zenviaHandoffRouting`           | no       | Same map as above, but each value is the string the bot branches on, not a Zenvia group id. |
 
 Configure the integration's webhook as
 `{OMNI_BASE_URL}/api/v2/channels/zenvia/{instanceId}/webhook`.
 
-**Auth.** Every request either way carries `Authorization: Bearer <jwt>`:
-header `{"alg":"HS256","typ":"JWT"}`, payload `{access_token, iat, exp}` with
-`exp = iat + 60`, signed with the access key, a new token per request. Inbound
+The agent name sent in `parameters.agent.name` is the instance name (the API
+passes it to the plugin as `zenviaConnectorAgentName`); without one it is
+`Omni`. The agent id is the instance id.
+
+**Auth.** Both directions use the same JWT: header
+`{"alg":"HS256","typ":"JWT"}`, payload `{access_token, iat, exp}` with
+`exp = iat + 60`, signed with the access key, a new token per request. Omni
+sends it as the bare token, `Authorization: <jwt>`, with no scheme: measured
+against the connector endpoint, the bare token passes authentication while the
+same token behind `Bearer ` is answered 401 on both `env` values. Inbound
 tokens are always verified as HS256 whatever `alg` they claim; the
 `access_token` claim must equal the configured token (constant-time), `exp`
 may be at most 30 s in the past, `iat` at most 30 s in the future, and the
-lifetime at most 90 s. A bare token without `Bearer` is accepted too. A
+lifetime at most 90 s. Both the bare token and `Bearer <jwt>` are accepted. A
 failure answers 401 `{"requestId","message":"Unauthorized"}` and logs the
 reason, the scheme and the claimed `alg` (never the token). The Channels API
 verify token does not authorize a connector event; it still authorizes a
@@ -414,8 +425,9 @@ event, 404 for an unknown file, 500 when the event could not be published.
 | `UPLOAD_FILE`        | Decodes `file.buffer` (a Node Buffer `{type:"Buffer",data:[...]}` or base64), stores it for 24 h and answers `{fileId,requestId,message}`. |
 | `SEND_FILE`          | `message.received` with the media typed by its MIME type and `mediaId` `zenvia-connector-file:<fileId>`, which `downloadInboundMedia` reads back from the store (or asks Zenvia NLU with `GET_FILE`). The caption is the text. |
 | `GET_FILE`           | Returns the stored file in the spec's shape, 404 when it is gone. |
-| `CLOSE_CONVERSATION` | Drops the session (the contact closed or went idle). |
-| `ACCEPT_CONVERSATION`, `REJECT_CONVERSATION` | Logged (replies to a reopen request). |
+| `CLOSE_CONVERSATION` | Drops the session and remembers the conversation as closed by the platform (the contact closed it, went idle, or answered a reopen too late). Nothing is published: the agent is not paused and no handoff or takeover event is emitted. |
+| `ACCEPT_CONVERSATION` | Answer to a reopen: the conversation is the contact's session again (see Reopen). Ignored without a pending reopen. |
+| `REJECT_CONVERSATION` | Answer to a reopen: `message.failed` for the reopen message, with `parameters.status` as `errorCode`. Ignored without a pending reopen. |
 
 Both `conversationId` and `conversationID` are read; Omni sends
 `conversationId`. The chat id is the contact's phone as digits with the
@@ -432,20 +444,23 @@ agent providers see it as `executionContext.source.sessionStart`.
 
 Sessions live in plugin storage (database-backed, 7 days), keyed by instance
 and contact, with the reverse map from conversation to contact, so a redeploy
-keeps them. A conversation that was closed or replaced by a newer
+keeps them. The last closed conversation of a contact, and who closed it
+(the platform or a handoff), is kept 30 days for the reopen. A conversation that was closed or replaced by a newer
 `OPEN_CONVERSATION` is remembered for the same 7 days: a late event of it is
 acknowledged and ignored, while an event of a conversation never seen (an
 `OPEN_CONVERSATION` that was missed) adopts the contact's session. Writes to
 one contact's session are serialized within the process.
 
-**Outbound.** Only a contact with an open session can be written to; any other
-send fails with `no open Zenvia live chat for this contact` (rejected, not
-retried). Text goes as `SEND_MESSAGE` with Markdown converted to WhatsApp
-syntax. Media is read from `content.localPath` (or downloaded from
-`content.mediaUrl` behind the same guard as inbound media), sent as
-`UPLOAD_FILE` and then `SEND_FILE` with the returned id; a caption follows as a
-`SEND_MESSAGE`. Templates and other content types are refused. The agent is
-`{ id: <instanceId>, name: "Omni" }`. Only HTTP 200 with `message: "OK"` is a
+**Outbound.** A contact with an open session is written to directly. A
+contact whose live chat is closed goes through Reopen below; a contact that
+never had one fails with `no open Zenvia live chat for this contact`
+(rejected, not retried). Text goes as `SEND_MESSAGE` with Markdown converted
+to WhatsApp syntax. A template sends `metadata.template.fields.message` (or
+`content.text`) as text, since the live chat has no templates of its own; a
+template with neither is refused. Media is read from `content.localPath` (or
+downloaded from `content.mediaUrl` behind the same guard as inbound media),
+sent as `UPLOAD_FILE` and then `SEND_FILE` with the returned id; a caption
+follows as a `SEND_MESSAGE`. Other content types are refused. Only HTTP 200 with `message: "OK"` is a
 success; a 5xx or a network failure is retryable, 400 and 404 (and a 200 with
 another message) are definitive refusals, 401 is a credential problem.
 
@@ -459,6 +474,48 @@ the chat would make the agent ignore a returning contact. The handoff route
 still disarms the follow-up. When the close fails the send fails too and the
 session stays, so the handoff can be retried. No human takeover or release
 event is published in this mode: the bot owns the human phase.
+
+**Reopen.** Zenvia NLU closes a live chat on its own when the contact stays
+silent past the integration's inactivity time, or when the contact closes it.
+The agent may still need to write (a follow-up after a day of silence), so a
+send to such a contact asks Zenvia NLU to reopen the conversation:
+
+```
+{"action":"REOPEN_CONVERSATION","conversationId":"<last conversation>",
+ "parameters":{"expirationTime":"<minutes>","message":"<the text>"},"timestamp":<ms>}
+```
+
+Zenvia NLU sends the HSM template configured on the integration's outbound
+settings (one variable, named `message`) with the text in it. The template is
+chosen there, not by Omni; Omni only supplies the text. The send succeeds when
+the request is accepted (`message.sent` carries the request id), and then:
+
+- `ACCEPT_CONVERSATION` makes the conversation the contact's session again.
+  Later sends go as `SEND_MESSAGE` on it and the contact's answer arrives as a
+  `SEND_MESSAGE` of the same conversation, published without `sessionStart`
+  (the agent wrote first, nothing was paused). A reply that arrives before
+  the `ACCEPT` reopens it the same way.
+- `REJECT_CONVERSATION` (`contact_not_found`, `invalid_channel`,
+  `bad_integration_config`, `message_not_sent`, `contact_in_conversation`...)
+  publishes `message.failed` for the request id, not retryable. A later send
+  tries again.
+- A `CLOSE_CONVERSATION` for it (the contact answered after the expiration)
+  closes it again; the contact is back in the bot.
+- If the expiration passes with no reply and no close, the next send counts
+  the live chat as closed and reopens again.
+
+While a reopen waits for its answer (2 minutes at most), another send to the
+contact fails as retryable and nothing is sent. A failed `REOPEN_CONVERSATION`
+call fails the send (retryable on a 5xx) and leaves the next send free to try
+again.
+
+A send to a closed live chat is refused, with nothing sent, when the live chat
+was closed by a handoff (the contact is with people; this never reopens), when
+it is itself a handoff, when it is not text (or a template with a message),
+or when `zenviaConnectorReopenExpirationMinutes` is not set. A new
+`OPEN_CONVERSATION` for the contact clears all of this. Zenvia NLU requires a
+WhatsApp integration through LivePerson or Zenvia, its Outbound API enabled
+and the reopen template set on the integration.
 
 ## Pending for follow-up PRs
 
@@ -486,8 +543,9 @@ event is published in this mode: the bot owns the human phase.
   format it does not match ends in a 422, never in a transfer of the wrong
   conversation.
 - Rate limits for `POST /channels/whatsapp/messages` and for the Sales APIs.
-- Live chat mode: whether Zenvia NLU signs its webhook calls with the same
-  HS256 token it asks of us (the guide documents only our side), whether
-  `CLOSE_CONVERSATION` tolerates extra fields (a handoff summary), which key
-  spelling it expects (`conversationId` is the one its endpoint validates),
-  and whether `contact.phone` ever carries the country code.
+- Live chat mode: whether `contact.phone` ever carries the country code, and
+  whether a `SEND_MESSAGE` after a reopen's `ACCEPT_CONVERSATION` but before
+  the contact answers reaches WhatsApp (the reopen template opened the
+  window only if the contact answers it). Answered: Zenvia NLU signs its calls
+  with the same JWT it asks of us, `CLOSE_CONVERSATION` takes no field besides
+  `reason`, and its endpoint validates `conversationId`.

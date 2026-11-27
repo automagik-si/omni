@@ -66,6 +66,17 @@ export class ZenviaConnectorClient {
     return this.post({ action: 'SEND_FILE', conversationId, parameters: { agent, file: { id: fileId } } }, 'sendFile');
   }
 
+  reopenConversation(conversationId: string, expirationMinutes: number, message: string): Promise<ConnectorResponse> {
+    return this.post(
+      {
+        action: 'REOPEN_CONVERSATION',
+        conversationId,
+        parameters: { expirationTime: String(expirationMinutes), message },
+      },
+      'reopenConversation',
+    );
+  }
+
   closeConversation(conversationId: string, reason: string): Promise<ConnectorResponse> {
     return this.post({ action: 'CLOSE_CONVERSATION', conversationId, reason }, 'closeConversation');
   }

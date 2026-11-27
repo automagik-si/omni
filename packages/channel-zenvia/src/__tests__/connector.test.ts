@@ -531,19 +531,334 @@ describe('connector mode', () => {
   });
 
   describe('CLOSE_CONVERSATION', () => {
-    it('drops the session so the agent can no longer write to the contact', async () => {
+    const close = (conversationId = CONVERSATION_ID) =>
+      post({
+        action: 'CLOSE_CONVERSATION',
+        conversationId,
+        identifier: IDENTIFIER,
+        requestId: `close-${conversationId}`,
+      });
+
+    it('ends the session on an inactivity close without pausing the agent or reporting a handoff', async () => {
       fetchSpy = okFetch();
       await connect(plugin);
       await plugin.handleWebhook(post(openEvent()));
+      await plugin.getInstanceState(instanceId)?.connector?.settle();
+      fetchSpy.mockClear();
+      const before = eventBus.published.length;
 
-      const res = await plugin.handleWebhook(
-        post({ action: 'CLOSE_CONVERSATION', conversationId: CONVERSATION_ID, identifier: IDENTIFIER, requestId: 'c' }),
-      );
+      const res = await plugin.handleWebhook(close());
+
       expect(res.status).toBe(200);
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(eventBus.published.slice(before)).toEqual([]);
+      const runtime = plugin.getInstanceState(instanceId)?.connector;
+      expect(await runtime?.sessions.get(CHAT_ID)).toBeUndefined();
+      expect(await runtime?.sessions.closedOf(CHAT_ID)).toMatchObject({
+        conversationId: CONVERSATION_ID,
+        by: 'platform',
+      });
+    });
+
+    it('fails a later send clearly when reopening is off, sending nothing', async () => {
+      fetchSpy = okFetch();
+      await connect(plugin);
+      await plugin.handleWebhook(post(openEvent()));
+      await plugin.handleWebhook(close());
+      await plugin.getInstanceState(instanceId)?.connector?.settle();
+      fetchSpy.mockClear();
 
       const result = await plugin.sendMessage(instanceId, { to: CHAT_ID, content: { type: 'text', text: 'hi' } });
+
       expect(result).toMatchObject({ success: false, retryable: false, rejected: true });
-      expect(result.error).toBe('no open Zenvia live chat for this contact');
+      expect(result.error).toContain('zenviaConnectorReopenExpirationMinutes');
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it('refuses a contact that never had a live chat', async () => {
+      fetchSpy = okFetch();
+      await connect(plugin, { zenviaConnectorReopenExpirationMinutes: 1440 });
+
+      const result = await plugin.sendMessage(instanceId, { to: CHAT_ID, content: { type: 'text', text: 'hi' } });
+
+      expect(result).toMatchObject({
+        success: false,
+        rejected: true,
+        error: 'no open Zenvia live chat for this contact',
+      });
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it('acknowledges a close of an unknown conversation', async () => {
+      fetchSpy = okFetch();
+      await connect(plugin);
+      const before = eventBus.published.length;
+
+      const res = await plugin.handleWebhook(close(OTHER_CONVERSATION_ID));
+
+      expect(res.status).toBe(200);
+      expect(eventBus.published.slice(before)).toEqual([]);
+    });
+  });
+
+  describe('reopen', () => {
+    const REOPEN_MINUTES = 1440;
+    const text = (body: string) => ({ to: CHAT_ID, content: { type: 'text' as const, text: body } });
+    const close = () =>
+      post({ action: 'CLOSE_CONVERSATION', conversationId: CONVERSATION_ID, identifier: IDENTIFIER, requestId: 'cl' });
+    const accept = () =>
+      post({
+        action: 'ACCEPT_CONVERSATION',
+        conversationId: CONVERSATION_ID,
+        requestId: 'acc-1',
+        parameters: { status: 'accepted', contact: { id: 1, phone: LOCAL_PHONE, channel: 'whatsapp' } },
+        timestamp: 1_797_000_100_000,
+      });
+    const reject = (status: string) =>
+      post({
+        action: 'REJECT_CONVERSATION',
+        conversationId: CONVERSATION_ID,
+        requestId: 'rej-1',
+        parameters: { status, reason: 'The contact is already in an conversation' },
+        timestamp: 1_797_000_100_000,
+      });
+
+    async function closedContact(extra: Record<string, unknown> = {}): Promise<void> {
+      fetchSpy = okFetch();
+      await connect(plugin, { zenviaConnectorReopenExpirationMinutes: REOPEN_MINUTES, ...extra });
+      await plugin.handleWebhook(post(openEvent()));
+      await plugin.handleWebhook(close());
+      await plugin.getInstanceState(instanceId)?.connector?.settle();
+      fetchSpy.mockClear();
+    }
+
+    function failedEvents(): Array<Record<string, unknown>> {
+      return (eventBus.published as Published[])
+        .filter((e) => e.type === 'message.failed')
+        .map((e) => e.payload as Record<string, unknown>);
+    }
+
+    it('sends REOPEN_CONVERSATION with the message and the expiration for a closed live chat', async () => {
+      await closedContact();
+
+      const result = await plugin.sendMessage(instanceId, text('**Oi**, ainda posso ajudar?'));
+
+      expect(result).toMatchObject({ success: true, messageId: 'altu-REOPEN_CONVERSATION' });
+      expect(sentBodies(fetchSpy)).toEqual([
+        {
+          action: 'REOPEN_CONVERSATION',
+          conversationId: CONVERSATION_ID,
+          parameters: { expirationTime: String(REOPEN_MINUTES), message: '*Oi*, ainda posso ajudar?' },
+          timestamp: expect.any(Number),
+        },
+      ]);
+      expect(
+        (eventBus.published as Published[]).some(
+          (e) =>
+            e.type === 'message.sent' &&
+            (e.payload as { externalId?: string }).externalId === 'altu-REOPEN_CONVERSATION',
+        ),
+      ).toBe(true);
+    });
+
+    it('holds a second send while the reopen waits for its answer', async () => {
+      await closedContact();
+      await plugin.sendMessage(instanceId, text('first'));
+
+      const second = await plugin.sendMessage(instanceId, text('second'));
+
+      expect(second).toMatchObject({ success: false, retryable: true });
+      expect(second.rejected).toBeUndefined();
+      expect(sentBodies(fetchSpy).filter((b) => b.action === 'REOPEN_CONVERSATION')).toHaveLength(1);
+    });
+
+    it('reopens the session on ACCEPT so sends and the lead reply flow on the same conversation', async () => {
+      await closedContact();
+      await plugin.sendMessage(instanceId, text('follow-up'));
+
+      expect((await plugin.handleWebhook(accept())).status).toBe(200);
+      const runtime = plugin.getInstanceState(instanceId)?.connector;
+      expect((await runtime?.sessions.get(CHAT_ID))?.awaitingReplyUntil).toEqual(expect.any(Number));
+
+      const next = await plugin.sendMessage(instanceId, text('still here'));
+      expect(next).toMatchObject({ success: true, messageId: 'altu-SEND_MESSAGE' });
+      expect(sentBodies(fetchSpy).at(-1)).toMatchObject({ action: 'SEND_MESSAGE', conversationId: CONVERSATION_ID });
+
+      await plugin.handleWebhook(post(messageEvent('lead-reply-1', ['quero sim'])));
+      const inbound = received(eventBus).at(-1);
+      expect(inbound).toMatchObject({ externalId: 'lead-reply-1', content: { text: 'quero sim' } });
+      expect(inbound?.sessionStart).toBeUndefined();
+      expect((await runtime?.sessions.get(CHAT_ID))?.awaitingReplyUntil).toBeUndefined();
+    });
+
+    it('publishes a lead reply to a reopen whose ACCEPT never arrived', async () => {
+      await closedContact();
+      await plugin.sendMessage(instanceId, text('follow-up'));
+
+      const res = await plugin.handleWebhook(post(messageEvent('lead-reply-2', ['oi'])));
+
+      expect(res.status).toBe(200);
+      expect(received(eventBus).at(-1)).toMatchObject({ externalId: 'lead-reply-2' });
+      const runtime = plugin.getInstanceState(instanceId)?.connector;
+      expect((await runtime?.sessions.get(CHAT_ID))?.conversationId).toBe(CONVERSATION_ID);
+    });
+
+    it('turns a REJECT into a failure of the reopen message and allows a later attempt', async () => {
+      await closedContact();
+      await plugin.sendMessage(instanceId, text('follow-up'));
+
+      expect((await plugin.handleWebhook(reject('contact_in_conversation'))).status).toBe(200);
+
+      expect(failedEvents()).toEqual([
+        expect.objectContaining({
+          chatId: CHAT_ID,
+          externalId: 'altu-REOPEN_CONVERSATION',
+          errorCode: 'contact_in_conversation',
+          retryable: false,
+        }),
+      ]);
+      expect(String(failedEvents()[0]?.error)).toContain('contact_in_conversation');
+      const again = await plugin.sendMessage(instanceId, text('next rung'));
+      expect(again).toMatchObject({ success: true });
+      expect(sentBodies(fetchSpy).filter((b) => b.action === 'REOPEN_CONVERSATION')).toHaveLength(2);
+    });
+
+    it('ignores an ACCEPT or REJECT without a pending reopen', async () => {
+      await closedContact();
+
+      expect((await plugin.handleWebhook(accept())).status).toBe(200);
+      expect((await plugin.handleWebhook(reject('contact_not_found'))).status).toBe(200);
+
+      expect(await plugin.getInstanceState(instanceId)?.connector?.sessions.get(CHAT_ID)).toBeUndefined();
+      expect(failedEvents()).toEqual([]);
+    });
+
+    it('closes the reopened session when the lead answers after the expiration', async () => {
+      await closedContact();
+      await plugin.sendMessage(instanceId, text('follow-up'));
+      await plugin.handleWebhook(accept());
+
+      await plugin.handleWebhook(close());
+
+      const runtime = plugin.getInstanceState(instanceId)?.connector;
+      expect(await runtime?.sessions.get(CHAT_ID)).toBeUndefined();
+      expect(await runtime?.sessions.closedOf(CHAT_ID)).toMatchObject({ by: 'platform' });
+      const again = await plugin.sendMessage(instanceId, text('next rung'));
+      expect(again).toMatchObject({ success: true, messageId: 'altu-REOPEN_CONVERSATION' });
+    });
+
+    it('reopens again once the window passed without a reply', async () => {
+      await closedContact();
+      await plugin.sendMessage(instanceId, text('follow-up'));
+      await plugin.handleWebhook(accept());
+      const later = Date.now() + (REOPEN_MINUTES + 1) * 60_000;
+      const clock = spyOn(Date, 'now').mockReturnValue(later);
+      try {
+        const result = await plugin.sendMessage(instanceId, text('next rung'));
+        expect(result).toMatchObject({ success: true, messageId: 'altu-REOPEN_CONVERSATION' });
+      } finally {
+        clock.mockRestore();
+      }
+      expect(sentBodies(fetchSpy).filter((b) => b.action === 'REOPEN_CONVERSATION')).toHaveLength(2);
+    });
+
+    it('lets a failed REOPEN be tried again', async () => {
+      await closedContact();
+      fetchSpy?.mockImplementation((async () => jsonResponse({ message: 'down' }, 503)) as unknown as typeof fetch);
+
+      const failed = await plugin.sendMessage(instanceId, text('follow-up'));
+      expect(failed).toMatchObject({ success: false, retryable: true });
+      expect(failedEvents()).toHaveLength(1);
+
+      fetchSpy?.mockImplementation((async () =>
+        jsonResponse({ requestId: 'altu-retry', message: 'OK' })) as unknown as typeof fetch);
+      expect(await plugin.sendMessage(instanceId, text('follow-up'))).toMatchObject({ success: true });
+    });
+
+    it('never reopens after the handoff close, even when Zenvia NLU closes it too', async () => {
+      await closedContact();
+      await plugin.handleWebhook(
+        post(openEvent(undefined, { conversationId: OTHER_CONVERSATION_ID, requestId: 'o2' })),
+      );
+      await plugin.getInstanceState(instanceId)?.connector?.settle();
+      await plugin.sendMessage(instanceId, {
+        ...text('A person will take it from here.'),
+        metadata: { isHandoff: true, handoffFields: { queue: 'queue-a' } },
+      });
+      await plugin.handleWebhook(
+        post({ action: 'CLOSE_CONVERSATION', conversationId: OTHER_CONVERSATION_ID, requestId: 'echo' }),
+      );
+      fetchSpy?.mockClear();
+
+      const result = await plugin.sendMessage(instanceId, text('follow-up'));
+
+      expect(result).toMatchObject({ success: false, rejected: true, retryable: false });
+      expect(result.error).toContain('handed off');
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it('does not reopen for a handoff or for media', async () => {
+      await closedContact();
+
+      const handoff = await plugin.sendMessage(instanceId, {
+        ...text('bye'),
+        metadata: { isHandoff: true, handoffFields: { queue: 'queue-a' } },
+      });
+      const media = await plugin.sendMessage(instanceId, {
+        to: CHAT_ID,
+        content: { type: 'image', mediaUrl: 'https://files.example.com/a.png' },
+      });
+
+      expect(handoff).toMatchObject({ success: false, rejected: true });
+      expect(media).toMatchObject({ success: false, rejected: true });
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it('reopens with the message field of a template', async () => {
+      await closedContact();
+
+      const result = await plugin.sendMessage(instanceId, {
+        to: CHAT_ID,
+        content: { type: 'template' },
+        metadata: { template: { id: 'reopen-hsm', fields: { message: 'Posso ajudar?' } } },
+      });
+
+      expect(result).toMatchObject({ success: true });
+      expect(sentBodies(fetchSpy)).toEqual([
+        expect.objectContaining({
+          action: 'REOPEN_CONVERSATION',
+          parameters: { expirationTime: String(REOPEN_MINUTES), message: 'Posso ajudar?' },
+        }),
+      ]);
+    });
+
+    it('starts over on a new OPEN_CONVERSATION after a handoff close', async () => {
+      await closedContact();
+      await plugin.handleWebhook(
+        post(openEvent(undefined, { conversationId: OTHER_CONVERSATION_ID, requestId: 'o3' })),
+      );
+      await plugin.getInstanceState(instanceId)?.connector?.settle();
+      await plugin.sendMessage(instanceId, {
+        ...text('bye'),
+        metadata: { isHandoff: true, handoffFields: { queue: 'queue-a' } },
+      });
+      const third = '3be5e1d3-d949-44ab-86a7-6d032b0cd17e';
+      await plugin.handleWebhook(post(openEvent(undefined, { conversationId: third, requestId: 'o4' })));
+      await plugin.getInstanceState(instanceId)?.connector?.settle();
+
+      const runtime = plugin.getInstanceState(instanceId)?.connector;
+      expect(await runtime?.sessions.closedOf(CHAT_ID)).toBeUndefined();
+      expect(await plugin.sendMessage(instanceId, text('hi'))).toMatchObject({ success: true });
+      expect(sentBodies(fetchSpy).at(-1)).toMatchObject({ action: 'SEND_MESSAGE', conversationId: third });
+    });
+
+    it('refuses an expiration that is not a whole number of minutes in range', async () => {
+      for (const value of [0, -5, 1.5, 'soon', 10_081]) {
+        await expect(connect(plugin, { zenviaConnectorReopenExpirationMinutes: value })).rejects.toThrow(
+          'zenviaConnectorReopenExpirationMinutes',
+        );
+      }
+      await connect(plugin, { zenviaConnectorReopenExpirationMinutes: '60' });
     });
   });
 
@@ -587,6 +902,43 @@ describe('connector mode', () => {
         expect(header?.split('.')).toHaveLength(3);
         expect(verifyConnectorToken(header ?? null, CREDENTIALS)).toEqual({ ok: true });
       }
+    });
+
+    it('names the agent after the configured agent name', async () => {
+      fetchSpy = okFetch();
+      await connect(plugin, { zenviaConnectorAgentName: 'Support line' });
+      await plugin.handleWebhook(post(openEvent()));
+      await plugin.getInstanceState(instanceId)?.connector?.settle();
+
+      await plugin.sendMessage(instanceId, { to: CHAT_ID, content: { type: 'text', text: 'hi' } });
+
+      const agents = sentBodies(fetchSpy).map((b) => (b.parameters as { agent?: unknown }).agent);
+      expect(agents).toEqual([
+        { id: instanceId, name: 'Support line' },
+        { id: instanceId, name: 'Support line' },
+      ]);
+    });
+
+    it('sends the message field of a template as text in an open live chat', async () => {
+      fetchSpy = okFetch();
+      await connect(plugin);
+      await plugin.handleWebhook(post(openEvent()));
+      await plugin.getInstanceState(instanceId)?.connector?.settle();
+      fetchSpy.mockClear();
+
+      const result = await plugin.sendMessage(instanceId, {
+        to: CHAT_ID,
+        content: { type: 'template' },
+        metadata: { template: { id: 't', fields: { message: 'Posso ajudar?' } } },
+      });
+
+      expect(result).toMatchObject({ success: true });
+      expect(sentBodies(fetchSpy)).toEqual([
+        expect.objectContaining({
+          action: 'SEND_MESSAGE',
+          parameters: expect.objectContaining({ messages: ['Posso ajudar?'] }),
+        }),
+      ]);
     });
 
     it('appends the env to the endpoint', async () => {
@@ -674,7 +1026,7 @@ describe('connector mode', () => {
       }
     });
 
-    it('refuses a template in a live chat', async () => {
+    it('refuses a template without a message in a live chat', async () => {
       fetchSpy = okFetch();
       await connect(plugin);
       await plugin.handleWebhook(post(openEvent()));
