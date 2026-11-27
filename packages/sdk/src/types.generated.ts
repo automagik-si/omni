@@ -6638,6 +6638,8 @@ export interface components {
              * @enum {string|null}
              */
             zenviaConnectorEnv?: "homol" | "prod" | null;
+            /** @description Live chat mode: minutes a REOPEN_CONVERSATION stays valid (its expirationTime), from 1 to 10080. Setting it lets a send to a contact whose live chat Zenvia NLU closed (inactivity or the contact) reopen it through the HSM template configured on the Zenvia NLU integration, with the text as the template variable message. Unset, such a send is refused. Never applies after a handoff close. Read by the plugin at connect: restart the instance after changing it. null clears it */
+            zenviaConnectorReopenExpirationMinutes?: number | null;
             /**
              * Format: date-time
              * @description Creation timestamp
@@ -6890,6 +6892,8 @@ export interface components {
              * @enum {string|null}
              */
             zenviaConnectorEnv?: "homol" | "prod" | null;
+            /** @description Live chat mode: minutes a REOPEN_CONVERSATION stays valid (its expirationTime), from 1 to 10080. Setting it lets a send to a contact whose live chat Zenvia NLU closed (inactivity or the contact) reopen it through the HSM template configured on the Zenvia NLU integration, with the text as the template variable message. Unset, such a send is refused. Never applies after a handoff close. Read by the plugin at connect: restart the instance after changing it. null clears it */
+            zenviaConnectorReopenExpirationMinutes?: number | null;
             /** @description Shared secret the webhook of a Gupshup, ASC, ASC Flow or Zenvia instance checks. On Zenvia the subscription sends it as the x-webhook-token header or the token query parameter, and the instance does not connect without it (except in live chat mode, where a JWT authorizes the connector events). Sealed at rest and write-only: never returned. null clears it */
             webhookVerifyToken?: string | null;
         };
@@ -6984,6 +6988,8 @@ export interface components {
              * @enum {string}
              */
             zenviaConnectorEnv?: "homol" | "prod";
+            /** @description Live chat mode: minutes a REOPEN_CONVERSATION stays valid (its expirationTime), from 1 to 10080. Setting it lets a send to a contact whose live chat Zenvia NLU closed (inactivity or the contact) reopen it through the HSM template configured on the Zenvia NLU integration, with the text as the template variable message. Unset, such a send is refused. Never applies after a handoff close. Read by the plugin at connect: restart the instance after changing it. null clears it */
+            zenviaConnectorReopenExpirationMinutes?: number;
             /** @description Zenvia only. Replaces the stored webhook verify token and is persisted on a successful connect, so it can be rotated; omit it to keep the stored one. Sealed at rest and write-only: never returned. Ignored for other channels */
             webhookVerifyToken?: string;
         };
@@ -13600,6 +13606,8 @@ export interface operations {
                      * @enum {string|null}
                      */
                     zenviaConnectorEnv?: "homol" | "prod" | null;
+                    /** @description Live chat mode: minutes a REOPEN_CONVERSATION stays valid (its expirationTime), from 1 to 10080. Setting it lets a send to a contact whose live chat Zenvia NLU closed (inactivity or the contact) reopen it through the HSM template configured on the Zenvia NLU integration, with the text as the template variable message. Unset, such a send is refused. Never applies after a handoff close. Read by the plugin at connect: restart the instance after changing it. null clears it */
+                    zenviaConnectorReopenExpirationMinutes?: number | null;
                     /** @description Shared secret the webhook of a Gupshup, ASC, ASC Flow or Zenvia instance checks. On Zenvia the subscription sends it as the x-webhook-token header or the token query parameter, and the instance does not connect without it (except in live chat mode, where a JWT authorizes the connector events). Sealed at rest and write-only: never returned. null clears it */
                     webhookVerifyToken?: string | null;
                 };
@@ -14011,6 +14019,8 @@ export interface operations {
                      * @enum {string|null}
                      */
                     zenviaConnectorEnv?: "homol" | "prod" | null;
+                    /** @description Live chat mode: minutes a REOPEN_CONVERSATION stays valid (its expirationTime), from 1 to 10080. Setting it lets a send to a contact whose live chat Zenvia NLU closed (inactivity or the contact) reopen it through the HSM template configured on the Zenvia NLU integration, with the text as the template variable message. Unset, such a send is refused. Never applies after a handoff close. Read by the plugin at connect: restart the instance after changing it. null clears it */
+                    zenviaConnectorReopenExpirationMinutes?: number | null;
                     /** @description Shared secret the webhook of a Gupshup, ASC, ASC Flow or Zenvia instance checks. On Zenvia the subscription sends it as the x-webhook-token header or the token query parameter, and the instance does not connect without it (except in live chat mode, where a JWT authorizes the connector events). Sealed at rest and write-only: never returned. null clears it */
                     webhookVerifyToken?: string | null;
                     agentReplyFilter?: {
@@ -14566,6 +14576,8 @@ export interface operations {
                      * @enum {string}
                      */
                     zenviaConnectorEnv?: "homol" | "prod";
+                    /** @description Live chat mode: minutes a REOPEN_CONVERSATION stays valid (its expirationTime), from 1 to 10080. Setting it lets a send to a contact whose live chat Zenvia NLU closed (inactivity or the contact) reopen it through the HSM template configured on the Zenvia NLU integration, with the text as the template variable message. Unset, such a send is refused. Never applies after a handoff close. Read by the plugin at connect: restart the instance after changing it. null clears it */
+                    zenviaConnectorReopenExpirationMinutes?: number;
                     /** @description Zenvia only. Replaces the stored webhook verify token and is persisted on a successful connect, so it can be rotated; omit it to keep the stored one. Sealed at rest and write-only: never returned. Ignored for other channels */
                     webhookVerifyToken?: string;
                 };

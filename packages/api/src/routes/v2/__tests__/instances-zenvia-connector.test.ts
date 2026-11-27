@@ -12,6 +12,7 @@ const CONNECTOR = {
   zenviaConnectorAccessToken: 'persisted-access-token',
   zenviaConnectorAccessKey: 'persisted-access-key',
   zenviaConnectorEnv: 'homol',
+  zenviaConnectorReopenExpirationMinutes: 1440,
 } as const;
 
 interface Captured {
@@ -88,6 +89,35 @@ describe('POST /instances - Zenvia live chat fields', () => {
     expect(captured.connectOptions).not.toHaveProperty('zenviaApiToken');
   });
 
+  test('names the live chat agent after the instance', async () => {
+    const captured: Captured = {};
+    const app = mount(captured);
+
+    await app.request('/', json('POST', { name: 'zv-live-chat', channel: 'zenvia', ...CONNECTOR }));
+
+    expect(captured.connectOptions).toMatchObject({ zenviaConnectorAgentName: 'zv-live-chat' });
+  });
+
+  test('rejects a reopen expiration that is not a whole number of minutes in range', async () => {
+    for (const minutes of [0, 1.5, 10_081, '60']) {
+      const captured: Captured = {};
+      const app = mount(captured);
+
+      const res = await app.request(
+        '/',
+        json('POST', {
+          name: 'zv-live-chat',
+          channel: 'zenvia',
+          ...CONNECTOR,
+          zenviaConnectorReopenExpirationMinutes: minutes,
+        }),
+      );
+
+      expect(res.status).toBe(400);
+      expect(captured.created).toBeUndefined();
+    }
+  });
+
   test('rejects an unknown env before anything is written', async () => {
     const captured: Captured = {};
     const app = mount(captured);
@@ -121,12 +151,17 @@ describe('PATCH /instances/:id - Zenvia live chat fields', () => {
 
     const res = await app.request(
       `/${INSTANCE_ID}`,
-      json('PATCH', { zenviaConnectorAccessKey: 'rotated-key', zenviaConnectorEnv: null }),
+      json('PATCH', {
+        zenviaConnectorAccessKey: 'rotated-key',
+        zenviaConnectorEnv: null,
+        zenviaConnectorReopenExpirationMinutes: null,
+      }),
     );
 
     expect(res.status).toBe(200);
     expect(captured.updated?.zenviaConnectorAccessKey).toBe('rotated-key');
     expect(captured.updated).toHaveProperty('zenviaConnectorEnv', null);
+    expect(captured.updated).toHaveProperty('zenviaConnectorReopenExpirationMinutes', null);
   });
 });
 
@@ -138,7 +173,7 @@ describe('POST /instances/:id/connect - the persisted live chat config reaches t
     const res = await app.request(`/${INSTANCE_ID}/connect`, json('POST', {}));
 
     expect(res.status).toBe(200);
-    expect(captured.connectOptions).toMatchObject(CONNECTOR);
+    expect(captured.connectOptions).toMatchObject({ ...CONNECTOR, zenviaConnectorAgentName: 'zv-live-chat' });
     for (const field of Object.keys(CONNECTOR)) expect(captured.updated ?? {}).not.toHaveProperty(field);
   });
 
@@ -148,15 +183,24 @@ describe('POST /instances/:id/connect - the persisted live chat config reaches t
 
     const res = await app.request(
       `/${INSTANCE_ID}/connect`,
-      json('POST', { zenviaConnectorAccessToken: 'new-token', zenviaConnectorEnv: 'prod' }),
+      json('POST', {
+        zenviaConnectorAccessToken: 'new-token',
+        zenviaConnectorEnv: 'prod',
+        zenviaConnectorReopenExpirationMinutes: 60,
+      }),
     );
 
     expect(res.status).toBe(200);
     expect(captured.connectOptions).toMatchObject({
       zenviaConnectorAccessToken: 'new-token',
       zenviaConnectorEnv: 'prod',
+      zenviaConnectorReopenExpirationMinutes: 60,
     });
-    expect(captured.updated).toMatchObject({ zenviaConnectorAccessToken: 'new-token', zenviaConnectorEnv: 'prod' });
+    expect(captured.updated).toMatchObject({
+      zenviaConnectorAccessToken: 'new-token',
+      zenviaConnectorEnv: 'prod',
+      zenviaConnectorReopenExpirationMinutes: 60,
+    });
   });
 });
 
@@ -168,13 +212,19 @@ describe('POST /instances/:id/restart - re-reads the live chat config', () => {
     const res = await app.request(`/${INSTANCE_ID}/restart`, json('POST'));
 
     expect(res.status).toBe(200);
-    expect(captured.connectOptions).toMatchObject(CONNECTOR);
+    expect(captured.connectOptions).toMatchObject({ ...CONNECTOR, zenviaConnectorAgentName: 'zv-live-chat' });
   });
 });
 
 describe('buildInstanceConnectOptions - boot reconnect', () => {
   test('carries the connector fields of a zenvia row and leaves other channels alone', () => {
-    expect(buildInstanceConnectOptions({ channel: 'zenvia', ...CONNECTOR })).toMatchObject(CONNECTOR);
+    expect(buildInstanceConnectOptions({ channel: 'zenvia', name: 'zv-live-chat', ...CONNECTOR })).toMatchObject({
+      ...CONNECTOR,
+      zenviaConnectorAgentName: 'zv-live-chat',
+    });
+    expect(
+      buildInstanceConnectOptions({ channel: 'zenvia', name: 'zv-channels', zenviaApiToken: 't', zenviaSenderId: 's' }),
+    ).not.toHaveProperty('zenviaConnectorAgentName');
     expect(buildInstanceConnectOptions({ channel: 'gupshup', ...CONNECTOR })).not.toHaveProperty('zenviaConnectorSlug');
   });
 });

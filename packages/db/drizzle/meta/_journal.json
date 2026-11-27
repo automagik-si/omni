@@ -701,6 +701,13 @@
       "when": 1789700000000,
       "tag": "0099_zenvia_connector",
       "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "7",
+      "when": 1789800000000,
+      "tag": "0100_zenvia_connector_reopen",
+      "breakpoints": true
     }
   ]
 }

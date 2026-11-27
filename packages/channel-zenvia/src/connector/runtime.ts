@@ -27,19 +27,35 @@ import {
   joinConnectorTexts,
   userTextsAfterLastBot,
 } from './mapping';
-import { type ConnectorSession, ConnectorSessionStore } from './sessions';
+import {
+  type ConnectorReopenRejection,
+  type ConnectorReopenRequest,
+  type ConnectorSession,
+  ConnectorSessionStore,
+} from './sessions';
 import {
   type ConnectorAgent,
   type ConnectorEvent,
   ConnectorEventSchema,
   ConnectorMessageParametersSchema,
   ConnectorOpenParametersSchema,
+  ConnectorReplyParametersSchema,
   ConnectorSendFileParametersSchema,
   ConnectorUploadedFileSchema,
   type ZenviaConnectorConfig,
 } from './types';
 
 export const NO_OPEN_LIVE_CHAT_ERROR = 'no open Zenvia live chat for this contact';
+const HANDED_OFF_ERROR = 'the Zenvia live chat of this contact was handed off to people; it is not reopened';
+const CLOSED_HANDOFF_ERROR = 'the Zenvia live chat of this contact is closed; a handoff does not reopen it';
+const REOPEN_OFF_ERROR =
+  'the Zenvia live chat of this contact is closed and reopening is off (zenviaConnectorReopenExpirationMinutes)';
+const REOPEN_TEXT_ONLY_ERROR = 'a closed Zenvia live chat is reopened with a text message only';
+const REOPEN_PENDING_ERROR = 'the Zenvia live chat of this contact is being reopened; send again once it is accepted';
+const TEMPLATE_WITHOUT_MESSAGE_ERROR =
+  'a template in a Zenvia live chat needs metadata.template.fields.message or content.text';
+const DEFAULT_AGENT_NAME = 'Omni';
+const REOPEN_IN_FLIGHT_MS = 2 * 60 * 1000;
 const CONNECTOR_MAX_FILE_BYTES = 25 * 1024 * 1024;
 
 const ACCEPT_RETRY_DELAY_MS = 500;
@@ -65,7 +81,13 @@ export interface ConnectorHost {
   logger: Logger;
   publish(inbound: ConnectorInbound): Promise<boolean>;
   sent(params: { externalId: string; chatId: string; message: OutgoingMessage }): Promise<void>;
-  failed(params: { chatId: string; error: string; retryable: boolean }): Promise<void>;
+  failed(params: {
+    chatId: string;
+    error: string;
+    retryable: boolean;
+    externalId?: string;
+    errorCode?: string;
+  }): Promise<void>;
   loadMedia(message: OutgoingMessage): Promise<{ bytes: Uint8Array; mimeType: string }>;
 }
 
@@ -99,6 +121,10 @@ function failure(err: unknown): SendResult {
   };
 }
 
+function rejectionText({ status, reason }: ConnectorReopenRejection): string {
+  return `Zenvia NLU refused to reopen the live chat${status ? ` (${status})` : ''}${reason ? `: ${reason}` : ''}`;
+}
+
 function refusal(error: string): SendResult {
   return { success: false, error, retryable: false, rejected: true, timestamp: Date.now() };
 }
@@ -109,11 +135,29 @@ function outboundText(message: OutgoingMessage, text: string | undefined): strin
   return mode === 'passthrough' ? value : markdownToWhatsApp(value);
 }
 
+function templateMessage(message: OutgoingMessage): string | undefined {
+  const template = message.metadata?.template as { fields?: Record<string, unknown> } | undefined;
+  const field = template?.fields?.message;
+  if (typeof field === 'string' && field.trim()) return field;
+  return message.content.text?.trim() ? message.content.text : undefined;
+}
+
+function liveChatText(message: OutgoingMessage): string | undefined {
+  const { content } = message;
+  if (content.type === 'text') return outboundText(message, content.text);
+  if (content.type === 'template') {
+    const text = templateMessage(message);
+    return text === undefined ? undefined : outboundText(message, text);
+  }
+  return undefined;
+}
+
 export class ZenviaConnectorRuntime {
   readonly client: ZenviaConnectorClient;
   readonly sessions: ConnectorSessionStore;
   readonly files: ConnectorFileStore;
   private readonly agent: ConnectorAgent;
+  private readonly reopenExpirationMinutes?: number;
   private readonly pending = new Set<Promise<void>>();
   private readonly startedClaims = new Set<string>();
 
@@ -128,7 +172,8 @@ export class ZenviaConnectorRuntime {
     this.client = client ?? new ZenviaConnectorClient(config);
     this.sessions = new ConnectorSessionStore(storage, instanceId);
     this.files = new ConnectorFileStore(storage, instanceId);
-    this.agent = { id: instanceId, name: 'Omni' };
+    this.agent = { id: instanceId, name: config.agentName?.trim() || DEFAULT_AGENT_NAME };
+    this.reopenExpirationMinutes = config.reopenExpirationMinutes;
   }
 
   async settle(): Promise<void> {
@@ -156,14 +201,9 @@ export class ZenviaConnectorRuntime {
       case 'CLOSE_CONVERSATION':
         return this.onClose(event);
       case 'ACCEPT_CONVERSATION':
+        return this.onReopenAccepted(event);
       case 'REJECT_CONVERSATION':
-        this.host.logger.info('[zenvia] connector reopen reply received', {
-          instanceId: this.instanceId,
-          action: event.action,
-          conversationId: connectorConversationId(event),
-          status: typeof event.parameters?.status === 'string' ? event.parameters.status : undefined,
-        });
-        return reply(200, 'OK');
+        return this.onReopenRejected(event);
       default:
         this.host.logger.debug('[zenvia] connector action ignored', {
           instanceId: this.instanceId,
@@ -320,12 +360,61 @@ export class ZenviaConnectorRuntime {
   private async onClose(event: ConnectorEvent): Promise<ConnectorReply> {
     const conversationId = connectorConversationId(event);
     if (!conversationId) return reply(400, 'missing conversationId');
-    const closed = await this.sessions.close(conversationId);
+    const closed = await this.sessions.close(conversationId, 'platform');
     this.startedClaims.delete(conversationId);
     this.host.logger.info('[zenvia] connector conversation closed by the platform', {
       instanceId: this.instanceId,
       conversationId,
       hadSession: Boolean(closed),
+      awaitingReopenReply: closed?.session.awaitingReplyUntil !== undefined,
+    });
+    return reply(200, 'OK');
+  }
+
+  private async onReopenAccepted(event: ConnectorEvent): Promise<ConnectorReply> {
+    const conversationId = connectorConversationId(event);
+    if (!conversationId) return reply(400, 'missing conversationId');
+    const reopened = await this.sessions.acceptReopen(conversationId, Date.now());
+    if (!reopened) {
+      this.host.logger.warn('[zenvia] connector ACCEPT_CONVERSATION without a pending reopen ignored', {
+        instanceId: this.instanceId,
+        conversationId,
+      });
+      return reply(200, 'OK');
+    }
+    const params = ConnectorReplyParametersSchema.safeParse(event.parameters ?? {});
+    this.host.logger.info('[zenvia] connector live chat reopened', {
+      instanceId: this.instanceId,
+      conversationId,
+      status: params.success ? params.data.status : undefined,
+      awaitingReplyUntil: reopened.session.awaitingReplyUntil,
+    });
+    return reply(200, 'OK');
+  }
+
+  private async onReopenRejected(event: ConnectorEvent): Promise<ConnectorReply> {
+    const conversationId = connectorConversationId(event);
+    if (!conversationId) return reply(400, 'missing conversationId');
+    const params = ConnectorReplyParametersSchema.safeParse(event.parameters ?? {});
+    const status = params.success ? params.data.status : undefined;
+    const reason = (params.success ? params.data.reason : undefined) ?? event.reason;
+    const rejection: ConnectorReopenRejection = { ...(status ? { status } : {}), ...(reason ? { reason } : {}) };
+    const rejected = await this.sessions.rejectReopen(conversationId, rejection);
+    this.host.logger.warn('[zenvia] connector reopen rejected', {
+      instanceId: this.instanceId,
+      conversationId,
+      status,
+      reason,
+      hadRequest: Boolean(rejected),
+      beforeRequestId: rejected?.deferred,
+    });
+    if (!rejected || rejected.deferred) return reply(200, 'OK');
+    await this.host.failed({
+      chatId: rejected.request.chatId,
+      error: rejectionText(rejection),
+      retryable: false,
+      ...(rejected.request.externalId ? { externalId: rejected.request.externalId } : {}),
+      ...(status ? { errorCode: status } : {}),
     });
     return reply(200, 'OK');
   }
@@ -335,7 +424,19 @@ export class ZenviaConnectorRuntime {
     event: ConnectorEvent,
     contact: Parameters<typeof connectorChatId>[0],
   ): Promise<{ chatId: string; session: ConnectorSession } | 'missing-contact' | 'stale'> {
-    const chatId = (await this.sessions.chatOf(conversationId)) ?? connectorChatId(contact, event.identifier);
+    const mapped = await this.sessions.chatOf(conversationId);
+    if (!mapped) {
+      const reopened = await this.sessions.acceptReopen(conversationId, Date.now());
+      if (reopened) {
+        this.host.logger.warn('[zenvia] connector reply to a reopen whose ACCEPT_CONVERSATION was not seen', {
+          instanceId: this.instanceId,
+          conversationId,
+          action: event.action,
+        });
+        return { chatId: reopened.chatId, session: reopened.session };
+      }
+    }
+    const chatId = mapped ?? connectorChatId(contact, event.identifier);
     if (!chatId) return 'missing-contact';
     const session = await this.sessions.get(chatId);
     if (session?.conversationId === conversationId) return { chatId, session };
@@ -380,6 +481,9 @@ export class ZenviaConnectorRuntime {
       if (sessionStart && !published) this.startedClaims.delete(session.conversationId);
     }
     if (sessionStart && published) await this.sessions.markStarted(chatId, session.conversationId);
+    if (published && session.awaitingReplyUntil !== undefined) {
+      await this.sessions.markReplied(chatId, session.conversationId, session.awaitingReplyUntil);
+    }
   }
 
   private claimSessionStart(session: ConnectorSession): boolean {
@@ -433,9 +537,92 @@ export class ZenviaConnectorRuntime {
 
   async send(message: OutgoingMessage): Promise<SendResult> {
     const chatId = toSenderId(message.to);
-    const session = chatId ? await this.sessions.get(chatId) : undefined;
-    if (!session) return refusal(NO_OPEN_LIVE_CHAT_ERROR);
+    if (!chatId) return refusal(NO_OPEN_LIVE_CHAT_ERROR);
+    const session = await this.liveSession(chatId);
+    if (!session) return this.sendClosed(chatId, message);
+    return this.sendOpen(chatId, session, message);
+  }
 
+  private async liveSession(chatId: string): Promise<ConnectorSession | undefined> {
+    const session = await this.sessions.get(chatId);
+    if (session?.awaitingReplyUntil === undefined || Date.now() < session.awaitingReplyUntil) return session;
+    const expired = await this.sessions.expireReopenWindow(chatId, Date.now());
+    if (!expired) return this.sessions.get(chatId);
+    this.startedClaims.delete(expired.conversationId);
+    this.host.logger.info('[zenvia] connector reopen window passed without a reply; the live chat counts as closed', {
+      instanceId: this.instanceId,
+      conversationId: expired.conversationId,
+    });
+    return undefined;
+  }
+
+  private async sendClosed(chatId: string, message: OutgoingMessage): Promise<SendResult> {
+    const closed = await this.sessions.closedOf(chatId);
+    if (!closed) return refusal(NO_OPEN_LIVE_CHAT_ERROR);
+    if (closed.by === 'handoff') return refusal(HANDED_OFF_ERROR);
+    if (message.metadata?.isHandoff === true) return refusal(CLOSED_HANDOFF_ERROR);
+    const expirationMinutes = this.reopenExpirationMinutes;
+    if (!expirationMinutes) return refusal(REOPEN_OFF_ERROR);
+    const text = liveChatText(message);
+    if (!text?.trim()) return refusal(REOPEN_TEXT_ONLY_ERROR);
+
+    const claim = await this.sessions.claimReopen(chatId, {
+      now: Date.now(),
+      inFlightMs: REOPEN_IN_FLIGHT_MS,
+      expirationMinutes,
+    });
+    switch (claim.kind) {
+      case 'claimed':
+        return this.reopen(claim.request, message, text);
+      case 'open':
+        return this.sendOpen(chatId, claim.session, message);
+      case 'pending':
+        return { success: false, error: REOPEN_PENDING_ERROR, retryable: true, timestamp: Date.now() };
+      case 'handoff':
+        return refusal(HANDED_OFF_ERROR);
+      default:
+        return refusal(NO_OPEN_LIVE_CHAT_ERROR);
+    }
+  }
+
+  private async reopen(request: ConnectorReopenRequest, message: OutgoingMessage, text: string): Promise<SendResult> {
+    let messageId: string;
+    try {
+      const response = await this.client.reopenConversation(request.conversationId, request.expirationMinutes, text);
+      messageId = response.requestId ?? randomUUID();
+    } catch (err) {
+      await this.sessions.abandonReopen(request);
+      await this.host.failed({ chatId: request.chatId, error: errorText(err), retryable: retryableOf(err) });
+      return failure(err);
+    }
+    const rejection = await this.sessions.reopenRequested(request, messageId);
+    if (rejection) {
+      const error = rejectionText(rejection);
+      await this.host.failed({
+        chatId: request.chatId,
+        error,
+        retryable: false,
+        ...(rejection.status ? { errorCode: rejection.status } : {}),
+      });
+      return {
+        success: false,
+        error,
+        ...(rejection.status ? { errorCode: rejection.status } : {}),
+        retryable: false,
+        rejected: true,
+        timestamp: Date.now(),
+      };
+    }
+    this.host.logger.info('[zenvia] connector REOPEN_CONVERSATION sent', {
+      instanceId: this.instanceId,
+      conversationId: request.conversationId,
+      expirationMinutes: request.expirationMinutes,
+    });
+    await this.host.sent({ externalId: messageId, chatId: request.chatId, message });
+    return { success: true, messageId, timestamp: Date.now() };
+  }
+
+  private async sendOpen(chatId: string, session: ConnectorSession, message: OutgoingMessage): Promise<SendResult> {
     const isHandoff = message.metadata?.isHandoff === true;
     const queue = isHandoff ? this.resolveQueue(message.metadata ?? {}) : undefined;
     if (queue && !queue.ok) return refusal(queue.error);
@@ -449,7 +636,7 @@ export class ZenviaConnectorRuntime {
 
     const closed = await this.close(session.conversationId, queue.queue);
     if (!closed.ok) return failure(closed.error);
-    await this.sessions.close(session.conversationId);
+    await this.sessions.close(session.conversationId, 'handoff', chatId);
     this.startedClaims.delete(session.conversationId);
     this.host.logger.info('[zenvia] connector conversation closed for handoff', {
       instanceId: this.instanceId,
@@ -488,8 +675,14 @@ export class ZenviaConnectorRuntime {
     const { content } = message;
     try {
       let messageId: string;
-      if (content.type === 'text') {
-        const text = outboundText(message, content.text);
+      if (content.type === 'text' || content.type === 'template') {
+        const text = liveChatText(message);
+        if (text === undefined) {
+          return {
+            ok: false,
+            error: new ZenviaApiError(ZenviaErrorCode.INVALID_REQUEST, TEMPLATE_WITHOUT_MESSAGE_ERROR),
+          };
+        }
         if (!text.trim()) {
           if (!isHandoff) return { ok: false, error: new Error('Refusing to send an empty text message') };
           return { ok: true, messageId: randomUUID() };

@@ -25,7 +25,12 @@ import type { ChannelType, ContentType } from '@omni/core/types';
 import { ZENVIA_CAPABILITIES } from './capabilities';
 import { ZenviaClient } from './client';
 import { type ConnectorHost, type ConnectorInbound, ZenviaConnectorRuntime } from './connector/runtime';
-import { ZENVIA_CONNECTOR_ENVS, type ZenviaConnectorConfig, type ZenviaConnectorEnv } from './connector/types';
+import {
+  ZENVIA_CONNECTOR_ENVS,
+  ZENVIA_CONNECTOR_REOPEN_MAX_MINUTES,
+  type ZenviaConnectorConfig,
+  type ZenviaConnectorEnv,
+} from './connector/types';
 import { handleZenviaConnectorWebhookRequest } from './handlers/connector-webhook';
 import { handleZenviaWebhookRequest } from './handlers/webhook';
 import { type HandoffRoutingMiss, parseHandoffRouting, resolveHandoffGroup } from './handoff-routing';
@@ -237,8 +242,8 @@ export class ZenviaPlugin extends BaseChannelPlugin {
           senderAgentId: message.metadata?.senderAgentId as string | undefined,
         });
       },
-      failed: async ({ chatId, error, retryable }) => {
-        await this.emitMessageFailed({ instanceId, chatId, error, retryable });
+      failed: async (failure) => {
+        await this.emitMessageFailed({ instanceId, ...failure });
       },
       loadMedia: (message) => this.loadOutboundMedia(instanceId, state, message),
     };
@@ -1081,7 +1086,11 @@ function readZenviaConfig(config: InstanceConfig): ZenviaConfig {
     return {
       apiToken: apiToken ?? '',
       senderId: senderId ? toSenderId(senderId) : '',
-      connector: readConnectorConfig(connectorSlug, pick),
+      connector: readConnectorConfig(
+        connectorSlug,
+        pick,
+        creds.zenviaConnectorReopenExpirationMinutes ?? opts.zenviaConnectorReopenExpirationMinutes,
+      ),
       webhookVerifyToken,
       handoffGroupId,
       handoffRouting,
@@ -1123,11 +1132,34 @@ function readZenviaConfig(config: InstanceConfig): ZenviaConfig {
   };
 }
 
-function readConnectorConfig(slug: string, pick: (key: string) => string | undefined): ZenviaConnectorConfig {
+function readReopenExpirationMinutes(raw: unknown): number | undefined {
+  if (raw === undefined || raw === null || raw === '') return undefined;
+  const minutes = typeof raw === 'string' ? Number(raw.trim()) : raw;
+  if (
+    typeof minutes !== 'number' ||
+    !Number.isInteger(minutes) ||
+    minutes < 1 ||
+    minutes > ZENVIA_CONNECTOR_REOPEN_MAX_MINUTES
+  ) {
+    throw new ZenviaApiError(
+      ZenviaErrorCode.INVALID_REQUEST,
+      `zenviaConnectorReopenExpirationMinutes must be a whole number of minutes from 1 to ${ZENVIA_CONNECTOR_REOPEN_MAX_MINUTES}`,
+    );
+  }
+  return minutes;
+}
+
+function readConnectorConfig(
+  slug: string,
+  pick: (key: string) => string | undefined,
+  rawReopenExpiration: unknown,
+): ZenviaConnectorConfig {
   const integrationId = pick('zenviaConnectorIntegrationId');
   const accessToken = pick('zenviaConnectorAccessToken');
   const accessKey = pick('zenviaConnectorAccessKey');
   const env = pick('zenviaConnectorEnv');
+  const agentName = pick('zenviaConnectorAgentName');
+  const reopenExpirationMinutes = readReopenExpirationMinutes(rawReopenExpiration);
   const missing = [
     integrationId ? undefined : 'zenviaConnectorIntegrationId',
     accessToken ? undefined : 'zenviaConnectorAccessToken',
@@ -1151,6 +1183,8 @@ function readConnectorConfig(slug: string, pick: (key: string) => string | undef
     accessToken,
     accessKey,
     ...(env ? { env: env as ZenviaConnectorEnv } : {}),
+    ...(agentName ? { agentName } : {}),
+    ...(reopenExpirationMinutes ? { reopenExpirationMinutes } : {}),
   };
 }
 

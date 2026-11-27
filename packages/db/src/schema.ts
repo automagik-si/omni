@@ -1019,6 +1019,7 @@ export const instances = pgTable(
     zenviaConnectorAccessToken: text('zenvia_connector_access_token'),
     zenviaConnectorAccessKey: text('zenvia_connector_access_key'),
     zenviaConnectorEnv: varchar('zenvia_connector_env', { length: 16 }).$type<'homol' | 'prod'>(),
+    zenviaConnectorReopenExpirationMinutes: integer('zenvia_connector_reopen_expiration_minutes'),
 
     // ---- ASC platform Flow Configuration ----
     // Per-instance credentials for the ASC platform REST API (/rest/v2), the

@@ -23,7 +23,7 @@
  */
 
 import type { Channel, WhatsAppPasskeyCredential } from '@omni/sdk';
-import { Command, Option } from 'commander';
+import { Command, InvalidArgumentError, Option } from 'commander';
 import qrcode from 'qrcode-terminal';
 import { getClient } from '../client.js';
 import * as output from '../output.js';
@@ -164,6 +164,21 @@ function parseZenviaHandoffRouting(value: string): unknown {
   }
 }
 
+const ZENVIA_REOPEN_MAX_MINUTES = 10_080;
+
+function parseReopenMinutes(value: string): number {
+  const trimmed = value.trim();
+  const minutes = /^\d+$/.test(trimmed) ? Number(trimmed) : Number.NaN;
+  if (!Number.isInteger(minutes) || minutes < 1 || minutes > ZENVIA_REOPEN_MAX_MINUTES) {
+    throw new InvalidArgumentError(`must be a whole number of minutes from 1 to ${ZENVIA_REOPEN_MAX_MINUTES}`);
+  }
+  return minutes;
+}
+
+function parseNullableReopenMinutes(value: string): number | 'null' {
+  return value === 'null' ? value : parseReopenMinutes(value);
+}
+
 function applyZenviaFields(body: Record<string, unknown>, opts: Record<string, unknown>): void {
   setVal(body, 'zenviaApiToken', opts.zenviaApiToken);
   setVal(body, 'zenviaSenderId', opts.zenviaSenderId);
@@ -179,6 +194,7 @@ function applyZenviaFields(body: Record<string, unknown>, opts: Record<string, u
   setVal(body, 'zenviaConnectorAccessToken', opts.zenviaConnectorAccessToken);
   setVal(body, 'zenviaConnectorAccessKey', opts.zenviaConnectorAccessKey);
   setVal(body, 'zenviaConnectorEnv', opts.zenviaConnectorEnv);
+  setVal(body, 'zenviaConnectorReopenExpirationMinutes', opts.zenviaConnectorReopenExpirationMinutes);
 }
 
 /** Extract TTS, access, token, trigger fields from CLI options into body */
@@ -577,6 +593,11 @@ export function createInstancesCommand(): Command {
     .option('--zenvia-connector-access-token <token>', 'Zenvia NLU live chat integration access token (live chat mode)')
     .option('--zenvia-connector-access-key <key>', 'Zenvia NLU live chat integration access key (live chat mode)')
     .option('--zenvia-connector-env <env>', 'Zenvia NLU webhook environment: homol or prod (live chat mode)')
+    .option(
+      '--zenvia-connector-reopen-expiration-minutes <minutes>',
+      'Minutes a live chat reopen stays valid; lets a send to a closed live chat reopen it (live chat mode)',
+      parseReopenMinutes,
+    )
     // Twilio WhatsApp
     .option('--twilio-account-sid <sid>', 'Twilio Account SID')
     .option('--twilio-auth-token <token>', 'Twilio Auth Token')
@@ -1355,6 +1376,11 @@ export function createInstancesCommand(): Command {
     .option(
       '--zenvia-connector-env <env>',
       'Zenvia NLU webhook environment, homol or prod (use "null" to clear). The plugin reads it at connect: restart the instance for the change to take effect',
+    )
+    .option(
+      '--zenvia-connector-reopen-expiration-minutes <minutes>',
+      'Minutes a live chat reopen stays valid; turns reopening on (use "null" to clear). The plugin reads it at connect: restart the instance for the change to take effect',
+      parseNullableReopenMinutes,
     )
     // Trigger events
     .option('--trigger-events <events>', 'Trigger events (comma-separated, use "null" to clear)')
