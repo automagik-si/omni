@@ -23,6 +23,7 @@ const PLAIN_FIELDS = [
   'zenviaConnectorSlug',
   'zenviaConnectorIntegrationId',
   'zenviaConnectorEnv',
+  'zenviaConnectorReopenExpirationMinutes',
 ];
 const ZENVIA_FIELDS = [...SECRET_FIELDS, ...PLAIN_FIELDS];
 

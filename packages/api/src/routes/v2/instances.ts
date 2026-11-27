@@ -34,6 +34,7 @@ import {
   SelfMessagesSchema,
   SelfReceiptSchema,
   ZENVIA_CONNECTOR_ENVS,
+  ZENVIA_CONNECTOR_REOPEN_MAX_MINUTES,
   ZENVIA_HANDOFF_SOLUTIONS,
   ZenviaHandoffRoutingSchema,
 } from '../../schemas/openapi/instances';
@@ -318,6 +319,16 @@ const createInstanceSchema = z.object({
     .optional()
     .nullable()
     .describe('Zenvia NLU webhook environment the live chat answers on (sent as ?env=)'),
+  zenviaConnectorReopenExpirationMinutes: z
+    .number()
+    .int()
+    .min(1)
+    .max(ZENVIA_CONNECTOR_REOPEN_MAX_MINUTES)
+    .optional()
+    .nullable()
+    .describe(
+      'Minutes a REOPEN_CONVERSATION stays valid; setting it lets a send to a closed live chat reopen it (live chat mode)',
+    ),
   ascFlowBaseUrl: z
     .string()
     .optional()
@@ -821,6 +832,8 @@ type InstanceConnectionOptionsInput = {
   zenviaConnectorAccessToken?: string | null;
   zenviaConnectorAccessKey?: string | null;
   zenviaConnectorEnv?: ZenviaConnectorEnv | null;
+  zenviaConnectorReopenExpirationMinutes?: number | null;
+  name?: string | null;
   metaAccessToken?: string | null;
   metaPhoneNumberId?: string | null;
   metaWabaId?: string | null;
@@ -935,6 +948,8 @@ function applyZenviaConnectionOptions(
     zenviaConnectorAccessToken?: string | null;
     zenviaConnectorAccessKey?: string | null;
     zenviaConnectorEnv?: string | null;
+    zenviaConnectorReopenExpirationMinutes?: number | null;
+    name?: string | null;
     webhookVerifyToken?: string | null;
   },
 ): void {
@@ -957,6 +972,8 @@ function applyZenviaConnectorOptions(
     zenviaConnectorAccessToken?: string | null;
     zenviaConnectorAccessKey?: string | null;
     zenviaConnectorEnv?: string | null;
+    zenviaConnectorReopenExpirationMinutes?: number | null;
+    name?: string | null;
   },
 ): void {
   if (input.zenviaConnectorSlug) options.zenviaConnectorSlug = input.zenviaConnectorSlug;
@@ -964,6 +981,10 @@ function applyZenviaConnectorOptions(
   if (input.zenviaConnectorAccessToken) options.zenviaConnectorAccessToken = input.zenviaConnectorAccessToken;
   if (input.zenviaConnectorAccessKey) options.zenviaConnectorAccessKey = input.zenviaConnectorAccessKey;
   if (input.zenviaConnectorEnv) options.zenviaConnectorEnv = input.zenviaConnectorEnv;
+  if (input.zenviaConnectorReopenExpirationMinutes != null) {
+    options.zenviaConnectorReopenExpirationMinutes = input.zenviaConnectorReopenExpirationMinutes;
+  }
+  if (input.zenviaConnectorSlug && input.name) options.zenviaConnectorAgentName = input.name;
 }
 
 function applyAscFlowConnectionOptions(
@@ -1388,6 +1409,8 @@ instancesRoutes.post('/', zValidator('json', createInstanceSchema), async (c) =>
     zenviaConnectorAccessToken: instance.zenviaConnectorAccessToken,
     zenviaConnectorAccessKey: instance.zenviaConnectorAccessKey,
     zenviaConnectorEnv: instance.zenviaConnectorEnv,
+    zenviaConnectorReopenExpirationMinutes: instance.zenviaConnectorReopenExpirationMinutes,
+    name: instance.name,
     // No meta* threading here: createInstanceSchema carries no Meta fields, so
     // a whatsapp-business row is never credentialed at create — credentials
     // arrive via the whatsapp-cloud connect/OAuth route.
@@ -1980,6 +2003,13 @@ const connectInstanceSchema = z.object({
     .enum(ZENVIA_CONNECTOR_ENVS)
     .optional()
     .describe('Zenvia NLU webhook environment the live chat answers on (sent as ?env=)'),
+  zenviaConnectorReopenExpirationMinutes: z
+    .number()
+    .int()
+    .min(1)
+    .max(ZENVIA_CONNECTOR_REOPEN_MAX_MINUTES)
+    .optional()
+    .describe('Minutes a REOPEN_CONVERSATION stays valid; turns reopening on (see POST /instances)'),
   webhookVerifyToken: z
     .string()
     .min(1)
@@ -2077,6 +2107,7 @@ const ZENVIA_CONNECTOR_FIELDS = [
   'zenviaConnectorAccessToken',
   'zenviaConnectorAccessKey',
   'zenviaConnectorEnv',
+  'zenviaConnectorReopenExpirationMinutes',
 ] as const;
 type ZenviaConnectorField = (typeof ZENVIA_CONNECTOR_FIELDS)[number];
 
@@ -2090,6 +2121,8 @@ function mergeZenviaConnectorFields(
     zenviaConnectorAccessToken: body.zenviaConnectorAccessToken ?? instance.zenviaConnectorAccessToken,
     zenviaConnectorAccessKey: body.zenviaConnectorAccessKey ?? instance.zenviaConnectorAccessKey,
     zenviaConnectorEnv: body.zenviaConnectorEnv ?? instance.zenviaConnectorEnv,
+    zenviaConnectorReopenExpirationMinutes:
+      body.zenviaConnectorReopenExpirationMinutes ?? instance.zenviaConnectorReopenExpirationMinutes,
   };
 }
 
@@ -2155,6 +2188,7 @@ function buildConnectConnectionOptions(
     ascOriginador: body.ascOriginador ?? instance.ascOriginador,
     ...mergeZenviaFields(instance, body),
     ...mergeZenviaConnectorFields(instance, body),
+    name: instance.name,
     metaAccessToken: instance.metaAccessToken,
     metaPhoneNumberId: instance.metaPhoneNumberId,
     metaWabaId: instance.metaWabaId,

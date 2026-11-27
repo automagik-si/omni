@@ -80,14 +80,20 @@ describe('SDK Type Safety (compile-time)', () => {
       zenviaConnectorAccessToken: 'access-token',
       zenviaConnectorAccessKey: 'access-key',
       zenviaConnectorEnv: 'homol',
+      zenviaConnectorReopenExpirationMinutes: 1440,
       zenviaHandoffRouting: { field: 'queue', groups: { 'queue-a': 'branch_a' } },
     };
     const connect: ConnectInstanceBody = { zenviaConnectorAccessKey: 'rotated-key', zenviaConnectorEnv: 'prod' };
-    const update: UpdateInstanceBody = { zenviaConnectorSlug: null, zenviaConnectorEnv: null };
+    const update: UpdateInstanceBody = {
+      zenviaConnectorSlug: null,
+      zenviaConnectorEnv: null,
+      zenviaConnectorReopenExpirationMinutes: null,
+    };
 
     expect(create.zenviaConnectorEnv).toBe('homol');
     expect(connect.zenviaConnectorEnv).toBe('prod');
     expect(update.zenviaConnectorSlug).toBeNull();
+    expect(create.zenviaConnectorReopenExpirationMinutes).toBe(1440);
   });
 
   test('instance connect body accepts a webhook verify token to rotate it', () => {

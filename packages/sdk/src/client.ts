@@ -376,6 +376,7 @@ export interface CreateInstanceBody {
   zenviaConnectorAccessToken?: string;
   zenviaConnectorAccessKey?: string;
   zenviaConnectorEnv?: 'homol' | 'prod';
+  zenviaConnectorReopenExpirationMinutes?: number;
 }
 
 type ZenviaInstanceConfigKey =
@@ -391,7 +392,8 @@ type ZenviaInstanceConfigKey =
   | 'zenviaConnectorIntegrationId'
   | 'zenviaConnectorAccessToken'
   | 'zenviaConnectorAccessKey'
-  | 'zenviaConnectorEnv';
+  | 'zenviaConnectorEnv'
+  | 'zenviaConnectorReopenExpirationMinutes';
 
 export type UpdateInstanceBody = Partial<Instance> &
   Pick<components['schemas']['CreateInstanceRequest'], ZenviaInstanceConfigKey>;
@@ -1223,6 +1225,7 @@ export interface ConnectInstanceBody {
   zenviaConnectorAccessToken?: string;
   zenviaConnectorAccessKey?: string;
   zenviaConnectorEnv?: 'homol' | 'prod';
+  zenviaConnectorReopenExpirationMinutes?: number;
   webhookVerifyToken?: string;
   /** WhatsApp-specific connection options */
   whatsapp?: {

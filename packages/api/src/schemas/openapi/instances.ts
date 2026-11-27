@@ -110,6 +110,7 @@ export const ZenviaHandoffRoutingSchema = z
 
 export const ZENVIA_HANDOFF_SOLUTIONS = ['conversion', 'zenvia_chat', 'nlu'] as const;
 export const ZENVIA_CONNECTOR_ENVS = ['homol', 'prod'] as const;
+export const ZENVIA_CONNECTOR_REOPEN_MAX_MINUTES = 10_080;
 
 type NullableOptional<T extends z.ZodRawShape> = { [K in keyof T]: z.ZodOptional<z.ZodNullable<T[K]>> };
 
@@ -170,6 +171,10 @@ const zenviaInstanceFields = {
     description:
       'Which webhook of the integration Zenvia NLU answers on, sent as ?env= on every call: homol or prod (its default). Read by the plugin at connect: restart the instance after changing it',
   }),
+  zenviaConnectorReopenExpirationMinutes: z.number().int().min(1).max(ZENVIA_CONNECTOR_REOPEN_MAX_MINUTES).openapi({
+    description:
+      'Live chat mode: minutes a REOPEN_CONVERSATION stays valid (its expirationTime), from 1 to 10080. Setting it lets a send to a contact whose live chat Zenvia NLU closed (inactivity or the contact) reopen it through the HSM template configured on the Zenvia NLU integration, with the text as the template variable message. Unset, such a send is refused. Never applies after a handoff close. Read by the plugin at connect: restart the instance after changing it. null clears it',
+  }),
   webhookVerifyToken: z.string().openapi({
     description:
       'Shared secret the webhook of a Gupshup, ASC, ASC Flow or Zenvia instance checks. On Zenvia the subscription sends it as the x-webhook-token header or the token query parameter, and the instance does not connect without it (except in live chat mode, where a JWT authorizes the connector events). Sealed at rest and write-only: never returned. null clears it',
@@ -197,6 +202,7 @@ const zenviaInstanceResponseShape = nullableOptional({
   zenviaConnectorSlug: zenviaInstanceFields.zenviaConnectorSlug,
   zenviaConnectorIntegrationId: zenviaInstanceFields.zenviaConnectorIntegrationId,
   zenviaConnectorEnv: zenviaInstanceFields.zenviaConnectorEnv,
+  zenviaConnectorReopenExpirationMinutes: zenviaInstanceFields.zenviaConnectorReopenExpirationMinutes,
 });
 
 /**

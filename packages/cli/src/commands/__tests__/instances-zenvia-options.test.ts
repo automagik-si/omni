@@ -129,6 +129,8 @@ describe('instances create/update: the Zenvia live chat flags', () => {
     'access-key',
     '--zenvia-connector-env',
     'homol',
+    '--zenvia-connector-reopen-expiration-minutes',
+    '1440',
   ];
   const expected = {
     zenviaConnectorSlug: 'tenant-slug',
@@ -136,6 +138,7 @@ describe('instances create/update: the Zenvia live chat flags', () => {
     zenviaConnectorAccessToken: 'access-token',
     zenviaConnectorAccessKey: 'access-key',
     zenviaConnectorEnv: 'homol',
+    zenviaConnectorReopenExpirationMinutes: 1440,
   };
 
   test('create and update write every connector field', () => {
@@ -145,12 +148,17 @@ describe('instances create/update: the Zenvia live chat flags', () => {
 
   test('update clears a connector field with "null" and its help says so', () => {
     expect(bodyOf('update', ['--zenvia-connector-slug', 'null'])).toHaveProperty('zenviaConnectorSlug', null);
+    expect(bodyOf('update', ['--zenvia-connector-reopen-expiration-minutes', 'null'])).toHaveProperty(
+      'zenviaConnectorReopenExpirationMinutes',
+      null,
+    );
     for (const flag of [
       '--zenvia-connector-slug',
       '--zenvia-connector-integration-id',
       '--zenvia-connector-access-token',
       '--zenvia-connector-access-key',
       '--zenvia-connector-env',
+      '--zenvia-connector-reopen-expiration-minutes',
     ]) {
       expect(description('update', flag)).toContain('"null"');
       expect(description('update', flag)).toMatch(/restart the instance/);

@@ -179,6 +179,7 @@ function applyZenviaFields(body: Record<string, unknown>, opts: Record<string, u
   setVal(body, 'zenviaConnectorAccessToken', opts.zenviaConnectorAccessToken);
   setVal(body, 'zenviaConnectorAccessKey', opts.zenviaConnectorAccessKey);
   setVal(body, 'zenviaConnectorEnv', opts.zenviaConnectorEnv);
+  setVal(body, 'zenviaConnectorReopenExpirationMinutes', opts.zenviaConnectorReopenExpirationMinutes);
 }
 
 /** Extract TTS, access, token, trigger fields from CLI options into body */
@@ -577,6 +578,11 @@ export function createInstancesCommand(): Command {
     .option('--zenvia-connector-access-token <token>', 'Zenvia NLU live chat integration access token (live chat mode)')
     .option('--zenvia-connector-access-key <key>', 'Zenvia NLU live chat integration access key (live chat mode)')
     .option('--zenvia-connector-env <env>', 'Zenvia NLU webhook environment: homol or prod (live chat mode)')
+    .option(
+      '--zenvia-connector-reopen-expiration-minutes <minutes>',
+      'Minutes a live chat reopen stays valid; lets a send to a closed live chat reopen it (live chat mode)',
+      (v) => Number.parseInt(v, 10),
+    )
     // Twilio WhatsApp
     .option('--twilio-account-sid <sid>', 'Twilio Account SID')
     .option('--twilio-auth-token <token>', 'Twilio Auth Token')
@@ -1355,6 +1361,11 @@ export function createInstancesCommand(): Command {
     .option(
       '--zenvia-connector-env <env>',
       'Zenvia NLU webhook environment, homol or prod (use "null" to clear). The plugin reads it at connect: restart the instance for the change to take effect',
+    )
+    .option(
+      '--zenvia-connector-reopen-expiration-minutes <minutes>',
+      'Minutes a live chat reopen stays valid; turns reopening on (use "null" to clear). The plugin reads it at connect: restart the instance for the change to take effect',
+      (v) => (v === 'null' ? v : Number.parseInt(v, 10)),
     )
     // Trigger events
     .option('--trigger-events <events>', 'Trigger events (comma-separated, use "null" to clear)')

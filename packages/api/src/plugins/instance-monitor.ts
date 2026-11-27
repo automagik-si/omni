@@ -249,6 +249,8 @@ export function buildInstanceConnectOptions(instance: {
   zenviaConnectorAccessToken?: string | null;
   zenviaConnectorAccessKey?: string | null;
   zenviaConnectorEnv?: string | null;
+  zenviaConnectorReopenExpirationMinutes?: number | null;
+  name?: string | null;
   ascFlowBaseUrl?: string | null;
   ascFlowLogin?: string | null;
   ascFlowChave?: string | null;
@@ -387,6 +389,8 @@ function applyZenviaOptions(
     zenviaConnectorAccessToken?: string | null;
     zenviaConnectorAccessKey?: string | null;
     zenviaConnectorEnv?: string | null;
+    zenviaConnectorReopenExpirationMinutes?: number | null;
+    name?: string | null;
     webhookVerifyToken?: string | null;
   },
 ): void {
@@ -396,6 +400,10 @@ function applyZenviaOptions(
   if (instance.zenviaConnectorAccessToken) options.zenviaConnectorAccessToken = instance.zenviaConnectorAccessToken;
   if (instance.zenviaConnectorAccessKey) options.zenviaConnectorAccessKey = instance.zenviaConnectorAccessKey;
   if (instance.zenviaConnectorEnv) options.zenviaConnectorEnv = instance.zenviaConnectorEnv;
+  if (instance.zenviaConnectorReopenExpirationMinutes != null) {
+    options.zenviaConnectorReopenExpirationMinutes = instance.zenviaConnectorReopenExpirationMinutes;
+  }
+  if (instance.zenviaConnectorSlug && instance.name) options.zenviaConnectorAgentName = instance.name;
   if (instance.zenviaApiToken) options.zenviaApiToken = instance.zenviaApiToken;
   if (instance.zenviaSenderId) options.zenviaSenderId = instance.zenviaSenderId;
   if (instance.zenviaHandoffSolution) options.zenviaHandoffSolution = instance.zenviaHandoffSolution;
