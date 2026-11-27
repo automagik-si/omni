@@ -271,8 +271,13 @@ Every other failed send, on every channel, keeps answering
 `502 CHANNEL_SEND_FAILED`. Neither failure pauses the agent, writes an audit
 row or disarms follow-ups.
 
-This plugin sets `rejected` only on the handoff path (the rows marked `true`
-below). A Zenvia 4xx on an ordinary send stays unflagged and answers 502.
+In Channels API mode this plugin sets `rejected` only on the handoff path (the
+rows marked `true` below). A Zenvia 4xx on an ordinary send stays unflagged and
+answers 502. Live chat mode (below) also sets it on ordinary sends: a send to a
+contact without an open live chat that cannot be reopened (never had one,
+handed off, reopening off, not text) and a connector 400 or 404 answer 422; a
+send held while a reopen waits for its answer, a connector 5xx and a network
+failure answer 502 with `retryable: true`.
 
 | Failure                                                                   | `rejected` | `retryable` | HTTP                         |
 | ------------------------------------------------------------------------- | ---------- | ----------- | ---------------------------- |

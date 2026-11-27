@@ -23,7 +23,7 @@
  */
 
 import type { Channel, WhatsAppPasskeyCredential } from '@omni/sdk';
-import { Command, Option } from 'commander';
+import { Command, InvalidArgumentError, Option } from 'commander';
 import qrcode from 'qrcode-terminal';
 import { getClient } from '../client.js';
 import * as output from '../output.js';
@@ -162,6 +162,21 @@ function parseZenviaHandoffRouting(value: string): unknown {
   } catch {
     throw new Error('--zenvia-handoff-routing must be valid JSON (or "null" to clear)');
   }
+}
+
+const ZENVIA_REOPEN_MAX_MINUTES = 10_080;
+
+function parseReopenMinutes(value: string): number {
+  const trimmed = value.trim();
+  const minutes = /^\d+$/.test(trimmed) ? Number(trimmed) : Number.NaN;
+  if (!Number.isInteger(minutes) || minutes < 1 || minutes > ZENVIA_REOPEN_MAX_MINUTES) {
+    throw new InvalidArgumentError(`must be a whole number of minutes from 1 to ${ZENVIA_REOPEN_MAX_MINUTES}`);
+  }
+  return minutes;
+}
+
+function parseNullableReopenMinutes(value: string): number | 'null' {
+  return value === 'null' ? value : parseReopenMinutes(value);
 }
 
 function applyZenviaFields(body: Record<string, unknown>, opts: Record<string, unknown>): void {
@@ -581,7 +596,7 @@ export function createInstancesCommand(): Command {
     .option(
       '--zenvia-connector-reopen-expiration-minutes <minutes>',
       'Minutes a live chat reopen stays valid; lets a send to a closed live chat reopen it (live chat mode)',
-      (v) => Number.parseInt(v, 10),
+      parseReopenMinutes,
     )
     // Twilio WhatsApp
     .option('--twilio-account-sid <sid>', 'Twilio Account SID')
@@ -1365,7 +1380,7 @@ export function createInstancesCommand(): Command {
     .option(
       '--zenvia-connector-reopen-expiration-minutes <minutes>',
       'Minutes a live chat reopen stays valid; turns reopening on (use "null" to clear). The plugin reads it at connect: restart the instance for the change to take effect',
-      (v) => (v === 'null' ? v : Number.parseInt(v, 10)),
+      parseNullableReopenMinutes,
     )
     // Trigger events
     .option('--trigger-events <events>', 'Trigger events (comma-separated, use "null" to clear)')

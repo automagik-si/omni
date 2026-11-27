@@ -22,12 +22,18 @@ export interface ConnectorClosedSession {
   name?: string;
 }
 
+export interface ConnectorReopenRejection {
+  status?: string;
+  reason?: string;
+}
+
 export interface ConnectorReopenRequest {
   chatId: string;
   conversationId: string;
   requestedAt: number;
   expirationMinutes: number;
   externalId?: string;
+  rejection?: ConnectorReopenRejection;
   identifier?: string;
   name?: string;
 }
@@ -156,12 +162,23 @@ export class ConnectorSessionStore {
     });
   }
 
-  markReplied(chatId: string, conversationId: string): Promise<void> {
+  markReplied(chatId: string, conversationId: string, awaitingReplyUntil: number): Promise<void> {
     return this.withChat(chatId, async () => {
       const current = await this.get(chatId);
-      if (current?.conversationId !== conversationId || current.awaitingReplyUntil === undefined) return;
+      if (current?.conversationId !== conversationId || current.awaitingReplyUntil !== awaitingReplyUntil) return;
       const { awaitingReplyUntil: _, ...replied } = current;
       await this.storage.set(this.sessionKey(chatId), replied, CONNECTOR_SESSION_TTL_MS);
+    });
+  }
+
+  expireReopenWindow(chatId: string, now: number): Promise<ConnectorSession | undefined> {
+    return this.withChat(chatId, async () => {
+      const current = await this.get(chatId);
+      if (current?.awaitingReplyUntil === undefined || now < current.awaitingReplyUntil) return undefined;
+      await this.retire(current.conversationId);
+      await this.storage.delete(this.sessionKey(chatId));
+      await this.recordClosed(chatId, current.conversationId, 'platform', current);
+      return current;
     });
   }
 
@@ -237,15 +254,20 @@ export class ConnectorSessionStore {
     });
   }
 
-  reopenRequested(request: ConnectorReopenRequest, externalId: string): Promise<void> {
+  reopenRequested(request: ConnectorReopenRequest, externalId: string): Promise<ConnectorReopenRejection | undefined> {
     return this.withChat(request.chatId, async () => {
       const current = await this.reopenOf(request.conversationId);
-      if (current?.requestedAt !== request.requestedAt) return;
+      if (current?.requestedAt !== request.requestedAt) return undefined;
+      if (current.rejection) {
+        await this.storage.delete(this.reopenKey(request.conversationId));
+        return current.rejection;
+      }
       await this.storage.set(
         this.reopenKey(request.conversationId),
         { ...current, externalId },
         Math.max(1, current.requestedAt + current.expirationMinutes * 60_000 - Date.now()),
       );
+      return undefined;
     });
   }
 
@@ -265,7 +287,7 @@ export class ConnectorSessionStore {
     if (!pending) return undefined;
     return this.withChat(pending.chatId, async () => {
       const request = await this.reopenOf(conversationId);
-      if (!request) return undefined;
+      if (!request || request.rejection) return undefined;
       await this.storage.delete(this.reopenKey(conversationId));
       const current = await this.get(request.chatId);
       if (current && current.conversationId !== conversationId) return undefined;
@@ -285,13 +307,25 @@ export class ConnectorSessionStore {
     });
   }
 
-  async rejectReopen(conversationId: string): Promise<ConnectorReopenRequest | undefined> {
+  async rejectReopen(
+    conversationId: string,
+    rejection: ConnectorReopenRejection,
+  ): Promise<{ request: ConnectorReopenRequest; deferred: boolean } | undefined> {
     const pending = await this.reopenOf(conversationId);
     if (!pending) return undefined;
     return this.withChat(pending.chatId, async () => {
       const request = await this.reopenOf(conversationId);
-      if (request) await this.storage.delete(this.reopenKey(conversationId));
-      return request;
+      if (!request || request.rejection) return undefined;
+      if (request.externalId) {
+        await this.storage.delete(this.reopenKey(conversationId));
+        return { request, deferred: false };
+      }
+      await this.storage.set(
+        this.reopenKey(conversationId),
+        { ...request, rejection },
+        Math.max(1, request.requestedAt + request.expirationMinutes * 60_000 - Date.now()),
+      );
+      return { request, deferred: true };
     });
   }
 }

@@ -723,6 +723,48 @@ describe('connector mode', () => {
       expect(sentBodies(fetchSpy).filter((b) => b.action === 'REOPEN_CONVERSATION')).toHaveLength(2);
     });
 
+    it('fails the send when the REJECT arrives before the REOPEN call returns', async () => {
+      await closedContact();
+      fetchSpy?.mockImplementation((async (_input: unknown, init?: RequestInit) => {
+        const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+        if (body.action === 'REOPEN_CONVERSATION') {
+          await plugin.handleWebhook(reject('message_not_sent'));
+        }
+        return jsonResponse({ requestId: `altu-${String(body.action)}`, message: 'OK' });
+      }) as unknown as typeof fetch);
+
+      const result = await plugin.sendMessage(instanceId, text('follow-up'));
+
+      expect(result).toMatchObject({
+        success: false,
+        rejected: true,
+        retryable: false,
+        errorCode: 'message_not_sent',
+      });
+      expect(failedEvents()).toEqual([expect.objectContaining({ chatId: CHAT_ID, errorCode: 'message_not_sent' })]);
+      expect((eventBus.published as Published[]).some((e) => e.type === 'message.sent')).toBe(false);
+      expect((await plugin.handleWebhook(accept())).status).toBe(200);
+      expect(await plugin.getInstanceState(instanceId)?.connector?.sessions.get(CHAT_ID)).toBeUndefined();
+      fetchSpy?.mockImplementation((async () =>
+        jsonResponse({ requestId: 'altu-retry', message: 'OK' })) as unknown as typeof fetch);
+      expect(await plugin.sendMessage(instanceId, text('next rung'))).toMatchObject({ success: true });
+    });
+
+    it('keeps a reopen window that a reply already answered', async () => {
+      await closedContact();
+      await plugin.sendMessage(instanceId, text('follow-up'));
+      await plugin.handleWebhook(accept());
+      const sessions = plugin.getInstanceState(instanceId)?.connector?.sessions;
+      const deadline = (await sessions?.get(CHAT_ID))?.awaitingReplyUntil ?? 0;
+
+      await sessions?.markReplied(CHAT_ID, CONVERSATION_ID, deadline - 1);
+      expect((await sessions?.get(CHAT_ID))?.awaitingReplyUntil).toBe(deadline);
+
+      await plugin.handleWebhook(post(messageEvent('lead-reply-3', ['sim'])));
+      expect(await sessions?.expireReopenWindow(CHAT_ID, deadline + 60_000)).toBeUndefined();
+      expect((await sessions?.get(CHAT_ID))?.conversationId).toBe(CONVERSATION_ID);
+    });
+
     it('ignores an ACCEPT or REJECT without a pending reopen', async () => {
       await closedContact();
 
