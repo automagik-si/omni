@@ -679,7 +679,7 @@ export class ChatService {
   /**
    * Update a chat
    */
-  async update(id: string, data: Partial<NewChat>): Promise<Chat> {
+  async update(id: string, data: Partial<NewChat>, options: { mergeSettings?: boolean } = {}): Promise<Chat> {
     if (data.name) data.name = sanitizeText(data.name) ?? data.name;
     if (data.lastMessagePreview)
       data.lastMessagePreview = sanitizeText(data.lastMessagePreview) ?? data.lastMessagePreview;
@@ -695,9 +695,16 @@ export class ChatService {
       priorAgentPaused = (prior?.settings as { agentPaused?: boolean } | null)?.agentPaused === true;
     }
 
+    const mergeSettings = options.mergeSettings === true && data.settings !== undefined && data.settings !== null;
     const [updated] = await this.db
       .update(chats)
-      .set({ ...data, updatedAt: new Date() })
+      .set({
+        ...data,
+        ...(mergeSettings
+          ? { settings: sql`coalesce(${chats.settings}, '{}'::jsonb) || ${JSON.stringify(data.settings)}::jsonb` }
+          : {}),
+        updatedAt: new Date(),
+      })
       .where(eq(chats.id, id))
       .returning();
 
@@ -708,7 +715,7 @@ export class ChatService {
     // Follow-up sequences disarm on handoff activation — emit only on the
     // false → true transition so idempotent settings writes don't replay.
     const nextAgentPaused = (updated.settings as { agentPaused?: boolean } | null)?.agentPaused === true;
-    if (this.eventBus && updated.instanceId && data.settings !== undefined && !priorAgentPaused && nextAgentPaused) {
+    if (this.eventBus && updated.instanceId && incomingAgentPaused && !priorAgentPaused && nextAgentPaused) {
       const instanceId = updated.instanceId;
       this.eventBus
         .publish(

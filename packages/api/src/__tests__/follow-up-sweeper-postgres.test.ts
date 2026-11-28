@@ -668,4 +668,54 @@ postgresDescribe('FollowUpSweeperService (integration)', () => {
     expect(await disarmReasonOf(unguardedId)).toBeNull();
     expect(await disarmReasonOf(noWindowId)).toBeNull();
   });
+
+  test('a chat whose follow-up is switched off is not re-armed from the stored config', async () => {
+    const now = Date.now();
+    const [chatId] = await seedChats('whatsapp-baileys', [{ followUpConfig: config({ enabled: false }) }]);
+    if (!chatId) throw new Error('Expected the seeded fixture row');
+    await seedCustomerReplied([chatId], new Date(now - 30 * MS_PER_MINUTE), config());
+
+    const stats = await service.sweep();
+
+    expect(stats.rearmed).toBe(0);
+    expect(await disarmReasonOf(chatId)).toBe('customer_replied');
+    expect(publishedEvents.map((event) => event.type)).not.toContain('follow_up.armed');
+  });
+
+  test('switched-off chats do not hold back an eligible row behind them', async () => {
+    const now = Date.now();
+    const offIds = await seedChats(
+      'whatsapp-baileys',
+      Array.from({ length: 100 }, () => ({ followUpConfig: config({ enabled: false }) })),
+    );
+    await seedCustomerReplied(offIds, new Date(now - 60 * MS_PER_MINUTE), config());
+    const [eligibleId] = await seedChats('whatsapp-baileys', [{}]);
+    if (!eligibleId) throw new Error('Expected the seeded fixture row');
+    await seedCustomerReplied([eligibleId], new Date(now - 30 * MS_PER_MINUTE), config());
+
+    const stats = await service.sweep();
+
+    expect(stats.rearmed).toBe(1);
+    expect(await disarmReasonOf(eligibleId)).toBeNull();
+    if (!offIds[0]) throw new Error('Expected switched-off fixtures');
+    expect(await disarmReasonOf(offIds[0])).toBe('customer_replied');
+  });
+
+  test('an instance switched off blocks the re-arm unless the chat switches it back on', async () => {
+    const now = Date.now();
+    const [inheritsId, chatOnId] = await seedChats('whatsapp-baileys', [{}, { followUpConfig: config() }]);
+    if (!inheritsId || !chatOnId) throw new Error('Expected the seeded fixture row');
+    const instanceId = extraInstanceIds[extraInstanceIds.length - 1];
+    if (!instanceId) throw new Error('Expected the seeded instance');
+    await db
+      .update(instances)
+      .set({ followUpConfig: config({ enabled: false }) })
+      .where(eq(instances.id, instanceId));
+    await seedCustomerReplied([inheritsId, chatOnId], new Date(now - 30 * MS_PER_MINUTE), config());
+
+    await service.sweep();
+
+    expect(await disarmReasonOf(inheritsId)).toBe('customer_replied');
+    expect(await disarmReasonOf(chatOnId)).toBeNull();
+  });
 });

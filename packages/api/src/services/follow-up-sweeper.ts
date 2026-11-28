@@ -342,6 +342,7 @@ export class FollowUpSweeperService {
                 // Same null-safe agentPaused gate as `findAndLockDue` —
                 // preserves the #528 race fix for the re-arm path.
                 sql`(${chats.settings}->>'agentPaused') IS DISTINCT FROM 'true'`,
+                sql`(${chats.settings}->'followUpConfig'->>'enabled') IS DISTINCT FROM 'false'`,
                 notInActiveCloseStateSql(chats.settings, now),
                 or(
                   isNull(instances.channel),

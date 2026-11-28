@@ -25,6 +25,7 @@ import {
   armSequence,
   createLogger,
   disarmSequence,
+  isFollowUpSwitchedOff,
   resolveFollowUpConfig,
 } from '@omni/core';
 import {
@@ -271,9 +272,18 @@ export class FollowUpLifecycleService {
     agentId: string | null,
     trustedTenantId?: string | null,
   ): Promise<FollowUpSequenceConfig | null> {
+    return resolveFollowUpConfig(await this.readConfigInputs(chatId, instanceId, agentId, trustedTenantId));
+  }
+
+  private async readConfigInputs(
+    chatId: string,
+    instanceId: string,
+    agentId: string | null,
+    trustedTenantId?: string | null,
+  ): Promise<FollowUpConfigInputs> {
     // One short scope for the three config reads — no publish happens between
     // them, so a single transaction per resolution is the tight fit.
-    const inputs = await this.workDb(trustedTenantId, async (): Promise<FollowUpConfigInputs> => {
+    return this.workDb(trustedTenantId, async (): Promise<FollowUpConfigInputs> => {
       const [chat] = await this.db.select().from(chats).where(eq(chats.id, chatId)).limit(1);
       const [instance] = await this.db.select().from(instances).where(eq(instances.id, instanceId)).limit(1);
       const agent = agentId
@@ -285,8 +295,6 @@ export class FollowUpLifecycleService {
         agent: readAgentFollowUpConfig(agent),
       };
     });
-
-    return resolveFollowUpConfig(inputs);
   }
 
   /**
@@ -387,7 +395,15 @@ export class FollowUpLifecycleService {
 
     if (await this.workDb(tenantId, () => this.isInActiveCloseState(input.chatId, input.instanceId))) return;
 
-    const config = input.config ?? (await this.resolveConfig(input.chatId, input.instanceId, input.agentId, tenantId));
+    const inputs = await this.readConfigInputs(input.chatId, input.instanceId, input.agentId, tenantId);
+    if (isFollowUpSwitchedOff(inputs)) {
+      this.logger.info('follow-up lifecycle: refusing to re-arm — follow-up switched off', {
+        chatId: input.chatId,
+        instanceId: input.instanceId,
+      });
+      return;
+    }
+    const config = input.config ?? resolveFollowUpConfig(inputs);
     if (!config || config.enabled === false) return;
 
     if (

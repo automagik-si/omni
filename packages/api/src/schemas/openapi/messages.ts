@@ -88,6 +88,14 @@ export const sendCloseContactSchema = z.object({
     .record(z.unknown())
     .optional()
     .describe('Structured BI/CRM payload — forwarded to Gupshup native send when supported'),
+  keepReachable: z
+    .boolean()
+    .optional()
+    .describe(
+      'Record the close without shutting the chat: `closed` and `agentPaused` are not written, so the next inbound ' +
+        'message still reaches the agent. `closeOutcome` is written and `closeUntil` is set to now + the outcome ' +
+        'cooldown (closeContactConfig), also for won/lost when the instance configures one. Default false.',
+    ),
 });
 
 const HandoffResponseSchema = z.object({
@@ -99,7 +107,9 @@ const HandoffResponseSchema = z.object({
 const CloseContactResponseSchema = z.object({
   messageId: z.string().nullable().openapi({ description: 'Channel message ID (null when no native send happened)' }),
   status: z.literal('closed'),
-  terminal: z.boolean().openapi({ description: 'Hard terminal close (chat stays closed)' }),
+  terminal: z
+    .boolean()
+    .openapi({ description: 'Hard terminal close (chat stays closed). Always false with keepReachable' }),
   closeUntil: z.string().datetime().nullable().openapi({ description: 'Soft-close cooldown end (null when terminal)' }),
   escalated: z.boolean().openapi({ description: 'Soft close auto-promoted to terminal by repetition' }),
   outcome: sendCloseContactSchema.shape.outcome,
@@ -645,6 +655,7 @@ export function registerMessageSchemas(registry: OpenAPIRegistry): void {
     summary: 'Close a contact',
     description:
       'Terminal close: logs the close in close_contact_logs, pauses the agent, sets closed (won/lost, or escalated after repeated soft closes) or a closeUntil cooldown (other outcomes, tunable per instance via closeContactConfig), and disarms follow-ups. ' +
+      'With `keepReachable: true` the chat is neither closed nor paused: only closeOutcome and the closeUntil cooldown are written, so the contact can still reach the agent. ' +
       'Channels declaring canCloseContact send a native close with `text`. `text` is optional: without it the contact is classified/closed with no farewell — channels also declaring canCloseContactWithoutText still receive the native close event with empty text; other channels skip the channel send and only apply the side effects.',
     request: { body: { content: { 'application/json': { schema: sendCloseContactSchema } } } },
     responses: {

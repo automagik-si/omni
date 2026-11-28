@@ -239,6 +239,10 @@ export function registerChatSchemas(registry: OpenAPIRegistry): void {
     path: '/chats/{id}',
     tags: ['Chats'],
     summary: 'Update a chat',
+    description:
+      '`settings` is merged into the stored settings one level deep: keys in the body replace the stored ones ' +
+      '(a nested object such as followUpConfig is replaced whole), keys left out are kept, and a key sent as null ' +
+      'is stored as null. `settings: null` clears every setting.',
     request: { params: idParam, body: { content: { 'application/json': { schema: updateChatSchema } } } },
     responses: { 200: chatData('The updated chat'), 404: notFound },
   });

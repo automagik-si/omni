@@ -7,7 +7,7 @@
 
 import { describe, expect, it } from 'bun:test';
 import type { FollowUpSequenceConfig } from '../../../schemas/follow-up';
-import { resolveFollowUpConfig } from '../resolve-config';
+import { isFollowUpSwitchedOff, resolveFollowUpConfig } from '../resolve-config';
 
 const baseConfig = (label: string, enabled = true): FollowUpSequenceConfig => ({
   enabled,
@@ -74,5 +74,23 @@ describe('resolveFollowUpConfig', () => {
     const instance = baseConfig('instance');
     const result = resolveFollowUpConfig({ chat: undefined, instance, agent: undefined });
     expect(result).toBe(instance);
+  });
+});
+
+describe('isFollowUpSwitchedOff', () => {
+  it('is false when no scope defines a config', () => {
+    expect(isFollowUpSwitchedOff({})).toBe(false);
+    expect(isFollowUpSwitchedOff({ chat: null, instance: null, agent: null })).toBe(false);
+  });
+
+  it('is true when the closest defined scope has enabled=false', () => {
+    expect(isFollowUpSwitchedOff({ chat: baseConfig('chat', false), instance: baseConfig('instance') })).toBe(true);
+    expect(isFollowUpSwitchedOff({ instance: baseConfig('instance', false), agent: baseConfig('agent') })).toBe(true);
+    expect(isFollowUpSwitchedOff({ agent: baseConfig('agent', false) })).toBe(true);
+  });
+
+  it('is false when the closest defined scope is enabled, even if a broader one is off', () => {
+    expect(isFollowUpSwitchedOff({ chat: baseConfig('chat'), instance: baseConfig('instance', false) })).toBe(false);
+    expect(isFollowUpSwitchedOff({ instance: baseConfig('instance'), agent: baseConfig('agent', false) })).toBe(false);
   });
 });
