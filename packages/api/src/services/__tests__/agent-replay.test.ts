@@ -10,7 +10,7 @@ import type { EventBus } from '@omni/core';
 import type { Database } from '@omni/db';
 import type { SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
-import { AgentReplayService } from '../agent-replay';
+import { AgentReplayService, REPLAY_MAX_AGE_ENV, loadReplayMaxAgeMs } from '../agent-replay';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -466,5 +466,86 @@ describe('AgentReplayService', () => {
 
       expect(db.update).toHaveBeenCalledTimes(1);
     });
+  });
+});
+
+describe('AgentReplayService replay max age', () => {
+  const HOUR_MS = 60 * 60 * 1000;
+  const DAY_MS = 24 * HOUR_MS;
+
+  test('replayMissedMessages starts at now - maxAgeMs when lastSeenAt is older', async () => {
+    const service = new AgentReplayService(createMessagesOnlyDb([]), createMockEventBus());
+
+    const before = Date.now();
+    const result = await service.replayMissedMessages({
+      instanceId: 'inst-1',
+      since: new Date(before - 10 * HOUR_MS),
+      maxAgeMs: 30 * 60 * 1000,
+    });
+
+    expect(result.since.getTime()).toBeGreaterThanOrEqual(before - 30 * 60 * 1000);
+    expect(result.since.getTime()).toBeLessThanOrEqual(Date.now() - 30 * 60 * 1000);
+  });
+
+  test('replayMissedMessages keeps lastSeenAt when it is newer than maxAgeMs', async () => {
+    const service = new AgentReplayService(createMessagesOnlyDb([]), createMockEventBus());
+    const since = new Date(Date.now() - 5 * 60 * 1000);
+
+    const result = await service.replayMissedMessages({ instanceId: 'inst-1', since, maxAgeMs: HOUR_MS });
+
+    expect(result.since.getTime()).toBe(since.getTime());
+  });
+
+  test('replayMissedMessages never looks back more than 24h, whatever maxAgeMs says', async () => {
+    const service = new AgentReplayService(createMessagesOnlyDb([]), createMockEventBus());
+
+    const before = Date.now();
+    const result = await service.replayMissedMessages({
+      instanceId: 'inst-1',
+      since: new Date(before - 3 * DAY_MS),
+      maxAgeMs: 2 * DAY_MS,
+    });
+
+    expect(result.since.getTime()).toBeGreaterThanOrEqual(before - DAY_MS);
+  });
+
+  test('onInstanceConnect replays only messages younger than the configured max age', async () => {
+    const lastSeenAt = new Date(Date.now() - 10 * HOUR_MS);
+    const db = createMockDb([createMockInstance({ lastSeenAt })], []);
+    const service = new AgentReplayService(db, createMockEventBus(), 30 * 60 * 1000);
+    const replay = mock(service.replayMissedMessages.bind(service));
+    service.replayMissedMessages = replay;
+
+    await service.onInstanceConnect('inst-1');
+
+    expect(replay).toHaveBeenCalledTimes(1);
+    const [options] = replay.mock.calls[0] as unknown as [{ since: Date; maxAgeMs: number }];
+    expect(options.since).toEqual(lastSeenAt);
+    expect(options.maxAgeMs).toBe(30 * 60 * 1000);
+    const result = await (replay.mock.results[0]?.value as Promise<{ since: Date }>);
+    expect(result.since.getTime()).toBeGreaterThan(lastSeenAt.getTime());
+  });
+
+  test('onInstanceConnect keeps the 24h window when nothing is configured', async () => {
+    const db = createMockDb([createMockInstance({ lastSeenAt: new Date(Date.now() - HOUR_MS) })], []);
+    const service = new AgentReplayService(db, createMockEventBus(), loadReplayMaxAgeMs({}));
+    const replay = mock(service.replayMissedMessages.bind(service));
+    service.replayMissedMessages = replay;
+
+    await service.onInstanceConnect('inst-1');
+
+    const [options] = replay.mock.calls[0] as unknown as [{ maxAgeMs: number }];
+    expect(options.maxAgeMs).toBe(DAY_MS);
+  });
+
+  test('loadReplayMaxAgeMs reads the env, caps it at 24h and ignores invalid values', () => {
+    expect(loadReplayMaxAgeMs({})).toBe(DAY_MS);
+    expect(loadReplayMaxAgeMs({ [REPLAY_MAX_AGE_ENV]: '' })).toBe(DAY_MS);
+    expect(loadReplayMaxAgeMs({ [REPLAY_MAX_AGE_ENV]: '1800000' })).toBe(1_800_000);
+    expect(loadReplayMaxAgeMs({ [REPLAY_MAX_AGE_ENV]: ' 600000 ' })).toBe(600_000);
+    expect(loadReplayMaxAgeMs({ [REPLAY_MAX_AGE_ENV]: String(3 * DAY_MS) })).toBe(DAY_MS);
+    for (const invalid of ['0', '-1', '1.5', 'abc', '30m']) {
+      expect(loadReplayMaxAgeMs({ [REPLAY_MAX_AGE_ENV]: invalid })).toBe(DAY_MS);
+    }
   });
 });
