@@ -440,7 +440,7 @@ async function processSenderIdentity(
  * Remove the degradation once G6 lands `persons.tenant_id`; the site is tracked
  * as `persons.ts`-adjacent debt in the db-access registry.
  */
-async function resolveSenderIdentityForWorkItem(
+export async function resolveSenderIdentityForWorkItem(
   services: Services,
   payload: MessageReceivedPayload,
   metadata: { instanceId: string; personId?: string; platformIdentityId?: string; channelType?: string },
