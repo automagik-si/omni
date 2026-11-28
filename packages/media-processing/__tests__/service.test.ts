@@ -159,5 +159,42 @@ describe('MediaProcessingService', () => {
       expect(config.audioPrompt).toBe('Use the project glossary.');
       expect(config.audioGlossary).toEqual(['ProjectTerm', 'ExampleTerm']);
     });
+
+    it('hands the configured vision models to the image, video and document processors', () => {
+      const service = createMediaProcessingService({
+        openaiApiKey: 'test-openai-key',
+        geminiApiKey: 'test-gemini-key',
+        geminiVisionModel: 'gemini-test-vision',
+        openaiVisionModel: 'openai-test-vision',
+      });
+
+      const processors = (service as unknown as { processors: Array<Record<string, unknown>> }).processors;
+      const byName = (name: string) => processors.find((processor) => processor.name === name);
+      expect(byName('image')?.geminiModelId).toBe('gemini-test-vision');
+      expect(byName('image')?.openaiVisionModelId).toBe('openai-test-vision');
+      expect(byName('video')?.geminiModelId).toBe('gemini-test-vision');
+      expect(byName('document')?.geminiModelId).toBe('gemini-test-vision');
+    });
+
+    it('reads the vision models from the environment when the caller passes none', () => {
+      const previous = {
+        GEMINI_MEDIA_MODEL: process.env.GEMINI_MEDIA_MODEL,
+        OPENAI_VISION_MODEL: process.env.OPENAI_VISION_MODEL,
+      };
+      process.env.GEMINI_MEDIA_MODEL = 'gemini-env-vision';
+      process.env.OPENAI_VISION_MODEL = 'openai-env-vision';
+      try {
+        const service = createMediaProcessingService({ openaiApiKey: 'test-openai-key' });
+
+        const config = (service as unknown as { config: Record<string, unknown> }).config;
+        expect(config.geminiVisionModel).toBe('gemini-env-vision');
+        expect(config.openaiVisionModel).toBe('openai-env-vision');
+      } finally {
+        for (const [key, value] of Object.entries(previous)) {
+          if (value === undefined) delete process.env[key];
+          else process.env[key] = value;
+        }
+      }
+    });
   });
 });
