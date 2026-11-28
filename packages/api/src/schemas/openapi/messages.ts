@@ -97,7 +97,7 @@ const HandoffResponseSchema = z.object({
 });
 
 const CloseContactResponseSchema = z.object({
-  messageId: z.string().nullable().openapi({ description: 'Channel message ID (null when no native send happened)' }),
+  messageId: z.string().nullable().openapi({ description: 'Channel message ID (null when nothing was sent)' }),
   status: z.literal('closed'),
   terminal: z.boolean().openapi({ description: 'Hard terminal close (chat stays closed)' }),
   closeUntil: z.string().datetime().nullable().openapi({ description: 'Soft-close cooldown end (null when terminal)' }),
@@ -645,7 +645,8 @@ export function registerMessageSchemas(registry: OpenAPIRegistry): void {
     summary: 'Close a contact',
     description:
       'Terminal close: logs the close in close_contact_logs, pauses the agent, sets closed (won/lost, or escalated after repeated soft closes) or a closeUntil cooldown (other outcomes, tunable per instance via closeContactConfig), and disarms follow-ups. ' +
-      'Channels declaring canCloseContact send a native close with `text`. `text` is optional: without it the contact is classified/closed with no farewell — channels also declaring canCloseContactWithoutText still receive the native close event with empty text; other channels skip the channel send and only apply the side effects.',
+      'Channels declaring canCloseContact send a native close with `text`. `text` is optional: without it the contact is classified/closed with no farewell — channels also declaring canCloseContactWithoutText still receive the native close event with empty text; other channels skip the channel send and only apply the side effects. ' +
+      'On a channel without canCloseContact, a `lost` close sends `text` as a plain message, because the paused agent reply is never delivered; if that send fails the close still applies and `messageId` is null. The other outcomes leave the farewell to the agent reply.',
     request: { body: { content: { 'application/json': { schema: sendCloseContactSchema } } } },
     responses: {
       201: {

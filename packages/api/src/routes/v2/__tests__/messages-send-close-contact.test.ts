@@ -23,14 +23,15 @@ interface MountOptions {
   closeContactConfig?: Record<string, unknown> | null;
   /** Closes with the same outcome already inside the escalation window. */
   recentCloseCount?: number;
+  sendFailure?: 'result' | 'throw';
 }
 
 function mountCloseContactRoute(options: MountOptions = {}) {
-  const sendMessage = mock(async (_instanceId: string, _message: unknown) => ({
-    success: true,
-    messageId: 'CLOSE-MSG-ID',
-    timestamp: 123,
-  }));
+  const sendMessage = mock(async (_instanceId: string, _message: unknown) => {
+    if (options.sendFailure === 'throw') throw new Error('provider unreachable');
+    if (options.sendFailure === 'result') return { success: false, error: 'outside the messaging window' };
+    return { success: true, messageId: 'CLOSE-MSG-ID', timestamp: 123 };
+  });
   const auditValues: Record<string, unknown>[] = [];
   const chatUpdates: Record<string, unknown>[] = [];
   const disarm = mock(async (_input: unknown) => undefined);
@@ -193,6 +194,90 @@ describe('POST /messages/send/close-contact — farewell text', () => {
 
     expect(res.status).toBe(201);
     expect(sendMessage).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('POST /messages/send/close-contact — lost on a channel without native close', () => {
+  const withoutNativeClose = { capabilities: { canCloseContact: false } };
+
+  test('sends the farewell as a plain text message, because the paused agent reply is never delivered', async () => {
+    const { app, sendMessage, auditValues, chatUpdates } = mountCloseContactRoute(withoutNativeClose);
+
+    const res = await postCloseContact(app, { outcome: 'lost', text: 'Goodbye', reason: 'asked to stop' });
+
+    expect(res.status).toBe(201);
+    const json = (await res.json()) as { data: Record<string, unknown> };
+    expect(json.data.messageId).toBe('CLOSE-MSG-ID');
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    const [, message] = sendMessage.mock.calls[0] as [string, SentMessage & { to: string; content: { type?: string } }];
+    expect(message.to).toBe('15550001111');
+    expect(message.content).toEqual({ type: 'text', text: 'Goodbye' });
+    expect(message.metadata?.isCloseContact).toBeUndefined();
+    expect(auditValues[0]?.externalMessageId).toBe('CLOSE-MSG-ID');
+    expect(auditValues[0]?.metadata).toMatchObject({
+      channelCloseSupported: false,
+      channelCloseSent: false,
+      farewellSentAsText: true,
+    });
+    expect(chatUpdates[0]?.settings).toMatchObject({ agentPaused: true, closed: true, closeOutcome: 'lost' });
+  });
+
+  test('a farewell that fails to send does not undo the close', async () => {
+    for (const sendFailure of ['result', 'throw'] as const) {
+      const { app, sendMessage, auditValues, chatUpdates, disarm, publish } = mountCloseContactRoute({
+        ...withoutNativeClose,
+        sendFailure,
+      });
+
+      const res = await postCloseContact(app, { outcome: 'lost', text: 'Goodbye' });
+
+      expect(res.status).toBe(201);
+      const json = (await res.json()) as { data: Record<string, unknown> };
+      expect(json.data.messageId).toBeNull();
+      expect(sendMessage).toHaveBeenCalledTimes(1);
+      expect(auditValues[0]?.externalMessageId).toBeNull();
+      expect(auditValues[0]?.metadata).toMatchObject({ farewellSentAsText: false });
+      expect(chatUpdates[0]?.settings).toMatchObject({ agentPaused: true, closed: true });
+      expect(disarm).toHaveBeenCalledTimes(1);
+      expect(publish.mock.calls.map((call) => call[0])).toContain('chat.closed');
+    }
+  });
+
+  test('without text there is nothing to send', async () => {
+    const { app, sendMessage, auditValues } = mountCloseContactRoute(withoutNativeClose);
+
+    const res = await postCloseContact(app, { outcome: 'lost', text: '  ' });
+
+    expect(res.status).toBe(201);
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(auditValues[0]?.metadata).toMatchObject({ withoutFarewell: true, farewellSentAsText: false });
+  });
+
+  test('outcomes that keep the agent unpaused leave the farewell to the agent reply', async () => {
+    for (const outcome of ['won', 'redirected_sac', 'unqualified', 'no_response', 'other']) {
+      const { app, sendMessage, auditValues, chatUpdates } = mountCloseContactRoute(withoutNativeClose);
+
+      const res = await postCloseContact(app, { outcome, text: 'Goodbye' });
+
+      expect(res.status).toBe(201);
+      const json = (await res.json()) as { data: Record<string, unknown> };
+      expect(json.data.messageId).toBeNull();
+      expect(sendMessage).not.toHaveBeenCalled();
+      expect(auditValues[0]?.metadata).toMatchObject({ farewellSentAsText: false });
+      expect(chatUpdates[0]?.settings).not.toHaveProperty('agentPaused');
+    }
+  });
+
+  test('a channel with native close still gets only the native close on lost', async () => {
+    const { app, sendMessage, auditValues } = mountCloseContactRoute();
+
+    const res = await postCloseContact(app, { outcome: 'lost', text: 'Goodbye' });
+
+    expect(res.status).toBe(201);
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    const [, message] = sendMessage.mock.calls[0] as [string, SentMessage];
+    expect(message.metadata).toMatchObject({ isCloseContact: true, closeOutcome: 'lost' });
+    expect(auditValues[0]?.metadata).toMatchObject({ channelCloseSent: true, farewellSentAsText: false });
   });
 });
 

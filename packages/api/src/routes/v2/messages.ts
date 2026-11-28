@@ -39,7 +39,7 @@ import { extname, join } from 'node:path';
 
 import { zValidator } from '@hono/zod-validator';
 import { sanitizeOutboundText } from '@omni/channel-sdk';
-import type { ChannelRegistry, OutgoingContent, OutgoingMessage } from '@omni/channel-sdk';
+import type { ChannelPlugin, ChannelRegistry, OutgoingContent, OutgoingMessage, SendResult } from '@omni/channel-sdk';
 import { ERROR_CODES, JOURNEY_STAGES, NotFoundError, OmniError, createLogger, getJourneyTracker } from '@omni/core';
 import type { ChatClosedPayload, CloseContactOutcome } from '@omni/core/events';
 import type { ChannelType } from '@omni/core/types';
@@ -2109,12 +2109,46 @@ async function computeCloseContactTerminalState(
 function planCloseContactSend(
   text: string | undefined,
   capabilities: { canCloseContact?: boolean; canCloseContactWithoutText?: boolean } | undefined,
-): { hasNativeClose: boolean; sendNativeClose: boolean; farewellText: string; withoutFarewell: boolean } {
+  pausesAgent: boolean,
+): {
+  hasNativeClose: boolean;
+  sendNativeClose: boolean;
+  sendFarewellAsText: boolean;
+  farewellText: string;
+  withoutFarewell: boolean;
+} {
   const hasNativeClose = capabilities?.canCloseContact === true;
   const farewellText = text?.trim() ? text : '';
   const withoutFarewell = farewellText === '';
   const sendNativeClose = hasNativeClose && (!withoutFarewell || capabilities?.canCloseContactWithoutText === true);
-  return { hasNativeClose, sendNativeClose, farewellText, withoutFarewell };
+  const sendFarewellAsText = !hasNativeClose && pausesAgent && !withoutFarewell;
+  return { hasNativeClose, sendNativeClose, sendFarewellAsText, farewellText, withoutFarewell };
+}
+
+async function sendCloseFarewellAsText(
+  plugin: Pick<ChannelPlugin, 'sendMessage'>,
+  context: { instanceId: string; channelType: string; to: string; text: string },
+): Promise<SendResult | null> {
+  try {
+    const result = await plugin.sendMessage(context.instanceId, {
+      to: context.to,
+      content: { type: 'text', text: context.text },
+    });
+    if (result.success) return result;
+    log.warn('Close-contact farewell not delivered', {
+      instanceId: context.instanceId,
+      channelType: context.channelType,
+      error: result.error,
+      errorCode: result.errorCode,
+    });
+  } catch (error) {
+    log.warn('Close-contact farewell not delivered', {
+      instanceId: context.instanceId,
+      channelType: context.channelType,
+      error: String(error),
+    });
+  }
+  return null;
 }
 
 /**
@@ -2177,9 +2211,11 @@ messagesRoutes.post('/send/close-contact', zValidator('json', sendCloseContactSc
 
   const resolvedTo = await resolveRecipient(data.to, instance.channel, services);
   const outcome = data.outcome as CloseContactOutcome;
-  const { hasNativeClose, sendNativeClose, farewellText, withoutFarewell } = planCloseContactSend(
+  const shouldPauseAgent = outcome === 'lost';
+  const { hasNativeClose, sendNativeClose, sendFarewellAsText, farewellText, withoutFarewell } = planCloseContactSend(
     data.text,
     plugin.capabilities,
+    shouldPauseAgent,
   );
 
   // ── 1. Native channel send (Gupshup CLOSING msg_type) ────────────────────
@@ -2200,6 +2236,13 @@ messagesRoutes.post('/send/close-contact', zValidator('json', sendCloseContactSc
       channelType: instance.channel,
       instanceId: data.instanceId,
       operation: 'send close-contact',
+    });
+  } else if (sendFarewellAsText) {
+    channelSendResult = await sendCloseFarewellAsText(plugin, {
+      instanceId: data.instanceId,
+      channelType: instance.channel,
+      to: resolvedTo,
+      text: farewellText,
     });
   }
 
@@ -2224,6 +2267,7 @@ messagesRoutes.post('/send/close-contact', zValidator('json', sendCloseContactSc
         channelCloseSupported: hasNativeClose,
         channelCloseSent: sendNativeClose,
         withoutFarewell,
+        farewellSentAsText: sendFarewellAsText && channelSendResult !== null,
       },
     })
     .returning();
@@ -2256,7 +2300,6 @@ messagesRoutes.post('/send/close-contact', zValidator('json', sendCloseContactSc
   //
   // The dispatcher's close-contact gate honours `closed === true` (hard
   // terminal) for skip and treats a pure soft cooldown as pass.
-  const shouldPauseAgent = outcome === 'lost';
   const closedAt = new Date();
   // Merge into existing settings — replacing the whole JSONB column here would
   // drop unrelated keys such as followUpConfig.
