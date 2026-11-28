@@ -186,6 +186,7 @@ interface MediaProcessorContext {
    * registry's `getPlugin`; injectable so tests avoid the shared singleton.
    */
   resolveChannelPlugin?: (id: ChannelType) => Promise<ChannelPlugin | undefined>;
+  persistedRowWait?: PersistedRowWait;
 }
 
 /**
@@ -378,6 +379,29 @@ interface MediaDownloadFailure {
   downloadError: string;
 }
 
+interface PersistedRowWait {
+  maxWaitMs: number;
+  initialDelayMs: number;
+  maxDelayMs: number;
+}
+
+const PERSISTED_ROW_WAIT: PersistedRowWait = { maxWaitMs: 60_000, initialDelayMs: 250, maxDelayMs: 2_000 };
+
+async function waitForPersistedRow<T>(
+  lookup: () => Promise<T | null | undefined>,
+  deadline: number,
+  wait: PersistedRowWait,
+): Promise<T | null> {
+  let row = await lookup();
+  let delay = wait.initialDelayMs;
+  while (!row && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, Math.min(delay, Math.max(0, deadline - Date.now()))));
+    row = await lookup();
+    delay = Math.min(delay * 2, wait.maxDelayMs);
+  }
+  return row ?? null;
+}
+
 /**
  * Resolve media file path for a message
  * Handles both local paths and URL downloads
@@ -392,33 +416,38 @@ async function resolveMediaPath(
   channelType?: ChannelType,
   trustedTenantId?: string,
 ): Promise<MediaResolution | MediaDownloadFailure | null> {
-  // Wait briefly for message-persistence to create the DB row (race condition:
-  // both media-processor and message-persistence subscribe to message.received)
-  const maxWaitMs = 5_000;
-  const pollMs = 250;
-  const deadline = Date.now() + maxWaitMs;
+  const wait = ctx.persistedRowWait ?? PERSISTED_ROW_WAIT;
+  const startedAt = Date.now();
+  const deadline = startedAt + wait.maxWaitMs;
 
-  // Use smart lookup to handle LID/phone JID resolution
-  let chat = await runMediaDb(ctx, trustedTenantId, () => ctx.services.chats.findByExternalIdSmart(instanceId, chatId));
-  while (!chat && Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, pollMs));
-    chat = await runMediaDb(ctx, trustedTenantId, () => ctx.services.chats.findByExternalIdSmart(instanceId, chatId));
-  }
+  const chat = await waitForPersistedRow(
+    () => runMediaDb(ctx, trustedTenantId, () => ctx.services.chats.findByExternalIdSmart(instanceId, chatId)),
+    deadline,
+    wait,
+  );
   if (!chat) {
-    log.debug('Chat not found, cannot process media', { chatId, externalId });
+    log.warn('Chat not persisted in time, media not processed', {
+      instanceId,
+      chatId,
+      externalId,
+      waitedMs: Date.now() - startedAt,
+    });
     return null;
   }
 
   const chatDbId = chat.id;
-  let message = await runMediaDb(ctx, trustedTenantId, () =>
-    ctx.services.messages.getByExternalId(chatDbId, externalId),
+  const message = await waitForPersistedRow(
+    () => runMediaDb(ctx, trustedTenantId, () => ctx.services.messages.getByExternalId(chatDbId, externalId)),
+    deadline,
+    wait,
   );
-  while (!message && Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, pollMs));
-    message = await runMediaDb(ctx, trustedTenantId, () => ctx.services.messages.getByExternalId(chatDbId, externalId));
-  }
   if (!message) {
-    log.debug('Message not found after waiting, cannot process media', { externalId });
+    log.warn('Message not persisted in time, media not processed', {
+      instanceId,
+      chatId,
+      externalId,
+      waitedMs: Date.now() - startedAt,
+    });
     return null;
   }
 
@@ -1106,6 +1135,7 @@ export const __test__ = {
   processMessageMedia,
   downloadMediaFromUrl,
   downloadMediaViaPlugin,
+  waitForPersistedRow,
 };
 
 export type { MediaProcessorContext };
