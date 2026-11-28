@@ -263,6 +263,15 @@ describe('buildFlowInteractive', () => {
     expect(buildFlowInteractive('x'.repeat(1025), flow)).toBeNull();
     expect(buildFlowInteractive('   ', flow)).toBeNull();
   });
+
+  it('measures the body as the handset shows it, not with its emoji markers', () => {
+    // 1022 characters on the handset; 1029 once the emoji is a `##1f600##` marker.
+    const shown = `${'x'.repeat(1020)}😀`;
+    const p = buildFlowInteractive(encodeAscEmoji(shown), flow);
+    expect(p).not.toBeNull();
+    expect(p?.mensagem).toBe(`${'x'.repeat(1020)}##1f600##`);
+    expect(buildFlowInteractive(encodeAscEmoji(`${'x'.repeat(1023)}😀`), flow)).toBeNull();
+  });
 });
 
 describe('textFallbackOf', () => {

@@ -11,6 +11,7 @@
  * resolves each screen; see handlers/flow-data.ts).
  */
 
+import { markdownToWhatsApp } from '@omni/core';
 import type { WhatsAppFlowSend } from '@omni/core/schemas';
 import type { MetaWhatsAppClient } from '../client';
 import { buildFlowToken } from '../flows/resolver';
@@ -21,6 +22,16 @@ export interface SendFlowResult {
   response: MetaSendResponse;
   /** The token that will come back on the nfm_reply — persist to correlate. */
   flowToken: string;
+}
+
+/**
+ * The Flow with its body in WhatsApp syntax when the send says `convert`, as the
+ * text path does. A send that names no mode keeps its body as given: the older
+ * flow route (`/instances/:id/whatsapp-flows/send`) sets none and always sent
+ * the body as is, while `POST /messages/send` spells the mode out.
+ */
+export function formatFlowBody(flow: WhatsAppFlowSend, formatMode: unknown): WhatsAppFlowSend {
+  return formatMode === 'convert' ? { ...flow, bodyText: markdownToWhatsApp(flow.bodyText) } : flow;
 }
 
 export async function sendFlow(

@@ -424,6 +424,16 @@ function interactiveOf(
   return buildInteractive(lastBubble, content.buttons, listOptionsOf(content));
 }
 
+/**
+ * A Flow that did not go out as one (refused by the platform, or a body the
+ * builder could not carry) reached the person as its text, and the caller has
+ * to know: it waits for an answer that will not come. Every other content type
+ * keeps its contract (a refused list or button set is not reported).
+ */
+function degradationOf(content: OutgoingMessage['content'], interactiveSent: boolean): { degradedTo?: string } {
+  return content.type === 'flow' && !interactiveSent ? { degradedTo: 'text' } : {};
+}
+
 /** `'buttons' | 'list' | 'url' | 'flow' | 'text'`, for the `message.sent` payload. */
 function interactiveKindOf(params: Record<string, unknown> | null): string {
   if (!params) return 'text';
@@ -672,7 +682,7 @@ export class AscFlowPlugin extends BaseChannelPlugin {
       const lastBubble = bubbles[bubbles.length - 1] ?? '';
       const interativa = rich ? null : interactiveOf(content, meta, lastBubble);
 
-      const { delivered } = await this.whileSending(held, () =>
+      const { delivered, interactiveSent } = await this.whileSending(held, () =>
         this.deliver(state, cod, { text, bubbles, lastBubble, rich, interativa, message: turnMessage }),
       );
 
@@ -695,12 +705,16 @@ export class AscFlowPlugin extends BaseChannelPlugin {
       // happened, and disarm the follow-ups that would have revisited the chat.
       const handoffRefused = meta.isHandoff === true && handoff === null;
 
-      this.answerOrStage(
+      const answered = this.answerOrStage(
         state,
         to,
         buildReadyBody({ delivered, lastBubble, bubbles, handoff, mode: state.config.ascFlowHandoffMode }),
         { held, answering, correlationId, delivered, meta },
       );
+      // `polling` was read when the send started. When every push failed, the
+      // text rode only on the poll body, and a newer turn that took the cod
+      // meanwhile made `resolveTurn` discard it: nothing reached anyone.
+      if (!(delivered || answered)) return this.refuseUndeliverable(instanceId, to, content.type);
 
       if (handoffRefused) return this.refuseSend(instanceId, to, HANDOFF_REFUSED_ERROR);
 
@@ -713,6 +727,7 @@ export class AscFlowPlugin extends BaseChannelPlugin {
         cod,
         bubbles: bubbles.length,
         interativa,
+        interactiveSent,
         delivered,
         handoff: handoff !== null,
       });
@@ -734,6 +749,7 @@ export class AscFlowPlugin extends BaseChannelPlugin {
         // leaves the atendimento in "Automático" with the flow still polling, so
         // pausing there recreates the same deadlock with nobody on the way.
         pauseAgent: state.config.ascFlowHandoffMode === 'service' && handoff !== null,
+        ...degradationOf(content, interactiveSent),
       };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -771,7 +787,7 @@ export class AscFlowPlugin extends BaseChannelPlugin {
   /**
    * Answer the turn with this send's body, or park the body on it when the send is a direct one the turn's reply still
    * follows (`stageTurn`). A handoff ends the turn, and an undelivered send needs `resposta` to carry its text, so both
-   * answer at once.
+   * answer at once. Returns whether the turn took the body (see `resolveTurn`).
    */
   private answerOrStage(
     state: AscFlowInstanceState,
@@ -784,13 +800,13 @@ export class AscFlowPlugin extends BaseChannelPlugin {
       delivered: boolean;
       meta: Record<string, unknown>;
     },
-  ): void {
+  ): boolean {
     const { held, delivered, meta } = send;
     if (held && delivered && meta.isHandoff !== true && isDirectSend(meta)) {
       this.stageTurn(to, held, body);
-      return;
+      return true;
     }
-    this.resolveTurn(state, to, body, send.answering, send.correlationId);
+    return this.resolveTurn(state, to, body, send.answering, send.correlationId);
   }
 
   /** `message.sent` for a turn that was delivered or parked for the poll. */
@@ -802,6 +818,7 @@ export class AscFlowPlugin extends BaseChannelPlugin {
       cod: number;
       bubbles: number;
       interativa: Record<string, unknown> | null;
+      interactiveSent: boolean;
       delivered: boolean;
       handoff: boolean;
     },
@@ -823,6 +840,8 @@ export class AscFlowPlugin extends BaseChannelPlugin {
           bubbles: turn.bubbles,
           interactive: interactiveKindOf(turn.interativa),
           interactiveRows: interactiveRowsOf(turn.interativa),
+          /** False when the component was refused and its bubble went out as text. */
+          interactiveSent: turn.interactiveSent,
           /** Rich content left through `/mensagem` rather than the poll body. */
           viaMensagem: turn.delivered,
           handoff: turn.handoff,
@@ -941,6 +960,10 @@ export class AscFlowPlugin extends BaseChannelPlugin {
    * happens to occupy the cod now: that delivered turn A's answer as the reply
    * to message B, and left B's own answer parked where no poll could ever
    * collect it.
+   *
+   * Returns whether the answer was taken: `false` only when it was discarded as
+   * belonging to a turn that already closed, so a send whose pushes all failed
+   * can tell it reached no one.
    */
   private resolveTurn(
     state: AscFlowInstanceState,
@@ -948,7 +971,7 @@ export class AscFlowPlugin extends BaseChannelPlugin {
     ready: AscFlowTurnReady,
     answering?: AscFlowTurnState,
     correlationId?: string,
-  ): void {
+  ): boolean {
     const cod = chatId.trim();
     const entry = state.inFlight.get(cod);
 
@@ -959,48 +982,49 @@ export class AscFlowPlugin extends BaseChannelPlugin {
     if (entry?.correlationId && correlationId && entry.correlationId !== correlationId) {
       if (ready.hand_off === 'sim') {
         this.carryLateHandoff(state, cod, entry, ready, 'correlationId of a closed turn');
-        return;
+        return true;
       }
       this.logger.warn('[asc-flow] discarding an answer from a different turn', {
         cod,
         reason: 'correlationId does not match the turn now in flight',
       });
-      return;
+      return false;
     }
 
     if (entry && answering && entry !== answering) {
       if (ready.hand_off === 'sim') {
         this.carryLateHandoff(state, cod, entry, ready, 'the window now holds a newer turn');
-        return;
+        return true;
       }
       this.logger.warn('[asc-flow] discarding an answer whose turn already closed', {
         cod,
         reason: 'the window now holds a newer turn — delivering this would answer the wrong message',
       });
-      return;
+      return false;
     }
     // A proactive send (no turn of its own) must not resolve someone else's
     // turn: its content already left through `/mensagem`, and writing an empty
     // `resposta` here would close a turn the agent is still answering.
     if (entry && !answering) {
       this.logger.debug('[asc-flow] proactive send leaves the in-flight turn alone', { cod });
-      return;
+      return true;
     }
 
     if (entry) {
       if (entry.ready?.hand_off === 'sim' && ready.hand_off !== 'sim') {
         this.logger.debug('[asc-flow] keeping the parked handoff over a later ordinary answer', { cod });
         this.pushDisplacedBubble(state, cod, ready.resposta);
-        return;
+        return true;
       }
       entry.ready = ready;
       entry.staged = undefined;
       entry.at = Date.now();
-      return;
+      return true;
     }
     // An outbound with no inbound turn in flight (a proactive send): still park
     // it, so a poll that arrives for this cod collects it.
     state.inFlight.set(cod, { text: '', at: Date.now(), ready });
+    return true;
   }
 
   /**
@@ -1108,7 +1132,10 @@ export class AscFlowPlugin extends BaseChannelPlugin {
   ): Promise<{ rich: Record<string, unknown> | null; bubbles: string[] }> {
     const isRich = isRichContent(message.content);
     const rich = isRich ? await buildRichFields(message, this.logger) : null;
-    const bubbles = splitBubbles(text);
+    // A Flow is ONE message: its body is the text above the button, and a blank
+    // line in it is a paragraph, not a bubble. Split, the lead-up went out on
+    // its own and only the last paragraph rode the Flow.
+    const bubbles = message.content.type === 'flow' ? [text.trim()].filter(Boolean) : splitBubbles(text);
 
     if (bubbles.length > 0) return { rich, bubbles };
     if (isRich && !rich) return { rich, bubbles: [OUTBOUND_MEDIA_FALLBACK_TEXT] };
@@ -1133,7 +1160,7 @@ export class AscFlowPlugin extends BaseChannelPlugin {
       interativa: Record<string, unknown> | null;
       message: OutgoingMessage;
     },
-  ): Promise<{ delivered: boolean }> {
+  ): Promise<{ delivered: boolean; interactiveSent: boolean }> {
     const reply = buildReplyField(turn.message.replyTo);
 
     // One `/mensagem` carries the file/pin/card plus its caption. When the
@@ -1141,11 +1168,13 @@ export class AscFlowPlugin extends BaseChannelPlugin {
     // like any other, so the beneficiary is not left with nothing while the
     // poll body carries no text of its own.
     if (turn.rich) {
-      if (await this.sendMensagem(state, cod, turn.text, { ...turn.rich, ...reply })) return { delivered: true };
+      if (await this.sendMensagem(state, cod, turn.text, { ...turn.rich, ...reply })) {
+        return { delivered: true, interactiveSent: false };
+      }
       // A file with no caption has no bubble of its own: say what happened
       // rather than leave the beneficiary looking at nothing.
       const texto = turn.bubbles.length > 0 ? turn.bubbles : [OUTBOUND_MEDIA_FALLBACK_TEXT];
-      return { delivered: (await this.pushBubbles(state, cod, texto)) > 0 };
+      return { delivered: (await this.pushBubbles(state, cod, texto)) > 0, interactiveSent: false };
     }
 
     // `/sendMsgInterativaAvancado` is the endpoint that renders a real
@@ -1155,7 +1184,7 @@ export class AscFlowPlugin extends BaseChannelPlugin {
     // the numbered text it carries stays the canonical fallback.
     if (turn.interativa) {
       await this.pushBubbles(state, cod, turn.bubbles.slice(0, -1));
-      if (await this.sendInterativa(state, cod, turn.interativa)) return { delivered: true };
+      if (await this.sendInterativa(state, cod, turn.interativa)) return { delivered: true, interactiveSent: true };
       // The component was refused. The bubble it carried holds the numbered
       // options as text, so it still has to reach the handset — pushed like
       // any other, never left to `resposta` (which the flow reads a cycle
@@ -1163,6 +1192,7 @@ export class AscFlowPlugin extends BaseChannelPlugin {
       // question itself.
       return {
         delivered: (await this.pushBubbles(state, cod, [textFallbackOf(turn.lastBubble, turn.interativa)])) > 0,
+        interactiveSent: false,
       };
     }
 
@@ -1183,7 +1213,7 @@ export class AscFlowPlugin extends BaseChannelPlugin {
     // `hand_off` and the two Genesys variables still ride the body: those are
     // read by `dec_handoff` on a LATER cycle, which the lag does not break.
     const pushed = await this.pushBubbles(state, cod, turn.bubbles);
-    return { delivered: pushed > 0 };
+    return { delivered: pushed > 0, interactiveSent: false };
   }
 
   /**

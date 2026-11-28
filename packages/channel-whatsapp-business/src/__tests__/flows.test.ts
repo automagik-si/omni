@@ -10,7 +10,7 @@ import type { MetaInboundMessage } from '@omni/core/schemas';
 
 import { MetaWhatsAppClient } from '../client';
 import { WhatsAppBusinessPlugin } from '../plugin';
-import { sendFlow } from '../senders/flow';
+import { formatFlowBody, sendFlow } from '../senders/flow';
 import type { MetaSendResponse } from '../types';
 
 function makeClient(): MetaWhatsAppClient {
@@ -107,6 +107,19 @@ describe('sendFlow', () => {
     const params = (spy.mock.calls[0]?.[0] as { interactive: { action: { parameters: Record<string, unknown> } } })
       .interactive.action.parameters;
     expect(params.flow_token).toBe('lead-abc-123');
+  });
+});
+
+describe('formatFlowBody', () => {
+  const flow = { flowId: '1', cta: 'Abrir', bodyText: 'Escolha o **plano**' };
+
+  it('converts the body markdown to WhatsApp syntax when the send asks for convert, like the text path', () => {
+    expect(formatFlowBody(flow, 'convert').bodyText).toBe('Escolha o *plano*');
+  });
+
+  it('leaves the body as given in passthrough, and when the send names no mode (the older flow route)', () => {
+    expect(formatFlowBody(flow, 'passthrough').bodyText).toBe('Escolha o **plano**');
+    expect(formatFlowBody(flow, undefined).bodyText).toBe('Escolha o **plano**');
   });
 });
 
