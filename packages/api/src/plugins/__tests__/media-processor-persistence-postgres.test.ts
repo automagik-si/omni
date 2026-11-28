@@ -222,4 +222,56 @@ postgresDescribe('media processor persistence', () => {
     expect(serial.media).toHaveLength(ids.length);
     expect(await snapshot()).toEqual(serial);
   });
+
+  function failureContext(): MediaProcessorTestContext {
+    return { db, eventBus: { publish: async () => {} } } as unknown as MediaProcessorTestContext;
+  }
+
+  async function storedTranscription(messageId: string): Promise<string | null | undefined> {
+    const [row] = await db
+      .select({ transcription: messages.transcription })
+      .from(messages)
+      .where(eq(messages.id, messageId))
+      .limit(1);
+    return row?.transcription;
+  }
+
+  async function failProcessing(messageId: string, instanceId: string, reason: string): Promise<void> {
+    await __test__.publishProcessingFailure(
+      failureContext(),
+      { metadata: { correlationId: randomUUID() } },
+      { instanceId },
+      messageId,
+      'audio',
+      { processingType: 'transcription', reason },
+    );
+  }
+
+  test('a failure on a message without content writes the error marker', async () => {
+    const { instanceId, messageId } = await createAudioMessage();
+
+    await failProcessing(messageId, instanceId, 'Operation timed out after 30000ms');
+
+    expect(await storedTranscription(messageId)).toBe(
+      '[error: media processing failed — Operation timed out after 30000ms]',
+    );
+  });
+
+  test('a failure after a stored result keeps the result (a redelivered run failing late)', async () => {
+    const { instanceId, messageId } = await createAudioMessage();
+    await __test__.persistProcessingResult(testContext(), messageId, null, transcriptionResult('kept'), 'audio');
+
+    await failProcessing(messageId, instanceId, 'Circuit breaker is open');
+
+    expect(await storedTranscription(messageId)).toBe('kept');
+  });
+
+  test('a later success still replaces an earlier error marker', async () => {
+    const { instanceId, messageId } = await createAudioMessage();
+    await failProcessing(messageId, instanceId, 'Operation timed out after 30000ms');
+
+    await __test__.persistProcessingResult(testContext(), messageId, null, transcriptionResult('recovered'), 'audio');
+
+    expect(await storedTranscription(messageId)).toBe('recovered');
+  });
 });
